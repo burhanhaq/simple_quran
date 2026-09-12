@@ -1,0 +1,37 @@
+Tanzil Quran Text
+Copyright (C) 2007-2021 Tanzil Project
+License: Creative Commons Attribution 3.0
+
+This copy of the Quran text is carefully produced, highly
+verified and continuously monitored by a group of specialists
+in Tanzil Project.
+
+TERMS OF USE:
+
+- This copyright notice shall be included in all verbatim copies
+  of the text, and shall be reproduced appropriately in all files
+  derived from or containing substantial portion of this text.
+- This Quran text can be used in any website or application,
+  provided that its source (Tanzil Project) is clearly indicated,
+  and a link is made to tanzil.net to enable users to keep
+  track of changes.
+- Permission is granted to copy and distribute verbatim copies
+  of this text, but CHANGING IT IS NOT ALLOWED.
+
+Please check updates at: http://tanzil.net/updates/
+
+The bundled Uthmani text is the Tanzil Uthmani recension as published
+through the Al Quran Cloud quran-uthmani edition. A leading BOM on
+Al-Fatiha 1, if present in the source file, is stripped so the verse
+text itself is unchanged.
+
+Madani page, juz, and sajdah metadata bundled with this app follow the
+standard 604-page Madani Hafs layout used for navigation. Verse display
+is flowing Uthmani text, not a pixel-identical Mushaf page.
+
+Audio recitations of Sheikh Abdul Rahman Al-Sudais are streamed or
+downloaded from the Al Quran Cloud / islamic.network CDN for personal
+and educational use. Copyright remains with the reciter.
+
+Amiri Quran font is licensed under the SIL Open Font License 1.1.
+See Resources/Fonts/OFL.txt.
