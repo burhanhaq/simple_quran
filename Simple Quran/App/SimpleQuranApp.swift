@@ -23,22 +23,30 @@ struct SimpleQuranApp: App {
     init() {
         AppTheme.registerFonts()
         let container: ModelContainer
+        var persistenceLoadError: UserFacingMessage?
         do {
             container = try PersistenceController.makeContainer()
         } catch {
+            // Use an in-memory container only to render a blocking recovery screen.
+            // The user cannot unknowingly create data that disappears on relaunch.
             container = try! PersistenceController.makeContainer(inMemory: true)
+            persistenceLoadError = UserFacingMessage.from(.persistenceFailure)
         }
         self.container = container
 
         let source = AlQuranCloudAudioSource()
         let files = AudioFileStore(reciter: source.reciter)
-        let downloads = AudioDownloadManager(source: source, fileStore: files)
+        let settings = AppSettings()
+        let downloads = AudioDownloadManager(
+            source: source,
+            fileStore: files,
+            allowCellular: !settings.wifiOnly
+        )
         downloads.attach(context: container.mainContext)
         let playback = PlaybackCoordinator(source: source, fileStore: files)
         let recorder = RecitationRecordingController()
         recorder.attach(context: container.mainContext)
         let store = PracticeStore(context: container.mainContext)
-        let settings = AppSettings()
 
         let catalog: BundledQuranCatalog
         var loadError: UserFacingMessage?
@@ -62,6 +70,7 @@ struct SimpleQuranApp: App {
             settings: settings
         )
         environment.catalogLoadError = loadError
+        environment.persistenceLoadError = persistenceLoadError
         self.environment = environment
         appDelegate.downloads = downloads
     }

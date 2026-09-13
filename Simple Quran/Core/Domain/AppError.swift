@@ -7,6 +7,8 @@ nonisolated enum AppError: Error, Equatable, Sendable {
     case persistenceFailure
     case audioUnavailable
     case downloadFailed
+    case httpStatus(Int)
+    case invalidAudio
     case notEnoughStorage
     case microphoneDenied
     case recordingFailed
@@ -45,11 +47,17 @@ nonisolated struct UserFacingMessage: Equatable, Sendable {
                 message: String(localized: "Check your connection, or download this set to practise offline."),
                 recovery: String(localized: "Connect to the internet or open Downloads to save audio.")
             )
-        case .downloadFailed:
+        case .downloadFailed, .httpStatus(_):
             UserFacingMessage(
                 title: String(localized: "Download didn’t finish"),
                 message: String(localized: "The recitation couldn’t be saved. Nothing already on this device was removed."),
                 recovery: String(localized: "Try again on a stable connection.")
+            )
+        case .invalidAudio:
+            UserFacingMessage(
+                title: String(localized: "Downloaded audio is invalid"),
+                message: String(localized: "The server response was not playable recitation, so it was not saved."),
+                recovery: String(localized: "Try the download again later.")
             )
         case .notEnoughStorage:
             UserFacingMessage(

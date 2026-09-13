@@ -1,16 +1,28 @@
 import Foundation
 
-struct AudioFileStore: Sendable {
+nonisolated struct AudioFileStore {
+    static let minimumPlayableBytes: Int64 = 1_000
     let reciter: Reciter
     private let fileManager: FileManager
+    private let baseDirectory: URL?
 
-    init(reciter: Reciter = .sudais, fileManager: FileManager = .default) {
+    init(
+        reciter: Reciter = .sudais,
+        fileManager: FileManager = .default,
+        baseDirectory: URL? = nil
+    ) {
         self.reciter = reciter
         self.fileManager = fileManager
+        self.baseDirectory = baseDirectory
     }
 
     func directory() throws -> URL {
-        let base = try fileManager.url(for: .applicationSupportDirectory, in: .userDomainMask, appropriateFor: nil, create: true)
+        let base = try baseDirectory ?? fileManager.url(
+            for: .applicationSupportDirectory,
+            in: .userDomainMask,
+            appropriateFor: nil,
+            create: true
+        )
         let folder = base.appending(path: "Audio", directoryHint: .isDirectory)
             .appending(path: reciter.id, directoryHint: .isDirectory)
             .appending(path: "\(reciter.qualityKbps)", directoryHint: .isDirectory)
@@ -31,7 +43,8 @@ struct AudioFileStore: Sendable {
     func urlIfReady(reciter: Reciter, globalAyah: Int) -> URL? {
         guard reciter.id == self.reciter.id,
               let url = try? fileURL(globalAyah: globalAyah),
-              fileManager.fileExists(atPath: url.path)
+              fileManager.fileExists(atPath: url.path),
+              byteCount(globalAyah: globalAyah) >= Self.minimumPlayableBytes
         else { return nil }
         return url
     }
@@ -42,19 +55,32 @@ struct AudioFileStore: Sendable {
 
     func install(temporaryURL: URL, globalAyah: Int) throws -> URL {
         let destination = try fileURL(globalAyah: globalAyah)
-        if fileManager.fileExists(atPath: destination.path) {
-            try fileManager.removeItem(at: destination)
+        let staging = destination
+            .deletingLastPathComponent()
+            .appending(path: ".\(UUID().uuidString).mp3")
+        do {
+            try fileManager.moveItem(at: temporaryURL, to: staging)
+            guard let size = try? staging.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+                  Int64(size) >= Self.minimumPlayableBytes
+            else { throw AppError.invalidAudio }
+            try fileManager.setAttributes(
+                [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
+                ofItemAtPath: staging.path
+            )
+            var values = URLResourceValues()
+            values.isExcludedFromBackup = true
+            var mutable = staging
+            try mutable.setResourceValues(values)
+            if fileManager.fileExists(atPath: destination.path) {
+                _ = try fileManager.replaceItemAt(destination, withItemAt: staging)
+            } else {
+                try fileManager.moveItem(at: staging, to: destination)
+            }
+            return destination
+        } catch {
+            try? fileManager.removeItem(at: staging)
+            throw error
         }
-        try fileManager.moveItem(at: temporaryURL, to: destination)
-        try fileManager.setAttributes(
-            [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
-            ofItemAtPath: destination.path
-        )
-        var values = URLResourceValues()
-        values.isExcludedFromBackup = true
-        var mutable = destination
-        try mutable.setResourceValues(values)
-        return destination
     }
 
     func remove(globalAyah: Int) throws {

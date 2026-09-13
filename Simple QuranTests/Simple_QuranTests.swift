@@ -23,30 +23,60 @@ struct QuranIntegrityTests {
     }
 }
 
-struct PracticeQueuePlannerTests {
-    @Test func repeatsAyahsAndInsertsSilence() throws {
-        let range = try VerseRange(startGlobalAyah: 1, endGlobalAyah: 2)
-        var settings = PracticeSettings.default
-        settings.ayahRepeatCount = .three
-        settings.setRepeatCount = .one
-        settings.pauseSeconds = 1
-        let items = PracticeQueuePlanner().expand(passages: [range], settings: settings)
-        let ayahs = items.compactMap { item -> Int? in
-            if case .ayah(let ayah, _, _) = item { return ayah }
-            return nil
-        }
-        #expect(ayahs == [1, 1, 1, 2, 2, 2])
-        #expect(items.contains { if case .silence(1) = $0 { return true }; return false })
-    }
-
-    @Test func repeatsTheWholeSet() throws {
+struct PracticePlaybackCursorTests {
+    @Test func playbackCursorDoesNotMultiplySetRepeats() throws {
         let range = try VerseRange(startGlobalAyah: 1, endGlobalAyah: 1)
         var settings = PracticeSettings.default
-        settings.ayahRepeatCount = .one
+        settings.ayahRepeatCount = .two
         settings.setRepeatCount = .two
         settings.pauseSeconds = 0
-        let items = PracticeQueuePlanner().expand(passages: [range], settings: settings)
-        #expect(items.count == 2)
+        var cursor = PracticePlaybackCursor(passages: [range], settings: settings)
+        var played: [Int] = []
+        while let item = cursor.current {
+            if case .ayah(let ayah, _, _) = item { played.append(ayah) }
+            cursor.advanceAfterCompletion()
+        }
+        #expect(played == [1, 1, 1, 1])
+    }
+
+    @Test func indefiniteAyahRepeatsUntilTheUserSkips() throws {
+        let range = try VerseRange(startGlobalAyah: 1, endGlobalAyah: 2)
+        var settings = PracticeSettings.default
+        settings.ayahRepeatCount = .indefinitely
+        settings.setRepeatCount = .one
+        settings.pauseSeconds = 0
+        var cursor = PracticePlaybackCursor(passages: [range], settings: settings)
+
+        for _ in 0..<3 {
+            guard case .ayah(let ayah, _, let total) = cursor.current else {
+                Issue.record("Expected an ayah")
+                return
+            }
+            #expect(ayah == 1)
+            #expect(total == 0)
+            cursor.advanceAfterCompletion()
+        }
+        cursor.skipForward()
+        guard case .ayah(let ayah, _, _) = cursor.current else {
+            Issue.record("Expected the next ayah")
+            return
+        }
+        #expect(ayah == 2)
+    }
+
+    @Test func pauseHasOneExplicitCompletionStep() throws {
+        let range = try VerseRange(startGlobalAyah: 1, endGlobalAyah: 2)
+        var settings = PracticeSettings.default
+        settings.ayahRepeatCount = .one
+        settings.setRepeatCount = .one
+        settings.pauseSeconds = 2
+        var cursor = PracticePlaybackCursor(passages: [range], settings: settings)
+
+        #expect(cursor.current == .ayah(globalAyah: 1, repetition: 1, totalRepetitions: 1))
+        cursor.advanceAfterCompletion()
+        #expect(cursor.current == .silence(seconds: 2))
+        cursor.advanceAfterCompletion()
+        #expect(cursor.current == .ayah(globalAyah: 2, repetition: 1, totalRepetitions: 1))
     }
 }
 
@@ -86,10 +116,34 @@ struct SearchAndAudioSourceTests {
     @Test func sudaisURLsAreVerseAddressable() throws {
         let source = AlQuranCloudAudioSource()
         let url = try source.remoteURL(for: 1)
-        #expect(url.absoluteString.hasSuffix("/192/ar.sudais/1.mp3"))
+        #expect(source.reciter.id == "ar.abdurrahmaansudais")
+        #expect(source.reciter.qualityKbps == 64)
+        #expect(url.absoluteString.hasSuffix("/64/ar.abdurrahmaansudais/1.mp3"))
         #expect(throws: AppError.invalidRange) {
             _ = try source.remoteURL(for: 0)
         }
+    }
+}
+
+struct AudioFileStoreTests {
+    @Test func rejectsUndersizedDownloadsAndInstallsValidSizedFiles() throws {
+        let root = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = AudioFileStore(baseDirectory: root)
+
+        let invalid = root.appending(path: "invalid.mp3")
+        try Data(repeating: 0, count: 100).write(to: invalid)
+        #expect(throws: AppError.invalidAudio) {
+            _ = try store.install(temporaryURL: invalid, globalAyah: 1)
+        }
+        #expect(store.isReady(1) == false)
+
+        let validSized = root.appending(path: "valid.mp3")
+        try Data(repeating: 0, count: 2_000).write(to: validSized)
+        _ = try store.install(temporaryURL: validSized, globalAyah: 1)
+        #expect(store.isReady(1))
+        #expect(store.byteCount(globalAyah: 1) == 2_000)
     }
 }
 

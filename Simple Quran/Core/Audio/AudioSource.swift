@@ -7,10 +7,10 @@ nonisolated struct Reciter: Equatable, Hashable, Sendable, Identifiable {
     var qualityKbps: Int
 
     static let sudais = Reciter(
-        id: "ar.sudais",
+        id: "ar.abdurrahmaansudais",
         englishName: "Abdul Rahman Al-Sudais",
         arabicName: "عبدالرحمن السديس",
-        qualityKbps: 192
+        qualityKbps: 64
     )
 }
 
@@ -24,7 +24,8 @@ nonisolated struct AlQuranCloudAudioSource: AudioSource {
     var reciter: Reciter = .sudais
     var host: URL = URL(string: "https://cdn.islamic.network/quran/audio")!
 
-    var estimatedBytesPerAyah: Int64 { 28_000 }
+    /// A conservative display estimate. Actual ayah sizes vary with duration.
+    var estimatedBytesPerAyah: Int64 { 96_000 }
 
     func remoteURL(for globalAyah: Int) throws -> URL {
         guard (1...QuranCatalogMetrics.ayahCount).contains(globalAyah) else {

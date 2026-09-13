@@ -5,8 +5,6 @@ struct SetListView: View {
     @Environment(AppEnvironment.self) private var environment
     @Query(filter: #Predicate<PracticeSet> { $0.deletedAt == nil }, sort: \PracticeSet.updatedAt, order: .reverse)
     private var sets: [PracticeSet]
-    @State private var draft = SetDraft()
-    @State private var showEditor = false
     @State private var practiceSet: PracticeSet?
 
     var body: some View {
@@ -56,16 +54,12 @@ struct SetListView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        draft = SetDraft()
-                        showEditor = true
+                        environment.selectedTab = .quran
                     } label: {
                         Image(systemName: "plus")
                     }
                     .accessibilityIdentifier("sets.create")
                 }
-            }
-            .sheet(isPresented: $showEditor) {
-                SetEditorView(draft: draft)
             }
         }
     }
@@ -110,11 +104,19 @@ struct SetDetailView: View {
                 }
                 HStack {
                     Button(practiceSet.archivedAt == nil ? String(localized: "Archive") : String(localized: "Unarchive")) {
-                        try? environment.store.archive(practiceSet, archived: practiceSet.archivedAt == nil)
+                        do {
+                            try environment.store.archive(practiceSet, archived: practiceSet.archivedAt == nil)
+                        } catch {
+                            errorMessage = UserFacingMessage.from(.persistenceFailure)
+                        }
                     }
                     Button(String(localized: "Delete"), role: .destructive) {
-                        try? environment.store.delete(practiceSet)
-                        dismiss()
+                        do {
+                            try environment.store.delete(practiceSet)
+                            dismiss()
+                        } catch {
+                            errorMessage = UserFacingMessage.from(.persistenceFailure)
+                        }
                     }
                 }
             }
@@ -136,13 +138,16 @@ struct SetDetailView: View {
         .sheet(isPresented: $showEditor) {
             SetEditorView(draft: draftFromSet())
         }
-        .alert(errorMessage?.title ?? "", isPresented: Binding(
-            get: { errorMessage != nil },
-            set: { if !$0 { errorMessage = nil } }
+        .alert(errorMessage?.title ?? environment.downloads.userMessage?.title ?? "", isPresented: Binding(
+            get: { errorMessage != nil || environment.downloads.userMessage != nil },
+            set: { if !$0 {
+                errorMessage = nil
+                environment.downloads.userMessage = nil
+            } }
         )) {
             Button(String(localized: "OK"), role: .cancel) {}
         } message: {
-            Text(errorMessage?.message ?? "")
+            Text(errorMessage?.message ?? environment.downloads.userMessage?.message ?? "")
         }
     }
 
@@ -157,9 +162,27 @@ struct SetDetailView: View {
     private var downloadStatus: some View {
         let ready = environment.downloads.downloadedCount(in: allAyahs)
         let estimate = environment.downloads.estimate(for: allAyahs)
-        return Text(String(localized: "\(ready)/\(allAyahs.count) downloaded · \(ByteCountFormatter.string(fromByteCount: estimate, countStyle: .file)) remaining"))
-            .font(.caption)
-            .foregroundStyle(Color.olive)
+        let relevantJobs = allAyahs.compactMap { environment.downloads.jobs[$0] }
+        let downloading = relevantJobs.filter { $0.status == .downloading }
+        let failed = relevantJobs.filter { $0.status == .failed }
+        return VStack(alignment: .leading, spacing: 8) {
+            Text(String(localized: "\(ready)/\(allAyahs.count) downloaded · \(ByteCountFormatter.string(fromByteCount: estimate, countStyle: .file)) remaining"))
+                .font(.caption)
+                .foregroundStyle(Color.olive)
+            if !downloading.isEmpty {
+                ProgressView(value: downloading.map(\.fraction).reduce(0, +), total: Double(downloading.count))
+                Button(String(localized: "Cancel downloads")) {
+                    environment.downloads.cancelAll()
+                }
+                .font(.caption)
+            }
+            if !failed.isEmpty {
+                Button(String(localized: "Retry failed downloads")) {
+                    environment.downloads.download(ayahs: failed.map(\.globalAyah))
+                }
+                .font(.caption)
+            }
+        }
     }
 
     private func passageCard(_ passage: PracticePassage) -> some View {

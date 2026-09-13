@@ -50,45 +50,92 @@ nonisolated enum QueueItem: Equatable, Sendable {
     case silence(seconds: Int)
 }
 
-nonisolated struct PracticeQueuePlanner: Sendable {
-    func makeCycle(passages: [VerseRange], settings: PracticeSettings) -> [QueueItem] {
-        let ayahRepeats = settings.ayahRepeatCount.finiteCount ?? 1
+/// A lazy practice sequence. Repetition is represented as cursor state instead
+/// of duplicating a potentially unbounded queue in memory.
+nonisolated struct PracticePlaybackCursor: Equatable, Sendable {
+    private let ayahs: [Int]
+    private let settings: PracticeSettings
+    private(set) var ayahIndex: Int
+    private(set) var ayahRepetition = 1
+    private(set) var setRepetition = 1
+    private(set) var isInPause = false
+    private(set) var isComplete = false
 
-        var items: [QueueItem] = []
-        for range in passages {
-            for ayah in range.globalAyahs {
-                for repetition in 1...ayahRepeats {
-                    items.append(.ayah(globalAyah: ayah, repetition: repetition, totalRepetitions: ayahRepeats))
-                    if settings.clampedPauseSeconds > 0 {
-                        items.append(.silence(seconds: settings.clampedPauseSeconds))
-                    }
-                }
-            }
+    init(passages: [VerseRange], settings: PracticeSettings, resumeAt globalAyah: Int? = nil) {
+        let resolvedAyahs = passages.flatMap(\.globalAyahs)
+        let resolvedIndex: Int
+        if let globalAyah {
+            resolvedIndex = resolvedAyahs.firstIndex(of: globalAyah) ?? 0
+        } else {
+            resolvedIndex = 0
         }
-        if case .silence = items.last {
-            items.removeLast()
-        }
-        return items
+        self.ayahs = resolvedAyahs
+        self.settings = settings
+        self.ayahIndex = resolvedIndex
+        self.isComplete = resolvedAyahs.isEmpty
     }
 
-    func expand(passages: [VerseRange], settings: PracticeSettings, maxSetRepeats: Int = 50) -> [QueueItem] {
-        let cycle = makeCycle(passages: passages, settings: settings)
-        guard !cycle.isEmpty else { return [] }
-        if let count = settings.setRepeatCount.finiteCount {
-            let repeats = min(maxSetRepeats, max(1, count))
-            return Array(repeating: cycle, count: repeats).flatMap { $0 }
+    var current: QueueItem? {
+        guard !isComplete, ayahs.indices.contains(ayahIndex) else { return nil }
+        if isInPause {
+            return .silence(seconds: settings.clampedPauseSeconds)
         }
-        return cycle
+        let total = settings.ayahRepeatCount.finiteCount ?? 0
+        return .ayah(globalAyah: ayahs[ayahIndex], repetition: ayahRepetition, totalRepetitions: total)
     }
 
-    func uniqueAyahs(in passages: [VerseRange]) -> [Int] {
-        var seen = Set<Int>()
-        var ordered: [Int] = []
-        for range in passages {
-            for ayah in range.globalAyahs where seen.insert(ayah).inserted {
-                ordered.append(ayah)
-            }
+    mutating func advanceAfterCompletion() {
+        guard !isComplete else { return }
+        if !isInPause, settings.clampedPauseSeconds > 0 {
+            isInPause = true
+            return
         }
-        return ordered
+        isInPause = false
+
+        if settings.ayahRepeatCount == .indefinitely {
+            ayahRepetition += 1
+            return
+        }
+        if ayahRepetition < (settings.ayahRepeatCount.finiteCount ?? 1) {
+            ayahRepetition += 1
+            return
+        }
+        moveToNextAyah()
+    }
+
+    mutating func skipForward() {
+        guard !isComplete else { return }
+        isInPause = false
+        moveToNextAyah()
+    }
+
+    mutating func skipBack() {
+        guard !ayahs.isEmpty else { return }
+        isComplete = false
+        isInPause = false
+        ayahRepetition = 1
+        if ayahIndex > 0 {
+            ayahIndex -= 1
+        }
+    }
+
+    private mutating func moveToNextAyah() {
+        ayahRepetition = 1
+        if ayahIndex + 1 < ayahs.count {
+            ayahIndex += 1
+            return
+        }
+
+        if settings.setRepeatCount == .indefinitely {
+            setRepetition += 1
+            ayahIndex = 0
+            return
+        }
+        if setRepetition < (settings.setRepeatCount.finiteCount ?? 1) {
+            setRepetition += 1
+            ayahIndex = 0
+            return
+        }
+        isComplete = true
     }
 }

@@ -38,6 +38,7 @@ final class AppEnvironment {
     let settings: AppSettings
     var selectedTab: AppTab = .home
     var catalogLoadError: UserFacingMessage?
+    var persistenceLoadError: UserFacingMessage?
 
     init(
         quran: BundledQuranCatalog,

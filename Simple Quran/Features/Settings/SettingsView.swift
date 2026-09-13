@@ -5,6 +5,8 @@ struct SettingsView: View {
     @Environment(\.dismiss) private var dismiss
     @State private var showAcknowledgements = false
     @State private var showPrivacy = false
+    @State private var confirmRemoveDownloads = false
+    @State private var confirmRemoveRecordings = false
 
     var body: some View {
         NavigationStack {
@@ -19,12 +21,12 @@ struct SettingsView: View {
                         Text(ByteCountFormatter.string(fromByteCount: environment.downloads.fileStore.totalByteCount(), countStyle: .file))
                     }
                     Button(String(localized: "Remove downloaded recitation"), role: .destructive) {
-                        try? environment.downloads.fileStore.removeAll()
+                        confirmRemoveDownloads = true
                     }
                 }
                 Section(String(localized: "Recordings")) {
                     Button(String(localized: "Delete all recordings"), role: .destructive) {
-                        environment.recorder.deleteAll()
+                        confirmRemoveRecordings = true
                     }
                     Text(String(localized: "Recordings stay on this device and are never uploaded."))
                         .font(.footnote)
@@ -45,6 +47,37 @@ struct SettingsView: View {
             }
             .sheet(isPresented: $showAcknowledgements) { AcknowledgementsView() }
             .sheet(isPresented: $showPrivacy) { PrivacyView() }
+            .confirmationDialog(
+                String(localized: "Remove all downloaded recitation?"),
+                isPresented: $confirmRemoveDownloads,
+                titleVisibility: .visible
+            ) {
+                Button(String(localized: "Remove downloads"), role: .destructive) {
+                    environment.downloads.removeAll()
+                }
+                Button(String(localized: "Cancel"), role: .cancel) {}
+            }
+            .confirmationDialog(
+                String(localized: "Delete all personal recordings?"),
+                isPresented: $confirmRemoveRecordings,
+                titleVisibility: .visible
+            ) {
+                Button(String(localized: "Delete recordings"), role: .destructive) {
+                    environment.recorder.deleteAll()
+                }
+                Button(String(localized: "Cancel"), role: .cancel) {}
+            }
+            .alert(
+                environment.downloads.userMessage?.title ?? "",
+                isPresented: Binding(
+                    get: { environment.downloads.userMessage != nil },
+                    set: { if !$0 { environment.downloads.userMessage = nil } }
+                )
+            ) {
+                Button(String(localized: "OK"), role: .cancel) {}
+            } message: {
+                Text(environment.downloads.userMessage?.message ?? "")
+            }
         }
     }
 }
@@ -91,4 +124,3 @@ struct PrivacyView: View {
         }
     }
 }
-

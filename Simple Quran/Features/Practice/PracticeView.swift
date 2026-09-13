@@ -1,4 +1,3 @@
-import AVFoundation
 import SwiftUI
 import UIKit
 
@@ -7,8 +6,7 @@ struct PracticeView: View {
     @Environment(\.dismiss) private var dismiss
     let practiceSet: PracticeSet
     @State private var showRating = false
-    @State private var comparisonPlayer: AVPlayer?
-    @State private var comparisonStep = 0
+    @State private var comparisonPlayer = AudioPreviewPlayer()
 
     var body: some View {
         NavigationStack {
@@ -34,7 +32,17 @@ struct PracticeView: View {
                 }
             }
             .onAppear(perform: start)
-            .onDisappear { environment.playback.pause() }
+            .onDisappear {
+                environment.playback.pause()
+                environment.recorder.stopRecording()
+                environment.recorder.cancelComparisonPlayback()
+                comparisonPlayer.cancel()
+            }
+            .onChange(of: environment.playback.snapshot.currentGlobalAyah) { _, ayah in
+                comparisonPlayer.cancel()
+                environment.recorder.cancelComparisonPlayback()
+                if let ayah { environment.recorder.selectAyah(ayah) }
+            }
             .sheet(isPresented: $showRating) {
                 ratingSheet
             }
@@ -187,6 +195,7 @@ struct PracticeView: View {
     private var recordButtonTitle: String {
         switch environment.recorder.phase {
         case .recording: String(localized: "Stop")
+        case .finishing: String(localized: "Saving…")
         case .countdown(let value): String(localized: "\(value)")
         default: String(localized: "Record ayah")
         }
@@ -200,27 +209,32 @@ struct PracticeView: View {
             allowStreaming: environment.settings.streamWhenMissing || environment.downloads.downloadedCount(in: practiceSet.orderedPassages.flatMap(\.range.globalAyahs)) == practiceSet.orderedPassages.map(\.range.count).reduce(0, +)
         )
         environment.playback.session = try? environment.store.startSession(for: practiceSet)
-        environment.recorder.currentAyah = environment.playback.snapshot.currentGlobalAyah
-        environment.recorder.latestURL = environment.playback.snapshot.currentGlobalAyah.flatMap {
-            environment.recorder.latestURL(for: $0)
+        if let ayah = environment.playback.snapshot.currentGlobalAyah {
+            environment.recorder.selectAyah(ayah)
         }
     }
 
     private func close() {
-        if let session = environment.playback.session {
-            try? environment.store.finishSession(
-                session,
-                coveredAyahs: environment.playback.coveredAyahs.count,
-                repetitions: environment.playback.repetitionCount,
-                lastAyah: environment.playback.snapshot.currentGlobalAyah,
-                completed: false,
-                rating: nil
+        environment.playback.pause()
+        do {
+            if let session = environment.playback.session {
+                try environment.store.finishSession(
+                    session,
+                    coveredAyahs: environment.playback.coveredAyahs.count,
+                    repetitions: environment.playback.repetitionCount,
+                    lastAyah: environment.playback.snapshot.currentGlobalAyah,
+                    completed: false,
+                    rating: nil
+                )
+            }
+            try environment.store.recordExposure(
+                ayahs: Array(environment.playback.coveredAyahs),
+                seconds: environment.playback.listeningSeconds
             )
+        } catch {
+            environment.playback.userMessage = UserFacingMessage.from(.persistenceFailure)
+            return
         }
-        try? environment.store.recordExposure(
-            ayahs: Array(environment.playback.coveredAyahs),
-            seconds: 0
-        )
         environment.playback.stop()
         dismiss()
     }
@@ -229,12 +243,19 @@ struct PracticeView: View {
         var settings = practiceSet.settings
         update(&settings)
         environment.playback.applySettingsAndRestart(settings)
+        do {
+            try environment.store.save()
+        } catch {
+            environment.playback.userMessage = UserFacingMessage.from(.persistenceFailure)
+        }
     }
 
     private func toggleRecord() async {
         switch environment.recorder.phase {
         case .recording, .countdown:
             environment.recorder.stopRecording()
+        case .finishing:
+            return
         default:
             environment.playback.pause()
             guard let ayah = environment.playback.snapshot.currentGlobalAyah else { return }
@@ -245,45 +266,49 @@ struct PracticeView: View {
     private func runComparison() async {
         guard let ayah = environment.playback.snapshot.currentGlobalAyah else { return }
         environment.playback.pause()
-        comparisonStep = 0
-        await playReciter(ayah)
-        environment.recorder.playLatest()
-        try? await Task.sleep(for: .seconds(2))
-        while environment.recorder.isPlayingComparison {
-            try? await Task.sleep(for: .milliseconds(200))
+        do {
+            try await playReciter(ayah)
+            try await environment.recorder.playLatest()
+            try await playReciter(ayah)
+        } catch is CancellationError {
+            return
+        } catch {
+            environment.playback.userMessage = UserFacingMessage.from(.audioUnavailable)
         }
-        await playReciter(ayah)
     }
 
-    private func playReciter(_ ayah: Int) async {
+    private func playReciter(_ ayah: Int) async throws {
         let url = environment.downloads.fileStore.urlIfReady(reciter: environment.audioSource.reciter, globalAyah: ayah)
             ?? (try? environment.audioSource.remoteURL(for: ayah))
-        guard let url else { return }
-        let player = AVPlayer(url: url)
-        comparisonPlayer = player
-        player.play()
-        try? await Task.sleep(for: .seconds(2))
-        while player.timeControlStatus == .playing {
-            try? await Task.sleep(for: .milliseconds(200))
-        }
+        guard let url else { throw AppError.audioUnavailable }
+        try await comparisonPlayer.play(url: url)
     }
 
     private func rate(_ rating: RecallRating) {
+        environment.playback.pause()
         let ayahs = Array(environment.playback.coveredAyahs)
-        try? environment.store.applyRating(rating, ayahs: ayahs, now: .now)
-        if let session = environment.playback.session {
-            try? environment.store.finishSession(
-                session,
-                coveredAyahs: ayahs.count,
-                repetitions: environment.playback.repetitionCount,
-                lastAyah: environment.playback.snapshot.currentGlobalAyah,
-                completed: true,
-                rating: rating
+        do {
+            try environment.store.recordExposure(
+                ayahs: ayahs,
+                seconds: environment.playback.listeningSeconds
             )
+            try environment.store.applyRating(rating, ayahs: ayahs, now: .now)
+            if let session = environment.playback.session {
+                try environment.store.finishSession(
+                    session,
+                    coveredAyahs: ayahs.count,
+                    repetitions: environment.playback.repetitionCount,
+                    lastAyah: environment.playback.snapshot.currentGlobalAyah,
+                    completed: true,
+                    rating: rating
+                )
+            }
+        } catch {
+            environment.playback.userMessage = UserFacingMessage.from(.persistenceFailure)
+            return
         }
         showRating = false
         environment.playback.stop()
         dismiss()
     }
 }
-

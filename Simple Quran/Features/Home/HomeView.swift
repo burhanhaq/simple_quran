@@ -41,11 +41,6 @@ struct HomeView: View {
             .fullScreenCover(item: $practiceSet) { set in
                 PracticeView(practiceSet: set)
             }
-            .safeAreaInset(edge: .bottom) {
-                if environment.playback.snapshot.isPlaying, let ayah = environment.playback.snapshot.currentGlobalAyah {
-                    miniPlayer(ayah: ayah)
-                }
-            }
         }
     }
 
@@ -154,25 +149,6 @@ struct HomeView: View {
         }
         .buttonStyle(.plain)
         .accessibilityIdentifier("home.set.\(set.id.uuidString)")
-    }
-
-    private func miniPlayer(ayah: Int) -> some View {
-        let verse = environment.quran.verse(globalAyah: ayah)
-        return HStack {
-            VStack(alignment: .leading) {
-                Text(environment.playback.snapshot.setTitle).font(.caption).foregroundStyle(Color.secondaryWarm)
-                Text(verse?.reference ?? "").font(.headline).foregroundStyle(Color.appBrownText)
-            }
-            Spacer()
-            Button {
-                environment.playback.snapshot.isPlaying ? environment.playback.pause() : environment.playback.resume()
-            } label: {
-                Image(systemName: environment.playback.snapshot.isPlaying ? "pause.fill" : "play.fill")
-            }
-            .accessibilityLabel(environment.playback.snapshot.isPlaying ? String(localized: "Pause") : String(localized: "Play"))
-        }
-        .padding()
-        .background(.ultraThinMaterial)
     }
 
     private var dueSets: [PracticeSet] {

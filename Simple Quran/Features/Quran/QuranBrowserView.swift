@@ -22,9 +22,10 @@ struct QuranBrowserView: View {
     @State private var query = ""
     @State private var draft = SetDraft()
     @State private var showEditor = false
+    @State private var navigationPath: [Int] = []
 
     var body: some View {
-        NavigationStack {
+        NavigationStack(path: $navigationPath) {
             List {
                 if !query.isEmpty {
                     searchSection
@@ -32,9 +33,7 @@ struct QuranBrowserView: View {
                 switch mode {
                 case .surahs:
                     ForEach(environment.quran.surahs) { surah in
-                        NavigationLink {
-                            SurahDetailView(surah: surah, draft: draft)
-                        } label: {
+                        NavigationLink(value: surah.number) {
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(surah.displayName).foregroundStyle(Color.appBrownText)
                                 Text("\(surah.arabicName) · \(surah.ayahCount)")
@@ -98,6 +97,11 @@ struct QuranBrowserView: View {
                     draft = SetDraft()
                 }
             }
+            .navigationDestination(for: Int.self) { surahNumber in
+                if let surah = environment.quran.surah(number: surahNumber) {
+                    SurahDetailView(surah: surah, draft: draft)
+                }
+            }
         }
     }
 
@@ -122,8 +126,8 @@ struct QuranBrowserView: View {
         switch hit.kind {
         case .surah(let number):
             if let surah = environment.quran.surah(number: number) {
-                // Leave the user on the surah page for finer selection.
                 draft.titleHint = surah.englishName
+                navigationPath.append(number)
             }
         case .juz(let number):
             if let range = try? environment.quran.versesForJuz(number) {

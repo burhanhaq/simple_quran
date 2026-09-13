@@ -8,19 +8,27 @@ enum AudioSessionMode {
     case idle
 }
 
+enum AudioSessionEvent {
+    case interruptionBegan
+    case interruptionEnded(shouldResume: Bool)
+    case routeChanged(AVAudioSession.RouteChangeReason)
+    case mediaServicesReset
+}
+
 @MainActor
 final class AudioSessionController {
     static let shared = AudioSessionController()
     private let logger = Logger(subsystem: "com.simpleAzaan.Simple-Quran1", category: "audio")
     private var observers: [NSObjectProtocol] = []
-    var onInterruption: ((Bool) -> Void)?
-    var onRouteChange: (() -> Void)?
+    var onEvent: ((AudioSessionEvent) -> Void)?
 
     func configure(_ mode: AudioSessionMode) throws {
         let session = AVAudioSession.sharedInstance()
         switch mode {
         case .playback:
-            try session.setCategory(.playback, mode: .spokenAudio, options: [.allowBluetoothHFP, .allowAirPlay])
+            // The playback category already supports Bluetooth A2DP. Input-only
+            // Bluetooth options are invalid here and cause OSStatus -50.
+            try session.setCategory(.playback, mode: .spokenAudio, options: [])
             try session.setActive(true)
         case .recording:
             try session.setCategory(.playAndRecord, mode: .spokenAudio, options: [.defaultToSpeaker, .allowBluetoothHFP])
@@ -39,10 +47,22 @@ final class AudioSessionController {
                 object: AVAudioSession.sharedInstance(),
                 queue: .main
             ) { [weak self] notification in
-                let type = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
-                let began = type == AVAudioSession.InterruptionType.began.rawValue
+                let rawType = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+                let rawOptions = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
                 Task { @MainActor in
-                    self?.onInterruption?(began)
+                    guard let self,
+                          let rawType,
+                          let type = AVAudioSession.InterruptionType(rawValue: rawType)
+                    else { return }
+                    switch type {
+                    case .began:
+                        self.onEvent?(.interruptionBegan)
+                    case .ended:
+                        let shouldResume = AVAudioSession.InterruptionOptions(rawValue: rawOptions).contains(.shouldResume)
+                        self.onEvent?(.interruptionEnded(shouldResume: shouldResume))
+                    @unknown default:
+                        break
+                    }
                 }
             }
         )
@@ -51,9 +71,11 @@ final class AudioSessionController {
                 forName: AVAudioSession.routeChangeNotification,
                 object: AVAudioSession.sharedInstance(),
                 queue: .main
-            ) { [weak self] _ in
+            ) { [weak self] notification in
+                let rawReason = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt ?? 0
                 Task { @MainActor in
-                    self?.onRouteChange?()
+                    let reason = AVAudioSession.RouteChangeReason(rawValue: rawReason) ?? .unknown
+                    self?.onEvent?(.routeChanged(reason))
                 }
             }
         )
@@ -65,7 +87,7 @@ final class AudioSessionController {
             ) { [weak self] _ in
                 Task { @MainActor in
                     self?.logger.error("Media services reset")
-                    self?.onRouteChange?()
+                    self?.onEvent?(.mediaServicesReset)
                 }
             }
         )
