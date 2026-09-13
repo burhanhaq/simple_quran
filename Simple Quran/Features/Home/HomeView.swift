@@ -24,7 +24,7 @@ struct HomeView: View {
                 .padding()
             }
             .background(Color.parchment.ignoresSafeArea())
-            .navigationTitle(String(localized: "Practice"))
+            .navigationTitle(String(localized: "Today"))
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -70,8 +70,8 @@ struct HomeView: View {
             .accessibilityIdentifier("home.continue")
         } else if sets.isEmpty {
             EmptyStateView(
-                title: String(localized: "Start a practice set"),
-                message: String(localized: "Choose ayahs you want to memorize — a passage, a few surahs, or a custom mix."),
+                title: String(localized: "Create your first collection"),
+                message: String(localized: "Save a passage, a surah, or a custom group of ayahs for focused practice."),
                 actionTitle: String(localized: "Browse the Quran")
             ) {
                 environment.selectedTab = .quran
@@ -86,7 +86,7 @@ struct HomeView: View {
                 .font(.headline)
                 .foregroundStyle(Color.appBrownText)
             if due.isEmpty {
-                Text(String(localized: "Nothing is due today. Practise a set whenever you’re ready."))
+                Text(String(localized: "Nothing is due today. Open a collection whenever you’re ready."))
                     .foregroundStyle(Color.secondaryWarm)
             } else {
                 ForEach(due, id: \.id) { set in
@@ -99,7 +99,7 @@ struct HomeView: View {
 
     private var recentSection: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(String(localized: "Recently practised"))
+            Text(String(localized: "Recently practiced"))
                 .font(.headline)
                 .foregroundStyle(Color.appBrownText)
             ForEach(sets.prefix(5), id: \.id) { set in
@@ -116,7 +116,7 @@ struct HomeView: View {
         return HStack {
             stat(String(localized: "Learning"), "\(learning)")
             stat(String(localized: "Due ayahs"), "\(dueAyahs)")
-            stat(String(localized: "Days practised"), "\(days)")
+            stat(String(localized: "Days practiced"), "\(days)")
         }
     }
 

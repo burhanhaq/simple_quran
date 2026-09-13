@@ -111,7 +111,7 @@ struct PrivacyView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text(String(localized: "Simple Quran is local-first. Sets, progress, downloads, and recordings stay on this device in v1."))
+                    Text(String(localized: "Simple Quran is local-first. Collections, progress, downloads, and recordings stay on this device."))
                     Text(String(localized: "The microphone is used only when you record an ayah. Recordings never leave the device unless you later choose a backup feature."))
                     Text(String(localized: "Downloaded recitation can be deleted in Settings. Personal recordings can be deleted per ayah or all at once."))
                     Text(String(localized: "No account is required. No analytics SDK is included."))

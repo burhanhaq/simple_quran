@@ -114,6 +114,7 @@ final class RecitationRecordingController: NSObject, AVAudioRecorderDelegate, AV
 
     func playLatest() async throws {
         guard let latestURL else { throw AppError.recordingFailed }
+        cancelComparisonPlayback()
         do {
             try AudioSessionController.shared.configure(.playback)
             let player = try AVAudioPlayer(contentsOf: latestURL)

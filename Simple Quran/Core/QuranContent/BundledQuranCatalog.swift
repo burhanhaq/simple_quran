@@ -43,11 +43,17 @@ nonisolated struct BundledQuranCatalog: QuranCatalog, Sendable {
         for fileSurah in decoded.surahs {
             let start = globalCursor
             for ayah in fileSurah.ayahs {
+                let presentation = Self.presentedText(
+                    ayah.t,
+                    surahNumber: fileSurah.number,
+                    ayahInSurah: ayah.n
+                )
                 let verse = QuranVerse(
                     globalAyah: ayah.g,
                     surahNumber: fileSurah.number,
                     ayahInSurah: ayah.n,
-                    text: ayah.t,
+                    text: presentation.text,
+                    showsBasmalaBefore: presentation.showsBasmala,
                     juz: ayah.j,
                     page: ayah.p,
                     sajdah: SajdahKind(rawValue: ayah.s ?? 0) ?? .none
@@ -80,6 +86,31 @@ nonisolated struct BundledQuranCatalog: QuranCatalog, Sendable {
         if strict, !integrity.isValid {
             throw AppError.corruptQuranData(integrity.issues.joined(separator: " "))
         }
+    }
+
+    private static func presentedText(
+        _ source: String,
+        surahNumber: Int,
+        ayahInSurah: Int
+    ) -> (text: String, showsBasmala: Bool) {
+        guard ayahInSurah == 1, surahNumber != 1, surahNumber != 9 else {
+            return (source, false)
+        }
+
+        // Tanzil includes the unnumbered basmala at the start of each surah's
+        // first ayah. Two surahs use a joined initial baa glyph, so remove the
+        // text through Ar-Raheem rather than matching one complete spelling.
+        let ending = "ٱلرَّحِيمِ"
+        guard let range = source.range(of: ending), range.lowerBound != source.startIndex else {
+            return (source, false)
+        }
+        let leading = source[..<range.upperBound]
+        guard leading.contains("سْمِ"), leading.contains("ٱللَّهِ") else {
+            return (source, false)
+        }
+        let remainder = source[range.upperBound...]
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return (remainder, true)
     }
 
     static func loadFromBundle(_ bundle: Bundle = .main) throws -> BundledQuranCatalog {

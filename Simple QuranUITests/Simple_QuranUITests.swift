@@ -9,7 +9,7 @@ final class Simple_QuranUITests: XCTestCase {
     func testFirstLaunchShowsPracticeHome() throws {
         let app = XCUIApplication()
         app.launch()
-        XCTAssertTrue(app.navigationBars["Practice"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.navigationBars["Today"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["home.settings"].exists)
     }
 
@@ -27,6 +27,7 @@ final class Simple_QuranUITests: XCTestCase {
         app.launch()
         app.tabBars.buttons["Quran"].tap()
         app.buttons["quran.surah.1"].tap()
+        app.buttons["Select"].tap()
         XCTAssertTrue(app.buttons["ayah.1"].waitForExistence(timeout: 5))
         app.buttons["ayah.1"].tap()
         app.buttons["ayah.7"].tap()
@@ -35,7 +36,7 @@ final class Simple_QuranUITests: XCTestCase {
         title.tap()
         title.typeText("Al-Fatiha")
         app.buttons["set.editor.save"].tap()
-        app.tabBars.buttons["My Sets"].tap()
+        app.tabBars.buttons["Collections"].tap()
         XCTAssertTrue(app.staticTexts["Al-Fatiha"].waitForExistence(timeout: 5))
     }
 

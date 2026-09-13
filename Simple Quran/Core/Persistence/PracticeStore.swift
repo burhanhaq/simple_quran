@@ -224,6 +224,6 @@ final class PracticeStore: PracticeStoring {
 
     private func sanitizedTitle(_ title: String) -> String {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? String(localized: "Untitled set") : trimmed
+        return trimmed.isEmpty ? String(localized: "Untitled collection") : trimmed
     }
 }

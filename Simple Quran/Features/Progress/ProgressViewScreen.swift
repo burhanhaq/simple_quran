@@ -11,7 +11,7 @@ struct ProgressViewScreen: View {
                     labeled(String(localized: "Currently learning"), "\(learningCount)")
                     labeled(String(localized: "Due for review"), "\(dueCount)")
                     labeled(String(localized: "Recall attempts"), "\(recallAttempts)")
-                    labeled(String(localized: "Days practised"), "\(daysPractised)")
+                    labeled(String(localized: "Days practiced"), "\(daysPractised)")
                 }
                 Section(String(localized: "Recent weak ayahs")) {
                     if weakAyahs.isEmpty {

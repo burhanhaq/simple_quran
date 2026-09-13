@@ -11,6 +11,7 @@ nonisolated struct QuranVerse: Equatable, Hashable, Sendable, Identifiable {
     var surahNumber: Int
     var ayahInSurah: Int
     var text: String
+    var showsBasmalaBefore: Bool = false
     var juz: Int
     var page: Int
     var sajdah: SajdahKind

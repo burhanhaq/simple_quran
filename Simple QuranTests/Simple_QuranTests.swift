@@ -17,6 +17,12 @@ struct QuranIntegrityTests {
         #expect(catalog.verse(globalAyah: 1)?.reference == "1:1")
         #expect(catalog.verse(globalAyah: 6236)?.reference == "114:6")
         #expect(catalog.surah(number: 9)?.ayahCount == 129)
+        #expect(catalog.verse(globalAyah: 1)?.showsBasmalaBefore == false)
+        #expect(catalog.verse(globalAyah: 8)?.showsBasmalaBefore == true)
+        #expect(catalog.verse(globalAyah: 8)?.text == "الٓمٓ")
+        #expect(catalog.verse(globalAyah: 1236)?.showsBasmalaBefore == false)
+        #expect(catalog.verse(globalAyah: 6099)?.showsBasmalaBefore == true)
+        #expect(catalog.verses.filter(\.showsBasmalaBefore).count == 112)
         let kahf = try catalog.range(surah: 18, startAyah: 1, endAyah: 10)
         #expect(kahf.count == 10)
         #expect(catalog.verses(in: kahf).first?.text.isEmpty == false)
@@ -24,6 +30,10 @@ struct QuranIntegrityTests {
 }
 
 struct PracticePlaybackCursorTests {
+    @Test func practiceStartsWithContinuousPlayback() {
+        #expect(PracticeSettings.default.pauseSeconds == 0)
+    }
+
     @Test func playbackCursorDoesNotMultiplySetRepeats() throws {
         let range = try VerseRange(startGlobalAyah: 1, endGlobalAyah: 1)
         var settings = PracticeSettings.default

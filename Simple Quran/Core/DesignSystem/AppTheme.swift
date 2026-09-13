@@ -95,12 +95,13 @@ struct QuranAyahText: View {
     var hidden: Bool
 
     var body: some View {
-        VStack(alignment: .trailing, spacing: 8) {
+        VStack(alignment: .leading, spacing: 10) {
             Text(hidden ? "••••••" : verse.text)
                 .font(.quran())
+                .lineSpacing(8)
                 .foregroundStyle(Color.appBrownText)
-                .multilineTextAlignment(.trailing)
-                .frame(maxWidth: .infinity, alignment: .trailing)
+                .multilineTextAlignment(.leading)
+                .frame(maxWidth: .infinity, alignment: .leading)
                 .environment(\.layoutDirection, .rightToLeft)
                 .accessibilityLabel(hidden ? String(localized: "Arabic hidden for recall") : verse.text)
             HStack {
@@ -113,16 +114,29 @@ struct QuranAyahText: View {
                     .foregroundStyle(Color.secondaryWarm)
             }
         }
-        .padding(14)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 16)
         .background(
             RoundedRectangle(cornerRadius: AppTheme.tightRadius, style: .continuous)
-                .fill(isCurrent ? Color.appHighlightFill.opacity(0.55) : Color.appWarmSurface)
+                .fill(isCurrent ? Color.appHighlightFill.opacity(0.55) : Color.clear)
         )
         .overlay(
             RoundedRectangle(cornerRadius: AppTheme.tightRadius, style: .continuous)
                 .stroke(isCurrent ? Color.gold : Color.clear, lineWidth: 1.5)
         )
         .accessibilityAddTraits(isCurrent ? .isSelected : [])
+    }
+}
+
+struct BasmalaHeader: View {
+    var body: some View {
+        Text("بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ")
+            .font(.quran(size: 25))
+            .foregroundStyle(Color.olive)
+            .multilineTextAlignment(.center)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .accessibilityLabel(String(localized: "Bismillah ir-Rahman ir-Raheem"))
     }
 }
 

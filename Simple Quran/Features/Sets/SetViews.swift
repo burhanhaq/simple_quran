@@ -12,11 +12,11 @@ struct SetListView: View {
             List {
                 let active = sets.filter { $0.archivedAt == nil }
                 let archived = sets.filter { $0.archivedAt != nil }
-                Section(String(localized: "My sets")) {
+                Section(String(localized: "Collections")) {
                     if active.isEmpty {
                         EmptyStateView(
-                            title: String(localized: "No sets yet"),
-                            message: String(localized: "Build a set from the Quran tab, then it will appear here for quick practice."),
+                            title: String(localized: "No collections yet"),
+                            message: String(localized: "Choose ayahs in the Quran and save them together for quick practice."),
                             actionTitle: String(localized: "Open Quran")
                         ) {
                             environment.selectedTab = .quran
@@ -27,9 +27,15 @@ struct SetListView: View {
                             NavigationLink {
                                 SetDetailView(practiceSet: set)
                             } label: {
-                                VStack(alignment: .leading, spacing: 4) {
-                                    Text(set.title).foregroundStyle(Color.appBrownText)
-                                    Text(summary(set)).font(.caption).foregroundStyle(Color.secondaryWarm)
+                                HStack(spacing: 12) {
+                                    Image(systemName: "text.book.closed")
+                                        .font(.title3)
+                                        .foregroundStyle(Color.gold)
+                                        .frame(width: 32)
+                                    VStack(alignment: .leading, spacing: 4) {
+                                        Text(set.title).font(.headline).foregroundStyle(Color.appBrownText)
+                                        Text(summary(set)).font(.caption).foregroundStyle(Color.secondaryWarm)
+                                    }
                                 }
                             }
                             .accessibilityIdentifier("sets.row.\(set.id.uuidString)")
@@ -50,7 +56,7 @@ struct SetListView: View {
             }
             .scrollContentBackground(.hidden)
             .background(Color.parchment)
-            .navigationTitle(String(localized: "My Sets"))
+            .navigationTitle(String(localized: "Collections"))
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
@@ -92,25 +98,47 @@ struct SetDetailView: View {
                 ForEach(practiceSet.orderedPassages, id: \.id) { passage in
                     passageCard(passage)
                 }
-                HStack {
-                    Button(String(localized: "Practise")) { showPractice = true }
-                        .buttonStyle(.borderedProminent)
-                        .tint(Color.gold)
-                        .accessibilityIdentifier("set.practise")
-                    Button(String(localized: "Download")) {
+                Button {
+                    showPractice = true
+                } label: {
+                    Label(String(localized: "Start Practice"), systemImage: "play.fill")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.large)
+                .tint(Color.gold)
+                .accessibilityIdentifier("set.practise")
+                Button {
                         environment.downloads.download(ayahs: allAyahs)
+                } label: {
+                    Label(String(localized: "Download for Offline Practice"), systemImage: "arrow.down.circle")
+                        .frame(maxWidth: .infinity)
                     }
                     .buttonStyle(.bordered)
-                }
-                HStack {
-                    Button(practiceSet.archivedAt == nil ? String(localized: "Archive") : String(localized: "Unarchive")) {
+            }
+            .padding()
+        }
+        .background(Color.parchment.ignoresSafeArea())
+        .navigationTitle(String(localized: "Collection"))
+        .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                Menu {
+                    Button(String(localized: "Edit Collection"), systemImage: "pencil") {
+                        showEditor = true
+                    }
+                    Button(
+                        practiceSet.archivedAt == nil ? String(localized: "Archive Collection") : String(localized: "Restore Collection"),
+                        systemImage: practiceSet.archivedAt == nil ? "archivebox" : "arrow.uturn.backward"
+                    ) {
                         do {
                             try environment.store.archive(practiceSet, archived: practiceSet.archivedAt == nil)
                         } catch {
                             errorMessage = UserFacingMessage.from(.persistenceFailure)
                         }
                     }
-                    Button(String(localized: "Delete"), role: .destructive) {
+                    Divider()
+                    Button(String(localized: "Delete Collection"), systemImage: "trash", role: .destructive) {
                         do {
                             try environment.store.delete(practiceSet)
                             dismiss()
@@ -118,17 +146,8 @@ struct SetDetailView: View {
                             errorMessage = UserFacingMessage.from(.persistenceFailure)
                         }
                     }
-                }
-            }
-            .padding()
-        }
-        .background(Color.parchment.ignoresSafeArea())
-        .navigationTitle(String(localized: "Set"))
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(String(localized: "Edit")) {
-                    showEditor = true
+                } label: {
+                    Image(systemName: "ellipsis.circle")
                 }
             }
         }
@@ -230,12 +249,12 @@ struct SetEditorView: View {
         NavigationStack {
             Form {
                 Section(String(localized: "Name")) {
-                    TextField(String(localized: "Set name"), text: Bindable(draft).title)
+                    TextField(String(localized: "Collection name"), text: Bindable(draft).title)
                         .accessibilityIdentifier("set.editor.title")
                 }
                 Section(String(localized: "Passages")) {
                     if draft.passages.isEmpty {
-                        Text(String(localized: "Add ayahs from the Quran tab. A set can mix passages from different surahs."))
+                        Text(String(localized: "Add ayahs from the Quran tab. A collection can include passages from different surahs."))
                             .foregroundStyle(Color.secondaryWarm)
                     }
                     ForEach(Array(draft.passages.enumerated()), id: \.element.id) { index, passage in
@@ -261,19 +280,21 @@ struct SetEditorView: View {
                             Text(value.label).tag(value)
                         }
                     }
-                    Picker(String(localized: "Repeat set"), selection: Bindable(draft).settings.setRepeatCount) {
+                    Picker(String(localized: "Repeat collection"), selection: Bindable(draft).settings.setRepeatCount) {
                         ForEach(RepeatCount.setPresets) { value in
                             Text(value.label).tag(value)
                         }
                     }
                     Stepper(value: Bindable(draft).settings.pauseSeconds, in: 0...5) {
-                        Text(String(localized: "Pause \(draft.settings.pauseSeconds)s"))
+                        Text(draft.settings.pauseSeconds == 0
+                             ? String(localized: "Pause after ayah: Off")
+                             : String(localized: "Pause after ayah: \(draft.settings.pauseSeconds)s"))
                     }
                     Toggle(String(localized: "Hide Arabic for recall"), isOn: Bindable(draft).settings.hideArabic)
                     Toggle(String(localized: "Advance manually"), isOn: Bindable(draft).settings.advanceManually)
                 }
             }
-            .navigationTitle(draft.existingID == nil ? String(localized: "New set") : String(localized: "Edit set"))
+            .navigationTitle(draft.existingID == nil ? String(localized: "New Collection") : String(localized: "Edit Collection"))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(String(localized: "Cancel")) { dismiss() }

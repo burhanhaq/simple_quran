@@ -15,13 +15,13 @@ struct AppRootView: View {
             }
         } else {
             TabView(selection: $environment.selectedTab) {
-                Tab(String(localized: "Home"), systemImage: "house", value: AppTab.home) {
+                Tab(String(localized: "Today"), systemImage: "sun.max", value: AppTab.home) {
                     HomeView()
                 }
                 Tab(String(localized: "Quran"), systemImage: "book", value: AppTab.quran) {
                     QuranBrowserView()
                 }
-                Tab(String(localized: "My Sets"), systemImage: "rectangle.stack", value: AppTab.sets) {
+                Tab(String(localized: "Collections"), systemImage: "rectangle.stack", value: AppTab.sets) {
                     SetListView()
                 }
                 Tab(String(localized: "Progress"), systemImage: "chart.line.uptrend.xyaxis", value: AppTab.progress) {
@@ -69,7 +69,8 @@ private struct GlobalMiniPlayer: View {
             }
             .accessibilityLabel(environment.playback.snapshot.isPlaying ? String(localized: "Pause") : String(localized: "Play"))
         }
-        .padding()
-        .background(.ultraThinMaterial)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.regularMaterial)
     }
 }

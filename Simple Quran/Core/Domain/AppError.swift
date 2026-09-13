@@ -38,13 +38,13 @@ nonisolated struct UserFacingMessage: Equatable, Sendable {
         case .persistenceFailure:
             UserFacingMessage(
                 title: String(localized: "Your progress couldn’t be saved"),
-                message: String(localized: "Please try again. Your previous sets and ratings are still on this device."),
+                message: String(localized: "Please try again. Your previous collections and ratings are still on this device."),
                 recovery: String(localized: "If this keeps happening, restart the app.")
             )
         case .audioUnavailable:
             UserFacingMessage(
                 title: String(localized: "Recitation isn’t available right now"),
-                message: String(localized: "Check your connection, or download this set to practise offline."),
+                message: String(localized: "Check your connection, or download this collection to practice offline."),
                 recovery: String(localized: "Connect to the internet or open Downloads to save audio.")
             )
         case .downloadFailed, .httpStatus(_):
@@ -80,7 +80,7 @@ nonisolated struct UserFacingMessage: Equatable, Sendable {
         case .offlineAudioMissing:
             UserFacingMessage(
                 title: String(localized: "This ayah isn’t downloaded"),
-                message: String(localized: "Download the set to keep practising without a connection."),
+                message: String(localized: "Download the collection to keep practicing without a connection."),
                 recovery: String(localized: "Download audio, or connect to the internet.")
             )
         case .cancelled:

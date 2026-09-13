@@ -34,11 +34,26 @@ struct QuranBrowserView: View {
                 case .surahs:
                     ForEach(environment.quran.surahs) { surah in
                         NavigationLink(value: surah.number) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(surah.displayName).foregroundStyle(Color.appBrownText)
-                                Text("\(surah.arabicName) · \(surah.ayahCount)")
-                                    .font(.caption)
-                                    .foregroundStyle(Color.secondaryWarm)
+                            HStack(spacing: 12) {
+                                Text("\(surah.number)")
+                                    .font(.caption.weight(.semibold))
+                                    .foregroundStyle(Color.olive)
+                                    .frame(width: 30, height: 30)
+                                    .background(Color.olive.opacity(0.12), in: Circle())
+                                VStack(alignment: .leading, spacing: 3) {
+                                    Text(surah.englishName)
+                                        .font(.headline)
+                                        .foregroundStyle(Color.appBrownText)
+                                    Text("\(surah.translation) · \(surah.ayahCount) ayahs")
+                                        .font(.caption)
+                                        .foregroundStyle(Color.secondaryWarm)
+                                }
+                                Spacer()
+                                Text(surah.arabicName)
+                                    .font(.quran(size: 20))
+                                    .foregroundStyle(Color.appBrownText)
+                                    .multilineTextAlignment(.leading)
+                                    .environment(\.layoutDirection, .rightToLeft)
                             }
                         }
                         .accessibilityIdentifier("quran.surah.\(surah.number)")
@@ -85,7 +100,7 @@ struct QuranBrowserView: View {
                 }
                 ToolbarItem(placement: .topBarTrailing) {
                     if !draft.passages.isEmpty {
-                        Button(String(localized: "Set (\(draft.passages.count))")) {
+                        Button(String(localized: "Collection · \(draft.passages.count)")) {
                             showEditor = true
                         }
                         .accessibilityIdentifier("quran.openDraft")
@@ -165,7 +180,7 @@ final class SetDraft {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
         if !trimmed.isEmpty { return trimmed }
         if !titleHint.isEmpty { return titleHint }
-        return String(localized: "Untitled set")
+        return String(localized: "Untitled collection")
     }
 
     func append(_ range: VerseRange) {
@@ -182,23 +197,34 @@ struct SurahDetailView: View {
     var draft: SetDraft
     @State private var startAyah: Int?
     @State private var showEditor = false
+    @State private var isSelecting = false
 
     var body: some View {
         let verses = environment.quran.verses(in: (try? VerseRange(startGlobalAyah: surah.startGlobalAyah, endGlobalAyah: surah.endGlobalAyah)) ?? (try! VerseRange(startGlobalAyah: 1, endGlobalAyah: 1)))
         ScrollView {
             LazyVStack(spacing: 10) {
                 ForEach(verses) { verse in
-                    Button {
-                        select(verse)
-                    } label: {
-                        QuranAyahText(
-                            verse: verse,
-                            isCurrent: isSelected(verse),
-                            hidden: false
-                        )
+                    VStack(spacing: 2) {
+                        if verse.showsBasmalaBefore {
+                            BasmalaHeader()
+                        }
+                        if isSelecting {
+                            Button {
+                                select(verse)
+                            } label: {
+                                QuranAyahText(
+                                    verse: verse,
+                                    isCurrent: isSelected(verse),
+                                    hidden: false
+                                )
+                            }
+                            .buttonStyle(.plain)
+                            .accessibilityIdentifier("ayah.\(verse.globalAyah)")
+                        } else {
+                            QuranAyahText(verse: verse, isCurrent: false, hidden: false)
+                                .accessibilityIdentifier("ayah.\(verse.globalAyah)")
+                        }
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("ayah.\(verse.globalAyah)")
                 }
             }
             .padding()
@@ -208,23 +234,29 @@ struct SurahDetailView: View {
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
             ToolbarItem(placement: .bottomBar) {
-                if let startAyah {
-                    Text(String(localized: "Start \(surah.number):\(startAyah). Tap an end ayah."))
-                        .font(.caption)
-                        .foregroundStyle(Color.secondaryWarm)
-                } else {
-                    Text(String(localized: "Tap an ayah to start a range."))
-                        .font(.caption)
-                        .foregroundStyle(Color.secondaryWarm)
+                if isSelecting {
+                    if let startAyah {
+                        Text(String(localized: "Starts at \(surah.number):\(startAyah) · Choose the last ayah"))
+                            .font(.caption)
+                            .foregroundStyle(Color.secondaryWarm)
+                    } else {
+                        Text(String(localized: "Choose the first ayah in your passage"))
+                            .font(.caption)
+                            .foregroundStyle(Color.secondaryWarm)
+                    }
                 }
             }
-            ToolbarItem(placement: .topBarTrailing) {
-                Button(String(localized: "Whole surah")) {
-                    if let range = try? environment.quran.range(surah: surah.number, startAyah: 1, endAyah: surah.ayahCount) {
-                        draft.append(range)
-                        draft.titleHint = surah.englishName
-                        showEditor = true
+            ToolbarItemGroup(placement: .topBarTrailing) {
+                Button(isSelecting ? String(localized: "Done") : String(localized: "Select")) {
+                    isSelecting.toggle()
+                    startAyah = nil
+                }
+                Menu {
+                    Button(String(localized: "Add Whole Surah"), systemImage: "plus.rectangle.on.rectangle") {
+                        addWholeSurah()
                     }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
                 }
             }
         }
@@ -241,6 +273,7 @@ struct SurahDetailView: View {
                 draft.append(range)
                 draft.titleHint = "\(surah.englishName) \(startIndex)–\(endIndex)"
                 startAyah = nil
+                isSelecting = false
                 showEditor = true
             }
         } else {
@@ -250,5 +283,13 @@ struct SurahDetailView: View {
 
     private func isSelected(_ verse: QuranVerse) -> Bool {
         startAyah == verse.ayahInSurah
+    }
+
+    private func addWholeSurah() {
+        if let range = try? environment.quran.range(surah: surah.number, startAyah: 1, endAyah: surah.ayahCount) {
+            draft.append(range)
+            draft.titleHint = surah.englishName
+            showEditor = true
+        }
     }
 }

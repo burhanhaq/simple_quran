@@ -47,6 +47,9 @@ struct SimpleQuranApp: App {
         let recorder = RecitationRecordingController()
         recorder.attach(context: container.mainContext)
         let store = PracticeStore(context: container.mainContext)
+        if persistenceLoadError == nil {
+            migrateLegacyPauseDefault(in: container.mainContext)
+        }
 
         let catalog: BundledQuranCatalog
         var loadError: UserFacingMessage?
@@ -81,6 +84,21 @@ struct SimpleQuranApp: App {
                 .environment(environment)
                 .modelContainer(container)
         }
+    }
+}
+
+private func migrateLegacyPauseDefault(in context: ModelContext) {
+    let key = "migration.continuousPlaybackDefault.v1"
+    guard !UserDefaults.standard.bool(forKey: key) else { return }
+    do {
+        let collections = try context.fetch(FetchDescriptor<PracticeSet>())
+        for collection in collections where collection.pauseSeconds == 1 {
+            collection.pauseSeconds = 0
+        }
+        try context.save()
+        UserDefaults.standard.set(true, forKey: key)
+    } catch {
+        // Leave the migration pending so a later launch can retry safely.
     }
 }
 

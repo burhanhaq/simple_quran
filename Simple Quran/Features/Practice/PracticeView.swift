@@ -21,14 +21,34 @@ struct PracticeView: View {
                 ToolbarItem(placement: .cancellationAction) {
                     Button(String(localized: "Close")) { close() }
                 }
-                ToolbarItem(placement: .topBarTrailing) {
-                    Menu(String(localized: "Repeats")) {
-                        ForEach(RepeatCount.ayahPresets, id: \.self) { value in
-                            Button(String(localized: "Ayah \(value.label)")) {
-                                apply { $0.ayahRepeatCount = value }
+                ToolbarItemGroup(placement: .topBarTrailing) {
+                    Menu {
+                        Section(String(localized: "Repeat Each Ayah")) {
+                            ForEach(RepeatCount.ayahPresets, id: \.self) { value in
+                                Button(value.label) {
+                                    apply { $0.ayahRepeatCount = value }
+                                }
                             }
                         }
+                        Section(String(localized: "Repeat Collection")) {
+                            ForEach(RepeatCount.setPresets, id: \.self) { value in
+                                Button(value.label) {
+                                    apply { $0.setRepeatCount = value }
+                                }
+                            }
+                        }
+                        Button(
+                            environment.playback.snapshot.hideArabic
+                                ? String(localized: "Show Arabic")
+                                : String(localized: "Hide Arabic"),
+                            systemImage: environment.playback.snapshot.hideArabic ? "eye" : "eye.slash"
+                        ) {
+                            environment.playback.toggleArabicHidden()
+                        }
+                    } label: {
+                        Image(systemName: "ellipsis.circle")
                     }
+                    Button(String(localized: "Done")) { showRating = true }
                 }
             }
             .onAppear(perform: start)
@@ -80,12 +100,17 @@ struct PracticeView: View {
             ScrollView {
                 LazyVStack(spacing: 8) {
                     ForEach(environment.playback.versesInSet) { verse in
-                        QuranAyahText(
-                            verse: verse,
-                            isCurrent: verse.globalAyah == environment.playback.snapshot.currentGlobalAyah,
-                            hidden: environment.playback.snapshot.hideArabic && verse.globalAyah == environment.playback.snapshot.currentGlobalAyah
-                        )
-                        .id(verse.globalAyah)
+                        VStack(spacing: 2) {
+                            if verse.showsBasmalaBefore {
+                                BasmalaHeader()
+                            }
+                            QuranAyahText(
+                                verse: verse,
+                                isCurrent: verse.globalAyah == environment.playback.snapshot.currentGlobalAyah,
+                                hidden: environment.playback.snapshot.hideArabic && verse.globalAyah == environment.playback.snapshot.currentGlobalAyah
+                            )
+                            .id(verse.globalAyah)
+                        }
                     }
                 }
                 .padding()
@@ -101,9 +126,35 @@ struct PracticeView: View {
     }
 
     private var controls: some View {
-        VStack(spacing: 12) {
+        VStack(spacing: 14) {
+            HStack {
+                if let ayah = environment.playback.snapshot.currentGlobalAyah,
+                   let verse = environment.quran.verse(globalAyah: ayah) {
+                    Text(String(localized: "Ayah \(verse.reference)"))
+                        .font(.subheadline.weight(.semibold))
+                        .foregroundStyle(Color.appBrownText)
+                }
+                Spacer()
+                Button {
+                    environment.playback.toggleArabicHidden()
+                } label: {
+                    Image(systemName: environment.playback.snapshot.hideArabic ? "eye.slash.fill" : "eye")
+                }
+                .accessibilityLabel(
+                    environment.playback.snapshot.hideArabic
+                        ? String(localized: "Show Arabic")
+                        : String(localized: "Hide Arabic")
+                )
+                Button {
+                    markCurrentForReview()
+                } label: {
+                    Image(systemName: "bookmark")
+                }
+                .accessibilityLabel(String(localized: "Mark ayah for review"))
+            }
+            .foregroundStyle(Color.olive)
             if !environment.playback.snapshot.repetitionLabel.isEmpty {
-                Text(String(localized: "Ayah repeat \(environment.playback.snapshot.repetitionLabel)"))
+                Text(String(localized: "Repeat \(environment.playback.snapshot.repetitionLabel)"))
                     .font(.caption)
                     .foregroundStyle(Color.secondaryWarm)
             }
@@ -126,34 +177,70 @@ struct PracticeView: View {
                 .accessibilityLabel(String(localized: "Next ayah"))
             }
             .foregroundStyle(Color.gold)
-            HStack {
-                Toggle(String(localized: "Hide Arabic"), isOn: hideBinding)
-                    .tint(Color.olive)
-                Button(String(localized: "Weak")) {
-                    if let ayah = environment.playback.snapshot.currentGlobalAyah {
-                        try? environment.store.markWeak(globalAyah: ayah, weak: true)
-                    }
+            Divider().overlay(Color.secondaryWarm.opacity(0.25))
+            recordingControls
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 14)
+        .background(.regularMaterial)
+    }
+
+    @ViewBuilder
+    private var recordingControls: some View {
+        switch environment.recorder.phase {
+        case .recording, .countdown, .finishing:
+            Button {
+                Task { await toggleRecord() }
+            } label: {
+                Label(recordButtonTitle, systemImage: environment.recorder.phase == .recording ? "stop.fill" : "mic.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.borderedProminent)
+            .tint(environment.recorder.phase == .recording ? Color.dangerWarm : Color.olive)
+            .accessibilityIdentifier("practice.record")
+        case .comparing:
+            HStack(spacing: 10) {
+                Button {
+                    Task { await playReferenceAyah() }
+                } label: {
+                    Label(String(localized: "Play Ayah"), systemImage: "speaker.wave.2.fill")
+                        .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.bordered)
-            }
-            HStack {
-                Button(recordButtonTitle) { Task { await toggleRecord() } }
-                    .buttonStyle(.borderedProminent)
-                    .tint(environment.recorder.phase == .recording ? Color.dangerWarm : Color.olive)
-                    .accessibilityIdentifier("practice.record")
-                if environment.recorder.phase == .comparing {
-                    Button(String(localized: "Compare")) { Task { await runComparison() } }
-                        .buttonStyle(.bordered)
-                    Button(String(localized: "Delete take"), role: .destructive) {
+
+                Button {
+                    Task { await playMyRecording() }
+                } label: {
+                    Label(String(localized: "My Recording"), systemImage: "waveform")
+                        .frame(maxWidth: .infinity)
+                }
+                .buttonStyle(.bordered)
+
+                Menu {
+                    Button(String(localized: "Record Again"), systemImage: "mic.fill") {
+                        Task { await toggleRecord() }
+                    }
+                    Button(String(localized: "Delete Recording"), systemImage: "trash", role: .destructive) {
                         environment.recorder.deleteLatest()
                     }
+                } label: {
+                    Image(systemName: "ellipsis.circle")
+                        .font(.title3)
+                        .frame(width: 36, height: 36)
                 }
             }
-            Button(String(localized: "Finish & rate")) { showRating = true }
-                .buttonStyle(.bordered)
+            .tint(Color.olive)
+        case .idle:
+            Button {
+                Task { await toggleRecord() }
+            } label: {
+                Label(String(localized: "Record This Ayah"), systemImage: "mic.fill")
+                    .frame(maxWidth: .infinity)
+            }
+            .buttonStyle(.bordered)
+            .tint(Color.olive)
+            .accessibilityIdentifier("practice.record")
         }
-        .padding()
-        .background(.ultraThinMaterial)
     }
 
     private var recordingBanner: some View {
@@ -178,18 +265,12 @@ struct PracticeView: View {
             .navigationTitle(String(localized: "How did recall feel?"))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {
-                    Button(String(localized: "Skip")) { showRating = false }
+                    Button(String(localized: "Skip Rating")) { finishWithoutRating() }
                 }
             }
         }
         .presentationDetents([.medium])
-    }
-
-    private var hideBinding: Binding<Bool> {
-        Binding(
-            get: { environment.playback.snapshot.hideArabic },
-            set: { _ in environment.playback.toggleArabicHidden() }
-        )
+        .interactiveDismissDisabled()
     }
 
     private var recordButtonTitle: String {
@@ -197,7 +278,7 @@ struct PracticeView: View {
         case .recording: String(localized: "Stop")
         case .finishing: String(localized: "Saving…")
         case .countdown(let value): String(localized: "\(value)")
-        default: String(localized: "Record ayah")
+        default: String(localized: "Record This Ayah")
         }
     }
 
@@ -258,22 +339,44 @@ struct PracticeView: View {
             return
         default:
             environment.playback.pause()
+            comparisonPlayer.cancel()
+            environment.recorder.cancelComparisonPlayback()
             guard let ayah = environment.playback.snapshot.currentGlobalAyah else { return }
             await environment.recorder.startRecording(globalAyah: ayah)
         }
     }
 
-    private func runComparison() async {
+    private func playReferenceAyah() async {
         guard let ayah = environment.playback.snapshot.currentGlobalAyah else { return }
         environment.playback.pause()
+        environment.recorder.cancelComparisonPlayback()
         do {
-            try await playReciter(ayah)
-            try await environment.recorder.playLatest()
             try await playReciter(ayah)
         } catch is CancellationError {
             return
         } catch {
             environment.playback.userMessage = UserFacingMessage.from(.audioUnavailable)
+        }
+    }
+
+    private func playMyRecording() async {
+        environment.playback.pause()
+        comparisonPlayer.cancel()
+        do {
+            try await environment.recorder.playLatest()
+        } catch is CancellationError {
+            return
+        } catch {
+            environment.playback.userMessage = UserFacingMessage.from(.recordingFailed)
+        }
+    }
+
+    private func markCurrentForReview() {
+        guard let ayah = environment.playback.snapshot.currentGlobalAyah else { return }
+        do {
+            try environment.store.markWeak(globalAyah: ayah, weak: true)
+        } catch {
+            environment.playback.userMessage = UserFacingMessage.from(.persistenceFailure)
         }
     }
 
@@ -301,6 +404,33 @@ struct PracticeView: View {
                     lastAyah: environment.playback.snapshot.currentGlobalAyah,
                     completed: true,
                     rating: rating
+                )
+            }
+        } catch {
+            environment.playback.userMessage = UserFacingMessage.from(.persistenceFailure)
+            return
+        }
+        showRating = false
+        environment.playback.stop()
+        dismiss()
+    }
+
+    private func finishWithoutRating() {
+        environment.playback.pause()
+        let ayahs = Array(environment.playback.coveredAyahs)
+        do {
+            try environment.store.recordExposure(
+                ayahs: ayahs,
+                seconds: environment.playback.listeningSeconds
+            )
+            if let session = environment.playback.session {
+                try environment.store.finishSession(
+                    session,
+                    coveredAyahs: ayahs.count,
+                    repetitions: environment.playback.repetitionCount,
+                    lastAyah: environment.playback.snapshot.currentGlobalAyah,
+                    completed: true,
+                    rating: nil
                 )
             }
         } catch {
