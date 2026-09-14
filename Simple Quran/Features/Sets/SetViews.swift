@@ -140,6 +140,7 @@ struct SetDetailView: View {
                     Divider()
                     Button(String(localized: "Delete Collection"), systemImage: "trash", role: .destructive) {
                         do {
+                            environment.recorder.deleteRecordings(for: practiceSet.id)
                             try environment.store.delete(practiceSet)
                             dismiss()
                         } catch {

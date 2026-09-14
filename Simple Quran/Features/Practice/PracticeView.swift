@@ -51,7 +51,7 @@ struct PracticeView: View {
                                 }
                             }
                         }
-                        if environment.recorder.latestURL != nil {
+                        if environment.recorder.hasRecording {
                             Divider()
                             Button(String(localized: "Delete Recording"), systemImage: "trash", role: .destructive) {
                                 environment.recorder.deleteLatest()
@@ -72,11 +72,8 @@ struct PracticeView: View {
                 environment.recorder.stopRecording()
                 environment.recorder.cancelComparisonPlayback()
             }
-            .onChange(of: environment.playback.snapshot.currentGlobalAyah) { _, ayah in
+            .onChange(of: environment.playback.snapshot.currentGlobalAyah) { _, _ in
                 environment.recorder.cancelComparisonPlayback()
-                if let ayah {
-                    environment.recorder.selectAyah(ayah)
-                }
                 loadCurrentReviewState()
             }
             .sheet(isPresented: $showRating) {
@@ -231,12 +228,17 @@ struct PracticeView: View {
                     .font(.title2)
                     .frame(width: 44, height: 44)
             }
-            .foregroundStyle(Color.olive)
-            .disabled(environment.recorder.latestURL == nil || isRecordingBusy)
+            .foregroundStyle(environment.recorder.hasRecording ? Color.olive : Color.secondaryWarm.opacity(0.55))
+            .disabled(!environment.recorder.hasRecording || isRecordingBusy)
             .accessibilityLabel(
                 environment.recorder.isPlayingComparison
                     ? String(localized: "Stop my recording")
                     : String(localized: "Play my recording")
+            )
+            .accessibilityHint(
+                environment.recorder.hasRecording
+                    ? ""
+                    : String(localized: "Record this collection to enable playback")
             )
 
             Spacer(minLength: 4)
@@ -321,8 +323,8 @@ struct PracticeView: View {
         case .recording: String(localized: "Stop recording")
         case .finishing: String(localized: "Saving recording")
         case .countdown(let value): String(localized: "Recording in \(value)")
-        case .idle: String(localized: "Record this ayah")
-        case .comparing: String(localized: "Record this ayah again")
+        case .idle: String(localized: "Record this collection")
+        case .comparing: String(localized: "Record this collection again")
         }
     }
 
@@ -333,9 +335,7 @@ struct PracticeView: View {
             resume: true,
             allowStreaming: environment.settings.streamWhenMissing || environment.downloads.downloadedCount(in: practiceSet.orderedPassages.flatMap(\.range.globalAyahs)) == practiceSet.orderedPassages.map(\.range.count).reduce(0, +)
         )
-        if let ayah = environment.playback.snapshot.currentGlobalAyah {
-            environment.recorder.selectAyah(ayah)
-        }
+        environment.recorder.selectCollection(practiceSet.id)
     }
 
     private func close() {
@@ -384,8 +384,7 @@ struct PracticeView: View {
             guard beginSessionIfNeeded() else { return }
             environment.playback.pause()
             environment.recorder.cancelComparisonPlayback()
-            guard let ayah = environment.playback.snapshot.currentGlobalAyah else { return }
-            await environment.recorder.startRecording(globalAyah: ayah)
+            await environment.recorder.startRecording(collectionID: practiceSet.id)
         }
     }
 
@@ -411,7 +410,7 @@ struct PracticeView: View {
         guard beginSessionIfNeeded() else { return }
         environment.playback.pause()
         do {
-            try await environment.recorder.playLatest()
+            try await environment.recorder.playRecording()
         } catch is CancellationError {
             return
         } catch {

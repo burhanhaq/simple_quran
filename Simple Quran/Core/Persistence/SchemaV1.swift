@@ -233,14 +233,24 @@ enum DownloadStatus: String, Codable {
 @Model
 final class RecitationRecordingRecord {
     @Attribute(.unique) var id: UUID
+    // Optional for existing ayah recordings. New records are scoped to a practice
+    // collection; legacy records remain removable from Settings.
+    var collectionID: UUID?
     var globalAyah: Int
     var createdAt: Date
     var isPinned: Bool
     var isLatest: Bool
     var relativePath: String
 
-    init(id: UUID = UUID(), globalAyah: Int, relativePath: String, isLatest: Bool = true) {
+    init(
+        id: UUID = UUID(),
+        collectionID: UUID? = nil,
+        globalAyah: Int = 0,
+        relativePath: String,
+        isLatest: Bool = true
+    ) {
         self.id = id
+        self.collectionID = collectionID
         self.globalAyah = globalAyah
         self.createdAt = .now
         self.isPinned = false

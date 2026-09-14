@@ -19,13 +19,16 @@ final class RecitationRecordingController: NSObject, AVAudioRecorderDelegate, AV
     private var player: AVAudioPlayer?
     private var context: ModelContext?
     private var countdownToken: UUID?
-    private var pendingRecording: (id: UUID, ayah: Int, url: URL)?
+    private var pendingRecording: (id: UUID, collectionID: UUID, url: URL)?
     private var playbackContinuation: CheckedContinuation<Void, Error>?
     var phase: RecordingPhase = .idle
-    var currentAyah: Int?
     var userMessage: UserFacingMessage?
-    var latestURL: URL?
+    private var latestURL: URL?
     var isPlayingComparison = false
+
+    /// Whether the selected practice collection has a playable recording.
+    var hasRecording: Bool { latestURL != nil }
+    private var currentCollectionID: UUID?
 
     func attach(context: ModelContext) {
         self.context = context
@@ -52,9 +55,9 @@ final class RecitationRecordingController: NSObject, AVAudioRecorderDelegate, AV
         await AVAudioApplication.requestRecordPermission()
     }
 
-    func startRecording(globalAyah: Int) async {
+    func startRecording(collectionID: UUID) async {
         userMessage = nil
-        currentAyah = globalAyah
+        currentCollectionID = collectionID
         let token = UUID()
         countdownToken = token
         let granted = await requestPermission()
@@ -83,7 +86,7 @@ final class RecitationRecordingController: NSObject, AVAudioRecorderDelegate, AV
             let recorder = try AVAudioRecorder(url: url, settings: settings)
             recorder.delegate = self
             recorder.isMeteringEnabled = true
-            pendingRecording = (id, globalAyah, url)
+            pendingRecording = (id, collectionID, url)
             guard recorder.record() else { throw AppError.recordingFailed }
             self.recorder = recorder
             countdownToken = nil
@@ -112,7 +115,7 @@ final class RecitationRecordingController: NSObject, AVAudioRecorderDelegate, AV
         }
     }
 
-    func playLatest() async throws {
+    func playRecording() async throws {
         guard let latestURL else { throw AppError.recordingFailed }
         cancelComparisonPlayback()
         do {
@@ -135,10 +138,10 @@ final class RecitationRecordingController: NSObject, AVAudioRecorderDelegate, AV
         }
     }
 
-    func selectAyah(_ globalAyah: Int) {
+    func selectCollection(_ collectionID: UUID) {
+        currentCollectionID = collectionID
         guard phase != .recording, phase != .finishing, !isCountingDown else { return }
-        currentAyah = globalAyah
-        latestURL = latestURL(for: globalAyah)
+        latestURL = latestURL(for: collectionID)
         phase = latestURL == nil ? .idle : .comparing
     }
 
@@ -152,17 +155,14 @@ final class RecitationRecordingController: NSObject, AVAudioRecorderDelegate, AV
     }
 
     func deleteLatest() {
-        guard let currentAyah else { return }
-        let descriptor = FetchDescriptor<RecitationRecordingRecord>(
-            predicate: #Predicate { $0.globalAyah == currentAyah && $0.isLatest == true }
-        )
-        if let record = try? context?.fetch(descriptor).first {
-            if let url = try? fileURL(id: record.id) {
-                try? FileManager.default.removeItem(at: url)
-            }
-            context?.delete(record)
-            try? context?.save()
+        guard let currentCollectionID,
+              let record = latestRecord(for: currentCollectionID)
+        else { return }
+        if let url = try? fileURL(id: record.id) {
+            try? FileManager.default.removeItem(at: url)
         }
+        context?.delete(record)
+        try? context?.save()
         latestURL = nil
         phase = .idle
     }
@@ -180,22 +180,33 @@ final class RecitationRecordingController: NSObject, AVAudioRecorderDelegate, AV
         phase = .idle
     }
 
-    func pinLatest() {
-        guard let currentAyah else { return }
-        let descriptor = FetchDescriptor<RecitationRecordingRecord>(
-            predicate: #Predicate { $0.globalAyah == currentAyah && $0.isLatest == true }
-        )
-        if let record = try? context?.fetch(descriptor).first {
-            record.isPinned = true
-            try? context?.save()
+    func deleteRecordings(for collectionID: UUID) {
+        let records = ((try? context?.fetch(FetchDescriptor<RecitationRecordingRecord>())) ?? [])
+            .filter { $0.collectionID == collectionID }
+        for record in records {
+            if let url = try? fileURL(id: record.id) {
+                try? FileManager.default.removeItem(at: url)
+            }
+            context?.delete(record)
         }
+        try? context?.save()
+
+        guard currentCollectionID == collectionID else { return }
+        cancelComparisonPlayback()
+        latestURL = nil
+        phase = .idle
     }
 
-    func latestURL(for globalAyah: Int) -> URL? {
-        let descriptor = FetchDescriptor<RecitationRecordingRecord>(
-            predicate: #Predicate { $0.globalAyah == globalAyah && $0.isLatest == true }
-        )
-        guard let record = try? context?.fetch(descriptor).first,
+    func pinLatest() {
+        guard let currentCollectionID,
+              let record = latestRecord(for: currentCollectionID)
+        else { return }
+        record.isPinned = true
+        try? context?.save()
+    }
+
+    func latestURL(for collectionID: UUID) -> URL? {
+        guard let record = latestRecord(for: collectionID),
               let url = try? fileURL(id: record.id),
               FileManager.default.fileExists(atPath: url.path)
         else { return nil }
@@ -214,10 +225,12 @@ final class RecitationRecordingController: NSObject, AVAudioRecorderDelegate, AV
                 return
             }
             do {
-                try self.persist(id: pending.id, globalAyah: pending.ayah, relativePath: pending.url.lastPathComponent)
-                self.latestURL = pending.url
+                try self.persist(id: pending.id, collectionID: pending.collectionID, relativePath: pending.url.lastPathComponent)
+                self.latestURL = self.currentCollectionID == pending.collectionID
+                    ? pending.url
+                    : self.currentCollectionID.flatMap(self.latestURL(for:))
                 self.pendingRecording = nil
-                self.phase = .comparing
+                self.phase = self.latestURL == nil ? .idle : .comparing
                 try AudioSessionController.shared.configure(.playback)
             } catch {
                 try? FileManager.default.removeItem(at: pending.url)
@@ -243,12 +256,10 @@ final class RecitationRecordingController: NSObject, AVAudioRecorderDelegate, AV
         }
     }
 
-    private func persist(id: UUID, globalAyah: Int, relativePath: String) throws {
+    private func persist(id: UUID, collectionID: UUID, relativePath: String) throws {
         guard let context else { throw AppError.persistenceFailure }
-        let previous = FetchDescriptor<RecitationRecordingRecord>(
-            predicate: #Predicate { $0.globalAyah == globalAyah && $0.isLatest == true }
-        )
-        let records = try context.fetch(previous)
+        let records = try context.fetch(FetchDescriptor<RecitationRecordingRecord>())
+            .filter { $0.collectionID == collectionID && $0.isLatest }
         var obsoleteFiles: [URL] = []
         for record in records {
             if record.isPinned {
@@ -258,7 +269,12 @@ final class RecitationRecordingController: NSObject, AVAudioRecorderDelegate, AV
                 context.delete(record)
             }
         }
-        let created = RecitationRecordingRecord(id: id, globalAyah: globalAyah, relativePath: relativePath, isLatest: true)
+        let created = RecitationRecordingRecord(
+            id: id,
+            collectionID: collectionID,
+            relativePath: relativePath,
+            isLatest: true
+        )
         context.insert(created)
         do {
             try context.save()
@@ -272,5 +288,12 @@ final class RecitationRecordingController: NSObject, AVAudioRecorderDelegate, AV
     private var isCountingDown: Bool {
         if case .countdown = phase { return true }
         return false
+    }
+
+    private func latestRecord(for collectionID: UUID) -> RecitationRecordingRecord? {
+        let records = (try? context?.fetch(FetchDescriptor<RecitationRecordingRecord>())) ?? []
+        return records
+            .filter { $0.collectionID == collectionID && $0.isLatest }
+            .max { $0.createdAt < $1.createdAt }
     }
 }
