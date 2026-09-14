@@ -88,6 +88,48 @@ struct PracticePlaybackCursorTests {
         cursor.advanceAfterCompletion()
         #expect(cursor.current == .ayah(globalAyah: 2, repetition: 1, totalRepetitions: 1))
     }
+
+    @Test func movingDirectlyToAnAyahResetsItsRepetition() throws {
+        let range = try VerseRange(startGlobalAyah: 10, endGlobalAyah: 12)
+        var settings = PracticeSettings.default
+        settings.ayahRepeatCount = .three
+        var cursor = PracticePlaybackCursor(passages: [range], settings: settings)
+
+        cursor.advanceAfterCompletion()
+        #expect(cursor.current == .ayah(globalAyah: 10, repetition: 2, totalRepetitions: 3))
+        let moved = cursor.move(to: 12)
+        #expect(moved)
+        #expect(cursor.current == .ayah(globalAyah: 12, repetition: 1, totalRepetitions: 3))
+        let rejected = cursor.move(to: 99)
+        #expect(rejected == false)
+        #expect(cursor.current == .ayah(globalAyah: 12, repetition: 1, totalRepetitions: 3))
+    }
+}
+
+struct PlaybackCoordinatorTests {
+    @Test @MainActor func openingPracticePreparesTheLastAyahWithoutStartingPlayback() throws {
+        let container = try PersistenceController.makeContainer(inMemory: true)
+        let store = PracticeStore(context: container.mainContext)
+        let range = try VerseRange(startGlobalAyah: 1, endGlobalAyah: 2)
+        let set = try store.createSet(title: "Paused practice", passages: [range], settings: .default)
+        set.lastGlobalAyah = 2
+        let catalog = try BundledQuranCatalog.loadFromBundle()
+        let audioSource = AlQuranCloudAudioSource()
+        let fileStore = AudioFileStore(
+            reciter: audioSource.reciter,
+            baseDirectory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        )
+        let playback = PlaybackCoordinator(source: audioSource, fileStore: fileStore)
+
+        playback.start(set: set, catalog: catalog, resume: true, allowStreaming: true)
+
+        #expect(playback.snapshot.currentGlobalAyah == 2)
+        #expect(playback.snapshot.isPlaying == false)
+        #expect(playback.snapshot.isLoading == false)
+        #expect(playback.coveredAyahs.isEmpty)
+        #expect(playback.repetitionCount == 0)
+        playback.stop()
+    }
 }
 
 struct ReviewSchedulerTests {
@@ -178,5 +220,19 @@ struct PracticeStoreTests {
         #expect(progress.recallState == .learning)
         #expect(progress.isWeak)
         #expect(progress.exposureCount == 0)
+    }
+
+    @Test @MainActor func reviewBookmarkCanBeToggled() throws {
+        let container = try PersistenceController.makeContainer(inMemory: true)
+        let store = PracticeStore(context: container.mainContext)
+
+        #expect(try store.isMarkedWeak(globalAyah: 255) == false)
+        try store.markWeak(globalAyah: 255, weak: true)
+        #expect(try store.isMarkedWeak(globalAyah: 255))
+        #expect(try store.progress(for: 255).nextReviewAt != nil)
+
+        try store.markWeak(globalAyah: 255, weak: false)
+        #expect(try store.isMarkedWeak(globalAyah: 255) == false)
+        #expect(try store.progress(for: 255).nextReviewAt == nil)
     }
 }

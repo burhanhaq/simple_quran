@@ -1,6 +1,27 @@
 import Foundation
 import Observation
 
+enum QuranReadingLayout: String, CaseIterable, Identifiable {
+    case ayahByAyah
+    case mushaf
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .ayahByAyah: String(localized: "Ayah by Ayah")
+        case .mushaf: String(localized: "Mushaf Flow")
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .ayahByAyah: "list.bullet"
+        case .mushaf: "text.alignright"
+        }
+    }
+}
+
 @MainActor
 @Observable
 final class AppSettings {
@@ -9,6 +30,7 @@ final class AppSettings {
         static let wifiOnly = "settings.wifiOnly"
         static let streamWhenMissing = "settings.streamWhenMissing"
         static let lastTab = "settings.lastTab"
+        static let quranReadingLayout = "settings.quranReadingLayout"
     }
 
     var wifiOnly: Bool {
@@ -19,10 +41,16 @@ final class AppSettings {
         didSet { defaults.set(streamWhenMissing, forKey: Key.streamWhenMissing) }
     }
 
+    var quranReadingLayout: QuranReadingLayout {
+        didSet { defaults.set(quranReadingLayout.rawValue, forKey: Key.quranReadingLayout) }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         self.wifiOnly = defaults.object(forKey: Key.wifiOnly) as? Bool ?? false
         self.streamWhenMissing = defaults.object(forKey: Key.streamWhenMissing) as? Bool ?? true
+        self.quranReadingLayout = defaults.string(forKey: Key.quranReadingLayout)
+            .flatMap(QuranReadingLayout.init(rawValue:)) ?? .ayahByAyah
     }
 }
 

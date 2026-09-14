@@ -1,5 +1,6 @@
 import CoreText
 import SwiftUI
+import UIKit
 
 enum AppTheme {
     static let cornerRadius: CGFloat = 18
@@ -125,6 +126,173 @@ struct QuranAyahText: View {
                 .stroke(isCurrent ? Color.gold : Color.clear, lineWidth: 1.5)
         )
         .accessibilityAddTraits(isCurrent ? .isSelected : [])
+    }
+}
+
+struct MushafFlowView: UIViewRepresentable {
+    var verses: [QuranVerse]
+    var currentGlobalAyah: Int?
+    var hidesCurrentAyah: Bool
+    var selectionEnabled: Bool
+    var onSelect: (Int) -> Void
+
+    func makeCoordinator() -> Coordinator {
+        Coordinator(parent: self)
+    }
+
+    func makeUIView(context: Context) -> UITextView {
+        let textView = UITextView()
+        textView.delegate = context.coordinator
+        textView.backgroundColor = .clear
+        textView.isEditable = false
+        textView.isSelectable = true
+        textView.isScrollEnabled = true
+        textView.alwaysBounceVertical = true
+        textView.showsVerticalScrollIndicator = true
+        textView.adjustsFontForContentSizeCategory = true
+        textView.textContainerInset = UIEdgeInsets(top: 16, left: 18, bottom: 20, right: 18)
+        textView.textContainer.lineFragmentPadding = 0
+        textView.linkTextAttributes = [
+            .foregroundColor: UIColor(named: "BrownText") ?? UIColor.label,
+            .underlineStyle: 0
+        ]
+        return textView
+    }
+
+    func updateUIView(_ textView: UITextView, context: Context) {
+        context.coordinator.parent = self
+        textView.isSelectable = selectionEnabled
+
+        let verseIDs = verses.map(\.globalAyah)
+        let needsRender = context.coordinator.renderedVerseIDs != verseIDs
+            || context.coordinator.renderedCurrentAyah != currentGlobalAyah
+            || context.coordinator.renderedHiddenState != hidesCurrentAyah
+
+        guard needsRender else { return }
+        let rendered = makeAttributedText()
+        context.coordinator.renderedVerseIDs = verseIDs
+        context.coordinator.renderedCurrentAyah = currentGlobalAyah
+        context.coordinator.renderedHiddenState = hidesCurrentAyah
+        textView.attributedText = rendered.text
+
+        guard let currentGlobalAyah,
+              let range = rendered.ayahRanges[currentGlobalAyah]
+        else { return }
+        textView.layoutIfNeeded()
+        textView.scrollRangeToVisible(range)
+    }
+
+    private func makeAttributedText() -> (text: NSAttributedString, ayahRanges: [Int: NSRange]) {
+        let result = NSMutableAttributedString()
+        var ayahRanges: [Int: NSRange] = [:]
+        let bodyFont = UIFontMetrics(forTextStyle: .title2).scaledFont(
+            for: UIFont(name: "AmiriQuran", size: 28) ?? .systemFont(ofSize: 28)
+        )
+        let basmalaFont = UIFontMetrics(forTextStyle: .title3).scaledFont(
+            for: UIFont(name: "AmiriQuran", size: 25) ?? .systemFont(ofSize: 25)
+        )
+        let bodyColor = UIColor(named: "BrownText") ?? .label
+        let basmalaColor = UIColor(named: "OliveAccent") ?? .secondaryLabel
+        let highlightColor = (UIColor(named: "HighlightFill") ?? .systemYellow).withAlphaComponent(0.45)
+
+        let bodyParagraph = NSMutableParagraphStyle()
+        bodyParagraph.alignment = .justified
+        bodyParagraph.baseWritingDirection = .rightToLeft
+        bodyParagraph.lineSpacing = 8
+        bodyParagraph.paragraphSpacing = 10
+
+        let basmalaParagraph = NSMutableParagraphStyle()
+        basmalaParagraph.alignment = .center
+        basmalaParagraph.baseWritingDirection = .rightToLeft
+        basmalaParagraph.paragraphSpacingBefore = 8
+        basmalaParagraph.paragraphSpacing = 12
+
+        for (index, verse) in verses.enumerated() {
+            let previous = index > 0 ? verses[index - 1] : nil
+            let startsNewPassage = previous.map {
+                $0.globalAyah + 1 != verse.globalAyah || $0.surahNumber != verse.surahNumber
+            } ?? false
+
+            if startsNewPassage, !verse.showsBasmalaBefore {
+                result.append(NSAttributedString(string: "\n\n", attributes: [.paragraphStyle: bodyParagraph]))
+            }
+            if verse.showsBasmalaBefore {
+                if result.length > 0 {
+                    result.append(NSAttributedString(string: "\n", attributes: [.paragraphStyle: bodyParagraph]))
+                }
+                result.append(NSAttributedString(
+                    string: "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ\n",
+                    attributes: [
+                        .font: basmalaFont,
+                        .foregroundColor: basmalaColor,
+                        .paragraphStyle: basmalaParagraph
+                    ]
+                ))
+            }
+
+            let visibleText = hidesCurrentAyah && verse.globalAyah == currentGlobalAyah
+                ? "••••••"
+                : verse.text
+            let sajdahMarker = verse.sajdah == .none ? "" : " ۩"
+            let segmentText = "\(visibleText)\(sajdahMarker) ﴿\(Self.arabicIndicNumber(verse.ayahInSurah))﴾ "
+            let location = result.length
+            var attributes: [NSAttributedString.Key: Any] = [
+                .font: bodyFont,
+                .foregroundColor: bodyColor,
+                .paragraphStyle: bodyParagraph
+            ]
+            if let link = URL(string: "simplequran://ayah/\(verse.globalAyah)") {
+                attributes[.link] = link
+            }
+            if verse.globalAyah == currentGlobalAyah {
+                attributes[.backgroundColor] = highlightColor
+            }
+            result.append(NSAttributedString(string: segmentText, attributes: attributes))
+            ayahRanges[verse.globalAyah] = NSRange(location: location, length: segmentText.utf16.count)
+        }
+
+        return (result, ayahRanges)
+    }
+
+    private static func arabicIndicNumber(_ value: Int) -> String {
+        let digits = Array("٠١٢٣٤٥٦٧٨٩")
+        return String(String(value).compactMap { character in
+            character.wholeNumberValue.map { digits[$0] }
+        })
+    }
+
+    @MainActor
+    final class Coordinator: NSObject, UITextViewDelegate {
+        var parent: MushafFlowView
+        var renderedVerseIDs: [Int] = []
+        var renderedCurrentAyah: Int?
+        var renderedHiddenState = false
+
+        init(parent: MushafFlowView) {
+            self.parent = parent
+        }
+
+        func textView(
+            _ textView: UITextView,
+            primaryActionFor textItem: UITextItem,
+            defaultAction: UIAction
+        ) -> UIAction? {
+            let range = textItem.range
+            guard parent.selectionEnabled,
+                  range.location < textView.attributedText.length,
+                  let URL = textView.attributedText.attribute(
+                    .link,
+                    at: range.location,
+                    effectiveRange: nil
+                  ) as? URL,
+                  URL.scheme == "simplequran",
+                  URL.host == "ayah",
+                  let globalAyah = Int(URL.lastPathComponent)
+            else { return nil }
+            return UIAction { [weak self] _ in
+                self?.parent.onSelect(globalAyah)
+            }
+        }
     }
 }
 

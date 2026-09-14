@@ -119,6 +119,16 @@ nonisolated struct PracticePlaybackCursor: Equatable, Sendable {
         }
     }
 
+    @discardableResult
+    mutating func move(to globalAyah: Int) -> Bool {
+        guard let index = ayahs.firstIndex(of: globalAyah) else { return false }
+        ayahIndex = index
+        ayahRepetition = 1
+        isInPause = false
+        isComplete = false
+        return true
+    }
+
     private mutating func moveToNextAyah() {
         ayahRepetition = 1
         if ayahIndex + 1 < ayahs.count {

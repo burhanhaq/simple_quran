@@ -27,6 +27,7 @@ protocol PracticeStoring: AnyObject {
     func delete(_ set: PracticeSet) throws
     func recordExposure(ayahs: [Int], seconds: Double) throws
     func markWeak(globalAyah: Int, weak: Bool) throws
+    func isMarkedWeak(globalAyah: Int) throws -> Bool
     func applyRating(_ rating: RecallRating, ayahs: [Int], now: Date) throws
     func startSession(for set: PracticeSet) throws -> PracticeSession
     func finishSession(_ session: PracticeSession, coveredAyahs: Int, repetitions: Int, lastAyah: Int?, completed: Bool, rating: RecallRating?) throws
@@ -107,8 +108,17 @@ final class PracticeStore: PracticeStoring {
             if progress.recallStateRaw == RecallState.new.rawValue {
                 progress.recallStateRaw = RecallState.learning.rawValue
             }
+        } else {
+            progress.nextReviewAt = nil
         }
         try context.save()
+    }
+
+    func isMarkedWeak(globalAyah: Int) throws -> Bool {
+        let descriptor = FetchDescriptor<VerseProgress>(
+            predicate: #Predicate { $0.globalAyah == globalAyah }
+        )
+        return try context.fetch(descriptor).first?.isWeak ?? false
     }
 
     func applyRating(_ rating: RecallRating, ayahs: [Int], now: Date) throws {

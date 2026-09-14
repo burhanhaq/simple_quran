@@ -99,6 +99,7 @@ final class PlaybackCoordinator {
 
     func start(set: PracticeSet, catalog: any QuranCatalog, resume: Bool, allowStreaming: Bool) {
         cleanupPlayer()
+        session = nil
         self.catalog = catalog
         self.allowStreaming = allowStreaming
         activeSet = set
@@ -121,7 +122,7 @@ final class PlaybackCoordinator {
         snapshot.setRepeat = set.settings.setRepeatCount
         snapshot.pauseSeconds = set.settings.clampedPauseSeconds
         snapshot.advanceManually = set.settings.advanceManually
-        rebuildQueue(autoplay: true)
+        prepareCurrentStep()
     }
 
     func pause() {
@@ -129,6 +130,7 @@ final class PlaybackCoordinator {
         accumulateListeningTime()
         player?.pause()
         snapshot.isPlaying = false
+        snapshot.isLoading = false
         refreshNowPlaying()
     }
 
@@ -160,6 +162,7 @@ final class PlaybackCoordinator {
         snapshot.isPlaying = false
         snapshot.isLoading = false
         snapshot.currentGlobalAyah = nil
+        session = nil
         nowPlaying.clear()
         try? AudioSessionController.shared.configure(.idle)
     }
@@ -167,13 +170,19 @@ final class PlaybackCoordinator {
     func skipForward() {
         let resume = snapshot.isPlaying || shouldAutoplay
         cursor?.skipForward()
-        rebuildQueue(autoplay: resume)
+        refreshAfterNavigation(autoplay: resume)
     }
 
     func skipBack() {
         let resume = snapshot.isPlaying || shouldAutoplay
         cursor?.skipBack()
-        rebuildQueue(autoplay: resume)
+        refreshAfterNavigation(autoplay: resume)
+    }
+
+    func move(to globalAyah: Int) {
+        let resume = snapshot.isPlaying || shouldAutoplay
+        guard cursor?.move(to: globalAyah) == true else { return }
+        refreshAfterNavigation(autoplay: resume)
     }
 
     func toggleArabicHidden() {
@@ -196,13 +205,41 @@ final class PlaybackCoordinator {
         let ranges = activeSet.orderedPassages.map(\.range)
         cursor = PracticePlaybackCursor(passages: ranges, settings: settings, resumeAt: currentAyah)
         self.catalog = catalog
-        rebuildQueue(autoplay: resumePlayback)
+        refreshAfterNavigation(autoplay: resumePlayback)
     }
 
     private struct QueuedItemInfo {
         var step: QueueItem
         var completesStep: Bool
         var isLocal: Bool
+    }
+
+    private func refreshAfterNavigation(autoplay: Bool) {
+        if autoplay {
+            rebuildQueue(autoplay: true)
+        } else {
+            accumulateListeningTime()
+            cleanupPlayer()
+            shouldAutoplay = false
+            prepareCurrentStep()
+        }
+    }
+
+    private func prepareCurrentStep() {
+        snapshot.isPlaying = false
+        snapshot.isLoading = false
+        guard let step = cursor?.current else {
+            snapshot.currentGlobalAyah = nil
+            snapshot.repetitionLabel = ""
+            nowPlaying.clear()
+            return
+        }
+        updateSnapshot(for: step)
+        if session == nil {
+            nowPlaying.clear()
+        } else {
+            refreshNowPlaying()
+        }
     }
 
     private func rebuildQueue(autoplay: Bool) {
