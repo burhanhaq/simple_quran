@@ -32,6 +32,10 @@ struct QuranIntegrityTests {
 struct PracticePlaybackCursorTests {
     @Test func practiceStartsWithContinuousPlayback() {
         #expect(PracticeSettings.default.pauseSeconds == 0)
+        #expect(PracticeSettings.listening.ayahRepeatCount == .one)
+        #expect(PracticeSettings.listening.setRepeatCount == .one)
+        #expect(PracticeSettings.listening.hideArabic == false)
+        #expect(PracticeSettings.listening.pauseSeconds == 0)
     }
 
     @Test func playbackCursorDoesNotMultiplySetRepeats() throws {
@@ -128,6 +132,38 @@ struct PlaybackCoordinatorTests {
         #expect(playback.snapshot.isLoading == false)
         #expect(playback.coveredAyahs.isEmpty)
         #expect(playback.repetitionCount == 0)
+        playback.stop()
+    }
+
+    @Test @MainActor func startListeningPreparesWithoutAPracticeSet() throws {
+        let catalog = try BundledQuranCatalog.loadFromBundle()
+        let audioSource = AlQuranCloudAudioSource()
+        let fileStore = AudioFileStore(
+            reciter: audioSource.reciter,
+            baseDirectory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        )
+        let playback = PlaybackCoordinator(source: audioSource, fileStore: fileStore)
+        let range = try VerseRange(startGlobalAyah: 1, endGlobalAyah: 7)
+
+        playback.startListening(
+            title: "Al-Faatiha",
+            passages: [range],
+            fromAyah: 1,
+            catalog: catalog,
+            allowStreaming: true
+        )
+
+        #expect(playback.activeSet == nil)
+        #expect(playback.session == nil)
+        #expect(playback.snapshot.setID == nil)
+        #expect(playback.snapshot.setTitle == "Al-Faatiha")
+        #expect(playback.snapshot.currentGlobalAyah == 1)
+        #expect(playback.snapshot.isPlaying == false)
+        #expect(playback.snapshot.isLoading == false)
+        #expect(playback.snapshot.ayahRepeat == .one)
+        #expect(playback.isPrepared(for: [range]))
+        #expect(playback.containsAyah(7))
+        #expect(playback.containsAyah(8) == false)
         playback.stop()
     }
 

@@ -67,6 +67,30 @@ struct EmptyStateView: View {
     var message: String
     var actionTitle: String
     var action: () -> Void
+    var actionIdentifier: String = "empty.createSet"
+    var secondaryTitle: String? = nil
+    var secondaryAction: (() -> Void)? = nil
+    var secondaryIdentifier: String = "empty.collect"
+
+    init(
+        title: String,
+        message: String,
+        actionTitle: String,
+        actionIdentifier: String = "empty.createSet",
+        secondaryTitle: String? = nil,
+        secondaryIdentifier: String = "empty.collect",
+        secondaryAction: (() -> Void)? = nil,
+        action: @escaping () -> Void
+    ) {
+        self.title = title
+        self.message = message
+        self.actionTitle = actionTitle
+        self.action = action
+        self.actionIdentifier = actionIdentifier
+        self.secondaryTitle = secondaryTitle
+        self.secondaryAction = secondaryAction
+        self.secondaryIdentifier = secondaryIdentifier
+    }
 
     var body: some View {
         VStack(spacing: 14) {
@@ -83,7 +107,13 @@ struct EmptyStateView: View {
             Button(actionTitle, action: action)
                 .buttonStyle(.borderedProminent)
                 .tint(Color.gold)
-                .accessibilityIdentifier("empty.createSet")
+                .accessibilityIdentifier(actionIdentifier)
+            if let secondaryTitle, let secondaryAction {
+                Button(secondaryTitle, action: secondaryAction)
+                    .buttonStyle(.bordered)
+                    .tint(Color.olive)
+                    .accessibilityIdentifier(secondaryIdentifier)
+            }
         }
         .padding(24)
         .frame(maxWidth: .infinity)
@@ -93,6 +123,7 @@ struct EmptyStateView: View {
 struct QuranAyahText: View {
     var verse: QuranVerse
     var isCurrent: Bool
+    var isInPassage: Bool = false
     var hidden: Bool
 
     var body: some View {
@@ -119,13 +150,33 @@ struct QuranAyahText: View {
         .padding(.vertical, 16)
         .background(
             RoundedRectangle(cornerRadius: AppTheme.tightRadius, style: .continuous)
-                .fill(isCurrent ? Color.appHighlightFill.opacity(0.55) : Color.clear)
+                .fill(fillColor)
         )
         .overlay(
             RoundedRectangle(cornerRadius: AppTheme.tightRadius, style: .continuous)
-                .stroke(isCurrent ? Color.gold : Color.clear, lineWidth: 1.5)
+                .stroke(strokeColor, lineWidth: isCurrent ? 1.5 : 1)
         )
-        .accessibilityAddTraits(isCurrent ? .isSelected : [])
+        .accessibilityAddTraits(isCurrent || isInPassage ? .isSelected : [])
+    }
+
+    private var fillColor: Color {
+        if isCurrent {
+            return Color.appHighlightFill.opacity(0.55)
+        }
+        if isInPassage {
+            return Color.olive.opacity(0.14)
+        }
+        return Color.clear
+    }
+
+    private var strokeColor: Color {
+        if isCurrent {
+            return Color.gold
+        }
+        if isInPassage {
+            return Color.olive.opacity(0.45)
+        }
+        return Color.clear
     }
 }
 

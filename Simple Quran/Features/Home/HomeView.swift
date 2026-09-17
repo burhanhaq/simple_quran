@@ -100,11 +100,14 @@ struct HomeView: View {
             .accessibilityIdentifier("home.continue")
         } else if sets.isEmpty {
             EmptyStateView(
-                title: String(localized: "Create your first collection"),
-                message: String(localized: "Save a passage, a surah, or a custom group of ayahs for focused practice."),
-                actionTitle: String(localized: "Browse the Quran")
+                title: String(localized: "Start with the Quran"),
+                message: String(localized: "Listen to a surah, or collect ayahs to review later."),
+                actionTitle: String(localized: "Listen to a surah"),
+                actionIdentifier: "empty.listen",
+                secondaryTitle: String(localized: "Save a passage to review"),
+                secondaryAction: { environment.enterQuranForCollecting() }
             ) {
-                environment.selectedTab = .quran
+                environment.enterQuranToListen()
             }
         }
     }

@@ -19,7 +19,7 @@ struct SetListView: View {
                             message: String(localized: "Choose ayahs in the Quran and save them together for quick practice."),
                             actionTitle: String(localized: "Open Quran")
                         ) {
-                            environment.selectedTab = .quran
+                            environment.enterQuranForCollecting()
                         }
                         .listRowBackground(Color.clear)
                     } else {
@@ -60,7 +60,7 @@ struct SetListView: View {
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button {
-                        environment.selectedTab = .quran
+                        environment.enterQuranForCollecting()
                     } label: {
                         Image(systemName: "plus")
                     }

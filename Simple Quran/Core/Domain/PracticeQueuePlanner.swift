@@ -40,6 +40,14 @@ nonisolated struct PracticeSettings: Equatable, Sendable, Codable {
         advanceManually: false
     )
 
+    static let listening = PracticeSettings(
+        ayahRepeatCount: .one,
+        setRepeatCount: .one,
+        pauseSeconds: 0,
+        hideArabic: false,
+        advanceManually: false
+    )
+
     var clampedPauseSeconds: Int {
         min(5, max(0, pauseSeconds))
     }
