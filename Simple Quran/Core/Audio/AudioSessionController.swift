@@ -15,6 +15,22 @@ enum AudioSessionEvent {
     case mediaServicesReset
 }
 
+enum AudioInterruptionAction: Equatable {
+    case ignore
+    case pausePreservingIntent
+    case resume
+}
+
+enum AudioInterruptionPolicy {
+    static func actionForBegan(wasSuspended: Bool) -> AudioInterruptionAction {
+        wasSuspended ? .ignore : .pausePreservingIntent
+    }
+
+    static func actionForEnded(shouldResume _: Bool, hasPlaybackIntent: Bool) -> AudioInterruptionAction {
+        hasPlaybackIntent ? .resume : .ignore
+    }
+}
+
 @MainActor
 final class AudioSessionController {
     static let shared = AudioSessionController()
@@ -47,8 +63,9 @@ final class AudioSessionController {
                 object: AVAudioSession.sharedInstance(),
                 queue: .main
             ) { [weak self] notification in
-                let rawType = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
-                let rawOptions = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+                let userInfo = notification.userInfo
+                let rawType = userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+                let rawOptions = userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
                 Task { @MainActor in
                     guard let self,
                           let rawType,
@@ -56,9 +73,13 @@ final class AudioSessionController {
                     else { return }
                     switch type {
                     case .began:
+                        guard AudioInterruptionPolicy.actionForBegan(
+                            wasSuspended: Self.interruptionWasSuspended(userInfo)
+                        ) == .pausePreservingIntent else { return }
                         self.onEvent?(.interruptionBegan)
                     case .ended:
                         let shouldResume = AVAudioSession.InterruptionOptions(rawValue: rawOptions).contains(.shouldResume)
+                        try? AVAudioSession.sharedInstance().setActive(true)
                         self.onEvent?(.interruptionEnded(shouldResume: shouldResume))
                     @unknown default:
                         break
@@ -91,5 +112,14 @@ final class AudioSessionController {
                 }
             }
         )
+    }
+
+    private static func interruptionWasSuspended(_ userInfo: [AnyHashable: Any]?) -> Bool {
+        if let rawReason = userInfo?[AVAudioSessionInterruptionReasonKey] as? UInt,
+           let reason = AVAudioSession.InterruptionReason(rawValue: rawReason),
+           reason == .appWasSuspended {
+            return true
+        }
+        return false
     }
 }

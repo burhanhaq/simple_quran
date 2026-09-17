@@ -1,6 +1,7 @@
 import AVFoundation
 import Foundation
 import OSLog
+import UIKit
 
 struct PlaybackSnapshot: Equatable {
     var setID: UUID?
@@ -34,8 +35,11 @@ final class PlaybackCoordinator {
     private var queuedItems: [ObjectIdentifier: QueuedItemInfo] = [:]
     private var catalog: (any QuranCatalog)?
     private var allowStreaming = true
-    private var shouldAutoplay = false
+    private var shouldAutoplay = false {
+        didSet { updateIdleTimer() }
+    }
     private var resumeAfterInterruption = false
+    private var becomeActiveObserver: NSObjectProtocol?
     private var countedCurrentItem = false
     private var playbackBeganAt: Date?
     private(set) var listeningSeconds: Double = 0
@@ -79,15 +83,30 @@ final class PlaybackCoordinator {
             switch event {
             case .interruptionBegan:
                 self.resumeAfterInterruption = self.snapshot.isPlaying || self.shouldAutoplay
-                self.pause()
+                self.pausePreservingAutoplayIntent()
             case .interruptionEnded(let shouldResume):
-                if shouldResume, self.resumeAfterInterruption { self.resume() }
+                let hasIntent = self.shouldAutoplay || self.resumeAfterInterruption
+                if AudioInterruptionPolicy.actionForEnded(
+                    shouldResume: shouldResume,
+                    hasPlaybackIntent: hasIntent
+                ) == .resume {
+                    self.resume()
+                }
                 self.resumeAfterInterruption = false
             case .routeChanged(let reason):
                 if reason == .oldDeviceUnavailable { self.pause() }
             case .mediaServicesReset:
                 let resume = self.snapshot.isPlaying || self.shouldAutoplay
                 self.rebuildQueue(autoplay: resume)
+            }
+        }
+        becomeActiveObserver = NotificationCenter.default.addObserver(
+            forName: UIApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor in
+                self?.resumeIfNeededAfterBecomingActive()
             }
         }
     }
@@ -257,6 +276,8 @@ final class PlaybackCoordinator {
             countedCurrentItem = false
             let player = AVQueuePlayer()
             player.automaticallyWaitsToMinimizeStalling = true
+            player.audiovisualBackgroundPlaybackPolicy = .continuesIfPossible
+            player.preventsDisplaySleepDuringVideoPlayback = false
             self.player = player
             queueCursor = cursor
             try fillQueue()
@@ -463,7 +484,25 @@ final class PlaybackCoordinator {
         player?.play()
         snapshot.isPlaying = true
         snapshot.isLoading = false
+        updateIdleTimer()
         refreshNowPlaying()
+    }
+
+    private func pausePreservingAutoplayIntent() {
+        accumulateListeningTime()
+        player?.pause()
+        snapshot.isPlaying = false
+        snapshot.isLoading = false
+        refreshNowPlaying()
+    }
+
+    private func resumeIfNeededAfterBecomingActive() {
+        guard shouldAutoplay, !snapshot.isPlaying else { return }
+        resume()
+    }
+
+    private func updateIdleTimer() {
+        UIApplication.shared.isIdleTimerDisabled = shouldAutoplay
     }
 
     private func markCurrentAyahStarted() {
