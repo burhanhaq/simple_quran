@@ -180,11 +180,34 @@ struct QuranAyahText: View {
     }
 }
 
+struct ReadingLayoutMenu: View {
+    @Environment(AppEnvironment.self) private var environment
+
+    var body: some View {
+        Section(String(localized: "Reading Layout")) {
+            ForEach(QuranReadingLayout.allCases) { layout in
+                Button {
+                    environment.settings.quranReadingLayout = layout
+                } label: {
+                    Label(
+                        layout.title,
+                        systemImage: environment.settings.quranReadingLayout == layout
+                            ? "checkmark"
+                            : layout.systemImage
+                    )
+                }
+            }
+        }
+    }
+}
+
 struct MushafFlowView: UIViewRepresentable {
     var verses: [QuranVerse]
     var currentGlobalAyah: Int?
     var hidesCurrentAyah: Bool
     var selectionEnabled: Bool
+    var collectedAyahs: Set<Int> = []
+    var focusedAyah: Int? = nil
     var onSelect: (Int) -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -218,19 +241,32 @@ struct MushafFlowView: UIViewRepresentable {
         let needsRender = context.coordinator.renderedVerseIDs != verseIDs
             || context.coordinator.renderedCurrentAyah != currentGlobalAyah
             || context.coordinator.renderedHiddenState != hidesCurrentAyah
+            || context.coordinator.renderedCollectedAyahs != collectedAyahs
 
-        guard needsRender else { return }
-        let rendered = makeAttributedText()
-        context.coordinator.renderedVerseIDs = verseIDs
-        context.coordinator.renderedCurrentAyah = currentGlobalAyah
-        context.coordinator.renderedHiddenState = hidesCurrentAyah
-        textView.attributedText = rendered.text
+        let ayahRanges: [Int: NSRange]
+        if needsRender {
+            let rendered = makeAttributedText()
+            context.coordinator.renderedVerseIDs = verseIDs
+            context.coordinator.renderedCurrentAyah = currentGlobalAyah
+            context.coordinator.renderedHiddenState = hidesCurrentAyah
+            context.coordinator.renderedCollectedAyahs = collectedAyahs
+            context.coordinator.renderedAyahRanges = rendered.ayahRanges
+            textView.attributedText = rendered.text
+            ayahRanges = rendered.ayahRanges
+        } else {
+            ayahRanges = context.coordinator.renderedAyahRanges
+        }
 
-        guard let currentGlobalAyah,
-              let range = rendered.ayahRanges[currentGlobalAyah]
+        let scrollTarget = [currentGlobalAyah, focusedAyah]
+            .compactMap { $0 }
+            .first { ayahRanges[$0] != nil }
+        guard let scrollTarget,
+              let range = ayahRanges[scrollTarget],
+              needsRender || context.coordinator.scrolledAyah != scrollTarget
         else { return }
         textView.layoutIfNeeded()
         textView.scrollRangeToVisible(range)
+        context.coordinator.scrolledAyah = scrollTarget
     }
 
     private func makeAttributedText() -> (text: NSAttributedString, ayahRanges: [Int: NSRange]) {
@@ -245,6 +281,7 @@ struct MushafFlowView: UIViewRepresentable {
         let bodyColor = UIColor(named: "BrownText") ?? .label
         let basmalaColor = UIColor(named: "OliveAccent") ?? .secondaryLabel
         let highlightColor = (UIColor(named: "HighlightFill") ?? .systemYellow).withAlphaComponent(0.45)
+        let collectedColor = (UIColor(named: "OliveAccent") ?? .systemGreen).withAlphaComponent(0.14)
 
         let bodyParagraph = NSMutableParagraphStyle()
         bodyParagraph.alignment = .justified
@@ -297,6 +334,8 @@ struct MushafFlowView: UIViewRepresentable {
             }
             if verse.globalAyah == currentGlobalAyah {
                 attributes[.backgroundColor] = highlightColor
+            } else if collectedAyahs.contains(verse.globalAyah) {
+                attributes[.backgroundColor] = collectedColor
             }
             result.append(NSAttributedString(string: segmentText, attributes: attributes))
             ayahRanges[verse.globalAyah] = NSRange(location: location, length: segmentText.utf16.count)
@@ -318,6 +357,9 @@ struct MushafFlowView: UIViewRepresentable {
         var renderedVerseIDs: [Int] = []
         var renderedCurrentAyah: Int?
         var renderedHiddenState = false
+        var renderedCollectedAyahs: Set<Int> = []
+        var renderedAyahRanges: [Int: NSRange] = [:]
+        var scrolledAyah: Int?
 
         init(parent: MushafFlowView) {
             self.parent = parent

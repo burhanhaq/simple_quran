@@ -37,20 +37,7 @@ struct PracticeView: View {
                                 }
                             }
                         }
-                        Section(String(localized: "Reading Layout")) {
-                            ForEach(QuranReadingLayout.allCases) { layout in
-                                Button {
-                                    environment.settings.quranReadingLayout = layout
-                                } label: {
-                                    Label(
-                                        layout.title,
-                                        systemImage: environment.settings.quranReadingLayout == layout
-                                            ? "checkmark"
-                                            : layout.systemImage
-                                    )
-                                }
-                            }
-                        }
+                        ReadingLayoutMenu()
                         if environment.recorder.hasRecording {
                             Divider()
                             Button(String(localized: "Delete Recording"), systemImage: "trash", role: .destructive) {

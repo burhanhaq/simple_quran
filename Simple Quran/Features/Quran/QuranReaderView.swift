@@ -7,58 +7,12 @@ struct QuranReaderView: View {
     @State private var showHint = false
 
     var body: some View {
-        let verses = visibleVerses
-        ScrollViewReader { proxy in
-            ScrollView {
-                LazyVStack(spacing: 10) {
-                    if shouldShowHint {
-                        hintBanner
-                    }
-                    if environment.isCollectingAyahs {
-                        collectBanner
-                    }
-                    ForEach(verses) { verse in
-                        Button {
-                            handleTap(verse)
-                        } label: {
-                            VStack(spacing: 2) {
-                                if verse.showsBasmalaBefore {
-                                    BasmalaHeader()
-                                }
-                                QuranAyahText(
-                                    verse: verse,
-                                    isCurrent: isPlaying(verse),
-                                    isInPassage: isCollected(verse),
-                                    hidden: false
-                                )
-                            }
-                        }
-                        .buttonStyle(.plain)
-                        .contentShape(Rectangle())
-                        .id(verse.globalAyah)
-                        .accessibilityIdentifier("ayah.\(verse.globalAyah)")
-                        .accessibilityHint(
-                            environment.isCollectingAyahs
-                                ? collectHint
-                                : String(localized: "Play from this ayah")
-                        )
-                    }
-                }
-                .padding()
-            }
-            .onAppear {
-                if !environment.settings.hasSeenQuranHint {
-                    showHint = true
-                    environment.settings.hasSeenQuranHint = true
-                }
-            }
-            .task(id: destination.scrollToAyah) {
-                if let ayah = destination.scrollToAyah {
-                    proxy.scrollTo(ayah, anchor: .center)
-                }
-            }
-            .onChange(of: destination) { _, _ in
-                selection.reset()
+        Group {
+            switch environment.settings.quranReadingLayout {
+            case .ayahByAyah:
+                ayahByAyahList
+            case .mushaf:
+                mushafLayout
             }
         }
         .background(Color.parchment.ignoresSafeArea())
@@ -97,6 +51,7 @@ struct QuranReaderView: View {
                             environment.presentCollectionEditor()
                         }
                     }
+                    ReadingLayoutMenu()
                 } label: {
                     Image(systemName: "ellipsis.circle")
                 }
@@ -111,6 +66,87 @@ struct QuranReaderView: View {
                 )
             }
         }
+        .onAppear {
+            if !environment.settings.hasSeenQuranHint {
+                showHint = true
+                environment.settings.hasSeenQuranHint = true
+            }
+        }
+        .onChange(of: destination) { _, _ in
+            selection.reset()
+        }
+    }
+
+    private var ayahByAyahList: some View {
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 10) {
+                    if shouldShowHint {
+                        hintBanner
+                    }
+                    if environment.isCollectingAyahs {
+                        collectBanner
+                    }
+                    ForEach(visibleVerses) { verse in
+                        Button {
+                            handleTap(verse.globalAyah)
+                        } label: {
+                            VStack(spacing: 2) {
+                                if verse.showsBasmalaBefore {
+                                    BasmalaHeader()
+                                }
+                                QuranAyahText(
+                                    verse: verse,
+                                    isCurrent: isPlaying(verse),
+                                    isInPassage: isCollected(verse),
+                                    hidden: false
+                                )
+                            }
+                        }
+                        .buttonStyle(.plain)
+                        .contentShape(Rectangle())
+                        .id(verse.globalAyah)
+                        .accessibilityIdentifier("ayah.\(verse.globalAyah)")
+                        .accessibilityHint(
+                            environment.isCollectingAyahs
+                                ? collectHint
+                                : String(localized: "Play from this ayah")
+                        )
+                    }
+                }
+                .padding()
+            }
+            .task(id: destination.scrollToAyah) {
+                if let ayah = destination.scrollToAyah {
+                    proxy.scrollTo(ayah, anchor: .center)
+                }
+            }
+        }
+    }
+
+    private var mushafLayout: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            if shouldShowHint {
+                hintBanner
+                    .padding(.horizontal)
+                    .padding(.top)
+            }
+            if environment.isCollectingAyahs {
+                collectBanner
+                    .padding(.horizontal)
+                    .padding(.top, shouldShowHint ? 8 : 12)
+            }
+            MushafFlowView(
+                verses: visibleVerses,
+                currentGlobalAyah: environment.playback.snapshot.currentGlobalAyah,
+                hidesCurrentAyah: false,
+                selectionEnabled: true,
+                collectedAyahs: collectedAyahIDs,
+                focusedAyah: destination.scrollToAyah,
+                onSelect: handleTap
+            )
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
     }
 
     private var visibleRange: VerseRange? {
@@ -124,6 +160,14 @@ struct QuranReaderView: View {
 
     private var visiblePassages: [VerseRange] {
         visibleRange.map { [$0] } ?? []
+    }
+
+    private var collectedAyahIDs: Set<Int> {
+        var ids = Set(environment.collectionDraft.passages.flatMap(\.range.globalAyahs))
+        if let start = selection.startGlobalAyah {
+            ids.insert(start)
+        }
+        return ids
     }
 
     private var shouldShowHint: Bool {
@@ -194,16 +238,16 @@ struct QuranReaderView: View {
         selection.highlights(verse.globalAyah, collected: environment.collectionDraft.passages.map(\.range))
     }
 
-    private func handleTap(_ verse: QuranVerse) {
+    private func handleTap(_ globalAyah: Int) {
         if environment.isCollectingAyahs {
-            collect(verse)
+            collect(globalAyah)
         } else {
-            play(from: verse.globalAyah)
+            play(from: globalAyah)
         }
     }
 
-    private func collect(_ verse: QuranVerse) {
-        if let range = selection.tap(verse.globalAyah) {
+    private func collect(_ globalAyah: Int) {
+        if let range = selection.tap(globalAyah) {
             environment.collectionDraft.append(range)
         }
     }
