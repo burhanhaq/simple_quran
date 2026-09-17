@@ -68,7 +68,6 @@ struct PracticeView: View {
                 loadCurrentReviewState()
             }
             .onDisappear {
-                environment.playback.pause()
                 environment.recorder.stopRecording()
                 environment.recorder.cancelComparisonPlayback()
             }
@@ -329,12 +328,18 @@ struct PracticeView: View {
     }
 
     private func start() {
-        environment.playback.start(
-            set: practiceSet,
-            catalog: environment.quran,
-            resume: true,
-            allowStreaming: environment.settings.streamWhenMissing || environment.downloads.downloadedCount(in: practiceSet.orderedPassages.flatMap(\.range.globalAyahs)) == practiceSet.orderedPassages.map(\.range.count).reduce(0, +)
-        )
+        if PracticePlaybackLifecycle.shouldPrepareNewSession(
+            activeSetID: environment.playback.activeSet?.id,
+            currentGlobalAyah: environment.playback.snapshot.currentGlobalAyah,
+            openingSetID: practiceSet.id
+        ) {
+            environment.playback.start(
+                set: practiceSet,
+                catalog: environment.quran,
+                resume: true,
+                allowStreaming: environment.settings.streamWhenMissing || environment.downloads.downloadedCount(in: practiceSet.orderedPassages.flatMap(\.range.globalAyahs)) == practiceSet.orderedPassages.map(\.range.count).reduce(0, +)
+            )
+        }
         environment.recorder.selectCollection(practiceSet.id)
     }
 
@@ -512,5 +517,15 @@ struct PracticeView: View {
         showRating = false
         environment.playback.stop()
         dismiss()
+    }
+}
+
+enum PracticePlaybackLifecycle {
+    static func shouldPrepareNewSession(
+        activeSetID: UUID?,
+        currentGlobalAyah: Int?,
+        openingSetID: UUID
+    ) -> Bool {
+        activeSetID != openingSetID || currentGlobalAyah == nil
     }
 }
