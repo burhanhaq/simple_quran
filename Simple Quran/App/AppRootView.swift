@@ -30,7 +30,7 @@ struct AppRootView: View {
             }
             .tint(Color.gold)
             .background(Color.parchment.ignoresSafeArea())
-            .safeAreaInset(edge: .bottom) {
+            .tabViewBottomAccessory(isEnabled: environment.playback.snapshot.currentGlobalAyah != nil) {
                 if let ayah = environment.playback.snapshot.currentGlobalAyah {
                     GlobalMiniPlayer(ayah: ayah)
                 }
@@ -41,48 +41,107 @@ struct AppRootView: View {
 
 private struct GlobalMiniPlayer: View {
     @Environment(AppEnvironment.self) private var environment
+    @Environment(\.tabViewBottomAccessoryPlacement) private var placement
     let ayah: Int
+
+    private var isInline: Bool { placement == .inline }
 
     var body: some View {
         let verse = environment.quran.verse(globalAyah: ayah)
-        HStack {
-            VStack(alignment: .leading) {
-                Text(environment.playback.snapshot.setTitle)
-                    .font(.caption)
-                    .foregroundStyle(Color.secondaryWarm)
-                Text(verse?.reference ?? "")
-                    .font(.headline)
-                    .foregroundStyle(Color.appBrownText)
-            }
-            Spacer()
-            if environment.playback.snapshot.isLoading {
-                ProgressView()
-            }
-            Button {
-                environment.playback.skipBack()
-            } label: {
-                Image(systemName: "backward.fill")
-            }
-            .accessibilityLabel(String(localized: "Previous ayah"))
-            Button {
-                if environment.playback.snapshot.isPlaying {
-                    environment.playback.pause()
-                } else {
-                    environment.playback.resume()
-                }
-            } label: {
-                Image(systemName: environment.playback.snapshot.isPlaying ? "pause.fill" : "play.fill")
-            }
-            .accessibilityLabel(environment.playback.snapshot.isPlaying ? String(localized: "Pause") : String(localized: "Play"))
-            Button {
-                environment.playback.skipForward()
-            } label: {
-                Image(systemName: "forward.fill")
-            }
-            .accessibilityLabel(String(localized: "Next ayah"))
+        HStack(spacing: 12) {
+            MiniPlayerMetadata(
+                title: environment.playback.snapshot.setTitle,
+                reference: verse?.reference ?? "",
+                showsTitle: !isInline
+            )
+            Spacer(minLength: 8)
+            MiniPlayerTransport(showsSkipButtons: !isInline)
         }
         .padding(.horizontal, 16)
-        .padding(.vertical, 10)
-        .background(.regularMaterial)
+    }
+}
+
+private struct MiniPlayerMetadata: View {
+    let title: String
+    let reference: String
+    let showsTitle: Bool
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            if showsTitle {
+                Text(title)
+                    .font(.caption)
+                    .foregroundStyle(Color.secondaryWarm)
+                    .lineLimit(1)
+            }
+            Text(reference)
+                .font(.subheadline.weight(.semibold))
+                .foregroundStyle(Color.appBrownText)
+                .lineLimit(1)
+        }
+    }
+}
+
+private struct MiniPlayerTransport: View {
+    @Environment(AppEnvironment.self) private var environment
+    let showsSkipButtons: Bool
+
+    var body: some View {
+        HStack(spacing: 24) {
+            if showsSkipButtons {
+                Button {
+                    environment.playback.skipBack()
+                } label: {
+                    Image(systemName: "backward.end.fill")
+                        .font(.body.weight(.semibold))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel(String(localized: "Previous ayah"))
+                .accessibilityIdentifier("playback.previous")
+            }
+
+            Button(action: togglePlayback) {
+                ZStack {
+                    Image(systemName: environment.playback.snapshot.isPlaying ? "pause.circle.fill" : "play.circle.fill")
+                        .font(.system(size: 36))
+                        .frame(width: 44, height: 44)
+                        .opacity(environment.playback.snapshot.isLoading ? 0.35 : 1)
+                    if environment.playback.snapshot.isLoading {
+                        ProgressView()
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .accessibilityLabel(
+                environment.playback.snapshot.isPlaying
+                    ? String(localized: "Pause")
+                    : String(localized: "Play")
+            )
+            .accessibilityIdentifier("playback.toggle")
+
+            if showsSkipButtons {
+                Button {
+                    environment.playback.skipForward()
+                } label: {
+                    Image(systemName: "forward.end.fill")
+                        .font(.body.weight(.semibold))
+                        .frame(width: 44, height: 44)
+                        .contentShape(Rectangle())
+                }
+                .accessibilityLabel(String(localized: "Next ayah"))
+                .accessibilityIdentifier("playback.next")
+            }
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(Color.gold)
+    }
+
+    private func togglePlayback() {
+        if environment.playback.snapshot.isPlaying {
+            environment.playback.pause()
+        } else {
+            environment.playback.resume()
+        }
     }
 }
