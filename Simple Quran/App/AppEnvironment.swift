@@ -85,6 +85,9 @@ final class AppEnvironment {
         self.recorder = recorder
         self.settings = settings
         playback.configure(catalog: quran, allowStreaming: settings.streamWhenMissing)
+        playback.onWillStartAudio = { [weak recorder] in
+            recorder?.cancelComparisonPlayback()
+        }
         downloads.updateCellular(!settings.wifiOnly)
     }
 }

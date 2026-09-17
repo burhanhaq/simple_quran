@@ -21,10 +21,10 @@ struct PlaybackSnapshot: Equatable {
 final class PlaybackCoordinator {
     private let source: AudioSource
     private let fileStore: AudioFileStore
-    private let nowPlaying = NowPlayingBridge()
+    private var nowPlaying: NowPlayingBridge
     private let logger = Logger(subsystem: "com.simpleAzaan.Simple-Quran1", category: "playback")
 
-    private var player: AVQueuePlayer?
+    private var player: AVQueuePlayer
     private var endObserver: NSObjectProtocol?
     private var failureObserver: NSObjectProtocol?
     private var itemStatusObserver: NSKeyValueObservation?
@@ -59,21 +59,16 @@ final class PlaybackCoordinator {
     var session: PracticeSession?
     var activeSet: PracticeSet?
     var versesInSet: [QuranVerse] = []
+    var onWillStartAudio: (() -> Void)?
+    var hasPreparedQueue: Bool { player.currentItem != nil }
 
     init(source: AudioSource, fileStore: AudioFileStore) {
         self.source = source
         self.fileStore = fileStore
-        nowPlaying.becomeActive()
-        nowPlaying.handle(
-            play: { [weak self] in self?.resume() },
-            pause: { [weak self] in self?.pause() },
-            toggle: { [weak self] in
-                guard let self else { return }
-                self.snapshot.isPlaying ? self.pause() : self.resume()
-            },
-            next: { [weak self] in self?.skipForward() },
-            previous: { [weak self] in self?.skipBack() }
-        )
+        let player = Self.makePlayer()
+        self.player = player
+        self.nowPlaying = NowPlayingBridge(player: player)
+        bindRemoteCommands()
         AudioSessionController.shared.onEvent = { [weak self] event in
             guard let self else { return }
             switch event {
@@ -87,6 +82,7 @@ final class PlaybackCoordinator {
                 if reason == .oldDeviceUnavailable { self.pause() }
             case .mediaServicesReset:
                 let resume = self.snapshot.isPlaying || self.shouldAutoplay
+                self.replacePlayer()
                 self.rebuildQueue(autoplay: resume)
             }
         }
@@ -98,7 +94,7 @@ final class PlaybackCoordinator {
     }
 
     func start(set: PracticeSet, catalog: any QuranCatalog, resume: Bool, allowStreaming: Bool) {
-        cleanupPlayer()
+        resetQueue()
         session = nil
         self.catalog = catalog
         self.allowStreaming = allowStreaming
@@ -128,14 +124,14 @@ final class PlaybackCoordinator {
     func pause() {
         shouldAutoplay = false
         accumulateListeningTime()
-        player?.pause()
+        player.pause()
         snapshot.isPlaying = false
         snapshot.isLoading = false
-        refreshNowPlaying()
     }
 
     func resume() {
         guard cursor?.current != nil else { return }
+        onWillStartAudio?()
         shouldAutoplay = true
         do {
             try AudioSessionController.shared.configure(.playback)
@@ -143,7 +139,7 @@ final class PlaybackCoordinator {
             failPlayback(error)
             return
         }
-        guard let player, player.currentItem != nil else {
+        guard player.currentItem != nil else {
             rebuildQueue(autoplay: true)
             return
         }
@@ -157,7 +153,7 @@ final class PlaybackCoordinator {
     func stop() {
         shouldAutoplay = false
         accumulateListeningTime()
-        cleanupPlayer()
+        resetQueue()
         cursor = nil
         snapshot.isPlaying = false
         snapshot.isLoading = false
@@ -169,12 +165,14 @@ final class PlaybackCoordinator {
 
     func skipForward() {
         let resume = snapshot.isPlaying || shouldAutoplay
+        if resume { onWillStartAudio?() }
         cursor?.skipForward()
         refreshAfterNavigation(autoplay: resume)
     }
 
     func skipBack() {
         let resume = snapshot.isPlaying || shouldAutoplay
+        if resume { onWillStartAudio?() }
         cursor?.skipBack()
         refreshAfterNavigation(autoplay: resume)
     }
@@ -182,6 +180,7 @@ final class PlaybackCoordinator {
     func move(to globalAyah: Int) {
         let resume = snapshot.isPlaying || shouldAutoplay
         guard cursor?.move(to: globalAyah) == true else { return }
+        if resume { onWillStartAudio?() }
         refreshAfterNavigation(autoplay: resume)
     }
 
@@ -195,7 +194,7 @@ final class PlaybackCoordinator {
         let resumePlayback = snapshot.isPlaying || shouldAutoplay
         let currentAyah = snapshot.currentGlobalAyah
         accumulateListeningTime()
-        cleanupPlayer()
+        resetQueue()
         activeSet.settings = settings
         snapshot.hideArabic = settings.hideArabic
         snapshot.advanceManually = settings.advanceManually
@@ -214,15 +213,22 @@ final class PlaybackCoordinator {
         var isLocal: Bool
     }
 
+    private func bindRemoteCommands() {
+        nowPlaying.handle(
+            hasItem: { [weak self] in self?.cursor?.current != nil },
+            play: { [weak self] in self?.resume() },
+            pause: { [weak self] in self?.pause() },
+            toggle: { [weak self] in
+                guard let self else { return }
+                self.snapshot.isPlaying ? self.pause() : self.resume()
+            },
+            next: { [weak self] in self?.skipForward() },
+            previous: { [weak self] in self?.skipBack() }
+        )
+    }
+
     private func refreshAfterNavigation(autoplay: Bool) {
-        if autoplay {
-            rebuildQueue(autoplay: true)
-        } else {
-            accumulateListeningTime()
-            cleanupPlayer()
-            shouldAutoplay = false
-            prepareCurrentStep()
-        }
+        rebuildQueue(autoplay: autoplay)
     }
 
     private func prepareCurrentStep() {
@@ -235,16 +241,11 @@ final class PlaybackCoordinator {
             return
         }
         updateSnapshot(for: step)
-        if session == nil {
-            nowPlaying.clear()
-        } else {
-            refreshNowPlaying()
-        }
     }
 
     private func rebuildQueue(autoplay: Bool) {
         accumulateListeningTime()
-        cleanupPlayer()
+        resetQueue()
         shouldAutoplay = autoplay
         guard let step = cursor?.current else {
             finishPlayback()
@@ -252,30 +253,28 @@ final class PlaybackCoordinator {
         }
 
         do {
-            try AudioSessionController.shared.configure(.playback)
+            if autoplay {
+                try AudioSessionController.shared.configure(.playback)
+            }
             updateSnapshot(for: step)
             countedCurrentItem = false
-            let player = AVQueuePlayer()
-            player.automaticallyWaitsToMinimizeStalling = true
-            self.player = player
             queueCursor = cursor
             try fillQueue()
-            observeQueue(player)
+            observeQueue()
 
             guard let first = player.currentItem else {
                 finishPlayback()
                 return
             }
             observeReadiness(of: first, autoplay: autoplay)
-            refreshNowPlaying()
         } catch {
             failPlayback(error)
         }
     }
 
     private func fillQueue() throws {
-        guard let player else { return }
         let targetDepth = snapshot.advanceManually ? 1 : 8
+        var lastAyah = snapshot.currentGlobalAyah
         while player.items().count < targetDepth, let step = queueCursor?.current {
             switch step {
             case .ayah(let ayah, _, _):
@@ -292,12 +291,14 @@ final class PlaybackCoordinator {
                 }
                 let item = AVPlayerItem(url: resolved.url)
                 item.preferredForwardBufferDuration = 10
+                stampNowPlaying(on: item, globalAyah: ayah)
                 queuedItems[ObjectIdentifier(item)] = QueuedItemInfo(
                     step: step,
                     completesStep: true,
                     isLocal: resolved.isLocal
                 )
                 player.insert(item, after: nil)
+                lastAyah = ayah
             case .silence(let seconds):
                 guard seconds > 0, let url = silenceURL() else {
                     queueCursor?.advanceAfterCompletion()
@@ -305,6 +306,9 @@ final class PlaybackCoordinator {
                 }
                 for index in 0..<seconds {
                     let item = AVPlayerItem(url: url)
+                    if let lastAyah {
+                        stampNowPlaying(on: item, globalAyah: lastAyah)
+                    }
                     queuedItems[ObjectIdentifier(item)] = QueuedItemInfo(
                         step: step,
                         completesStep: index == seconds - 1,
@@ -317,9 +321,16 @@ final class PlaybackCoordinator {
         }
     }
 
+    private func stampNowPlaying(on item: AVPlayerItem, globalAyah: Int) {
+        guard let verse = catalog?.verse(globalAyah: globalAyah) else { return }
+        nowPlaying.stamp(item, setTitle: snapshot.setTitle, verse: verse, reciter: source.reciter)
+    }
+
     private func observeReadiness(of item: AVPlayerItem, autoplay: Bool) {
         snapshot.isPlaying = false
-        snapshot.isLoading = true
+        if autoplay {
+            snapshot.isLoading = true
+        }
         shouldAutoplay = autoplay
         itemStatusObserver = item.observe(\.status, options: [.initial, .new]) { [weak self, weak item] _, _ in
             Task { @MainActor in
@@ -328,7 +339,6 @@ final class PlaybackCoordinator {
                 case .readyToPlay:
                     self.snapshot.isLoading = false
                     if self.shouldAutoplay { self.startPlayer() }
-                    self.refreshNowPlaying()
                 case .failed:
                     self.handleItemFailure(item.error, failedItem: item)
                 case .unknown:
@@ -340,7 +350,7 @@ final class PlaybackCoordinator {
         }
     }
 
-    private func observeQueue(_ player: AVQueuePlayer) {
+    private func observeQueue() {
         endObserver = NotificationCenter.default.addObserver(
             forName: .AVPlayerItemDidPlayToEndTime,
             object: nil,
@@ -400,7 +410,6 @@ final class PlaybackCoordinator {
         } catch {
             failPlayback(error)
         }
-        refreshNowPlaying()
     }
 
     private func updateSnapshot(for step: QueueItem) {
@@ -427,7 +436,7 @@ final class PlaybackCoordinator {
     private func failPlayback(_ error: Error) {
         shouldAutoplay = false
         accumulateListeningTime()
-        player?.pause()
+        player.pause()
         snapshot.isPlaying = false
         snapshot.isLoading = false
         if let appError = error as? AppError {
@@ -436,34 +445,39 @@ final class PlaybackCoordinator {
             userMessage = UserFacingMessage.from(.audioUnavailable)
         }
         logger.error("Playback failed: \(error.localizedDescription, privacy: .public)")
-        refreshNowPlaying()
     }
 
     private func finishPlayback() {
         shouldAutoplay = false
         accumulateListeningTime()
-        cleanupPlayer()
+        resetQueue()
         snapshot.isPlaying = false
         snapshot.isLoading = false
-        refreshNowPlaying()
     }
 
-    private func cleanupPlayer() {
+    private func resetQueue() {
         removeItemObservers()
-        player?.pause()
-        player?.removeAllItems()
-        player = nil
+        player.pause()
+        player.removeAllItems()
         queueCursor = nil
         queuedItems.removeAll()
+    }
+
+    private func replacePlayer() {
+        resetQueue()
+        let player = Self.makePlayer()
+        self.player = player
+        nowPlaying = NowPlayingBridge(player: player)
+        bindRemoteCommands()
     }
 
     private func startPlayer() {
         markCurrentAyahStarted()
         if playbackBeganAt == nil { playbackBeganAt = .now }
-        player?.play()
+        player.play()
         snapshot.isPlaying = true
         snapshot.isLoading = false
-        refreshNowPlaying()
+        nowPlaying.becomeActive()
     }
 
     private func markCurrentAyahStarted() {
@@ -493,19 +507,15 @@ final class PlaybackCoordinator {
         failureObserver = nil
     }
 
-    private func refreshNowPlaying() {
-        guard let ayah = snapshot.currentGlobalAyah, let verse = catalog?.verse(globalAyah: ayah) else { return }
-        nowPlaying.update(
-            setTitle: snapshot.setTitle,
-            verse: verse,
-            reciter: source.reciter,
-            isPlaying: snapshot.isPlaying
-        )
-    }
-
     private func silenceURL() -> URL? {
         Bundle.main.url(forResource: "silence", withExtension: "m4a", subdirectory: "Resources/Audio")
             ?? Bundle.main.url(forResource: "silence", withExtension: "m4a", subdirectory: "Audio")
             ?? Bundle.main.url(forResource: "silence", withExtension: "m4a")
+    }
+
+    private static func makePlayer() -> AVQueuePlayer {
+        let player = AVQueuePlayer()
+        player.automaticallyWaitsToMinimizeStalling = true
+        return player
     }
 }

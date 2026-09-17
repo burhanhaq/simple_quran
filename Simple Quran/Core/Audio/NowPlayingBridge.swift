@@ -1,12 +1,16 @@
+import AVFoundation
 import Foundation
 import MediaPlayer
-import UIKit
 
 @MainActor
 final class NowPlayingBridge {
-    func becomeActive() {
-        UIApplication.shared.beginReceivingRemoteControlEvents()
-        let center = MPRemoteCommandCenter.shared()
+    private let session: MPNowPlayingSession
+    private var commandTargets: [(command: MPRemoteCommand, target: Any)] = []
+
+    init(player: AVPlayer) {
+        session = MPNowPlayingSession(players: [player])
+        session.automaticallyPublishesNowPlayingInfo = true
+        let center = session.remoteCommandCenter
         center.playCommand.isEnabled = true
         center.pauseCommand.isEnabled = true
         center.togglePlayPauseCommand.isEnabled = true
@@ -15,55 +19,88 @@ final class NowPlayingBridge {
         center.changePlaybackPositionCommand.isEnabled = false
         center.seekForwardCommand.isEnabled = false
         center.seekBackwardCommand.isEnabled = false
-    }
-
-    func update(setTitle: String, verse: QuranVerse, reciter: Reciter, isPlaying: Bool) {
-        let info: [String: Any] = [
-            MPMediaItemPropertyTitle: "\(verse.surahNumber):\(verse.ayahInSurah)",
-            MPMediaItemPropertyAlbumTitle: setTitle,
-            MPMediaItemPropertyArtist: reciter.englishName,
-            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0
-        ]
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = info
-    }
-
-    func clear() {
-        MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
+        center.skipForwardCommand.isEnabled = false
+        center.skipBackwardCommand.isEnabled = false
     }
 
     func handle(
-        play: @escaping () -> Void,
-        pause: @escaping () -> Void,
-        toggle: @escaping () -> Void,
-        next: @escaping () -> Void,
-        previous: @escaping () -> Void
+        hasItem: @escaping @MainActor () -> Bool,
+        play: @escaping @MainActor () -> Void,
+        pause: @escaping @MainActor () -> Void,
+        toggle: @escaping @MainActor () -> Void,
+        next: @escaping @MainActor () -> Void,
+        previous: @escaping @MainActor () -> Void
     ) {
-        let center = MPRemoteCommandCenter.shared()
-        center.playCommand.removeTarget(nil)
-        center.pauseCommand.removeTarget(nil)
-        center.togglePlayPauseCommand.removeTarget(nil)
-        center.nextTrackCommand.removeTarget(nil)
-        center.previousTrackCommand.removeTarget(nil)
-
-        center.playCommand.addTarget { _ in
+        removeCommandTargets()
+        let center = session.remoteCommandCenter
+        bind(center.playCommand) {
+            guard hasItem() else { return .noActionableNowPlayingItem }
             play()
             return .success
         }
-        center.pauseCommand.addTarget { _ in
+        bind(center.pauseCommand) {
+            guard hasItem() else { return .noActionableNowPlayingItem }
             pause()
             return .success
         }
-        center.togglePlayPauseCommand.addTarget { _ in
+        bind(center.togglePlayPauseCommand) {
+            guard hasItem() else { return .noActionableNowPlayingItem }
             toggle()
             return .success
         }
-        center.nextTrackCommand.addTarget { _ in
+        bind(center.nextTrackCommand) {
+            guard hasItem() else { return .noActionableNowPlayingItem }
             next()
             return .success
         }
-        center.previousTrackCommand.addTarget { _ in
+        bind(center.previousTrackCommand) {
+            guard hasItem() else { return .noActionableNowPlayingItem }
             previous()
             return .success
+        }
+    }
+
+    func becomeActive() {
+        session.becomeActiveIfPossible { _ in }
+    }
+
+    func clear() {
+        session.nowPlayingInfoCenter.nowPlayingInfo = nil
+    }
+
+    func stamp(_ item: AVPlayerItem, setTitle: String, verse: QuranVerse, reciter: Reciter) {
+        item.nowPlayingInfo = [
+            MPMediaItemPropertyTitle: verse.reference,
+            MPMediaItemPropertyAlbumTitle: setTitle,
+            MPMediaItemPropertyArtist: reciter.englishName
+        ]
+    }
+
+    private func bind(
+        _ command: MPRemoteCommand,
+        perform: @escaping @MainActor () -> MPRemoteCommandHandlerStatus
+    ) {
+        let target = command.addTarget { _ in
+            Self.runOnMainActor(perform)
+        }
+        commandTargets.append((command, target))
+    }
+
+    private func removeCommandTargets() {
+        for registration in commandTargets {
+            registration.command.removeTarget(registration.target)
+        }
+        commandTargets.removeAll()
+    }
+
+    nonisolated private static func runOnMainActor(
+        _ work: @escaping @MainActor () -> MPRemoteCommandHandlerStatus
+    ) -> MPRemoteCommandHandlerStatus {
+        if Thread.isMainThread {
+            return MainActor.assumeIsolated(work)
+        }
+        return DispatchQueue.main.sync {
+            MainActor.assumeIsolated(work)
         }
     }
 }

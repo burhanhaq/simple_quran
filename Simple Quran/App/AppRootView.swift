@@ -59,6 +59,12 @@ private struct GlobalMiniPlayer: View {
                 ProgressView()
             }
             Button {
+                environment.playback.skipBack()
+            } label: {
+                Image(systemName: "backward.fill")
+            }
+            .accessibilityLabel(String(localized: "Previous ayah"))
+            Button {
                 if environment.playback.snapshot.isPlaying {
                     environment.playback.pause()
                 } else {
@@ -68,6 +74,12 @@ private struct GlobalMiniPlayer: View {
                 Image(systemName: environment.playback.snapshot.isPlaying ? "pause.fill" : "play.fill")
             }
             .accessibilityLabel(environment.playback.snapshot.isPlaying ? String(localized: "Pause") : String(localized: "Play"))
+            Button {
+                environment.playback.skipForward()
+            } label: {
+                Image(systemName: "forward.fill")
+            }
+            .accessibilityLabel(String(localized: "Next ayah"))
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
