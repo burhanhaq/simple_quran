@@ -134,7 +134,7 @@ private struct MiniPlayerTransport: View {
             }
         }
         .buttonStyle(.plain)
-        .foregroundStyle(Color.gold)
+        .foregroundStyle(.goldShine)
     }
 
     private func togglePlayback() {

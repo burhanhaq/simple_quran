@@ -160,7 +160,7 @@ struct HomeView: View {
                         Text(subtitle).font(.caption).foregroundStyle(Color.secondaryWarm)
                     }
                     Spacer()
-                    Image(systemName: "play.circle.fill").foregroundStyle(Color.gold).font(.title2)
+                    Image(systemName: "play.circle.fill").foregroundStyle(.goldShine).font(.title2)
                 }
             }
         }

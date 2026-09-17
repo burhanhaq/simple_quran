@@ -7,6 +7,18 @@ enum AppTheme {
     static let tightRadius: CGFloat = 12
     static let controlHeight: CGFloat = 48
 
+    static var goldShine: LinearGradient {
+        LinearGradient(
+            colors: [
+                Color(.displayP3, red: 1.00, green: 0.95, blue: 0.72, opacity: 1),
+                Color(.displayP3, red: 0.83, green: 0.65, blue: 0.16, opacity: 1),
+                Color(.displayP3, red: 0.52, green: 0.36, blue: 0.06, opacity: 1)
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    }
+
     static func registerFonts() {
         guard let url = Bundle.main.url(forResource: "AmiriQuran", withExtension: "ttf", subdirectory: "Resources/Fonts")
             ?? Bundle.main.url(forResource: "AmiriQuran", withExtension: "ttf", subdirectory: "Fonts")
@@ -25,6 +37,10 @@ extension Color {
     static let gold = Color("GoldAccent")
     static let appHighlightFill = Color("HighlightFill")
     static let dangerWarm = Color("DangerText")
+}
+
+extension ShapeStyle where Self == LinearGradient {
+    static var goldShine: LinearGradient { AppTheme.goldShine }
 }
 
 extension Font {
@@ -96,7 +112,7 @@ struct EmptyStateView: View {
         VStack(spacing: 14) {
             Image(systemName: "book.closed")
                 .font(.largeTitle)
-                .foregroundStyle(Color.gold)
+                .foregroundStyle(.goldShine)
             Text(title)
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(Color.appBrownText)
@@ -154,7 +170,7 @@ struct QuranAyahText: View {
         )
         .overlay(
             RoundedRectangle(cornerRadius: AppTheme.tightRadius, style: .continuous)
-                .stroke(strokeColor, lineWidth: isCurrent ? 1.5 : 1)
+                .stroke(strokeStyle, lineWidth: isCurrent ? 1.5 : 1)
         )
         .accessibilityAddTraits(isCurrent || isInPassage ? .isSelected : [])
     }
@@ -169,14 +185,14 @@ struct QuranAyahText: View {
         return Color.clear
     }
 
-    private var strokeColor: Color {
+    private var strokeStyle: AnyShapeStyle {
         if isCurrent {
-            return Color.gold
+            return AnyShapeStyle(.goldShine)
         }
         if isInPassage {
-            return Color.olive.opacity(0.45)
+            return AnyShapeStyle(Color.olive.opacity(0.45))
         }
-        return Color.clear
+        return AnyShapeStyle(Color.clear)
     }
 }
 

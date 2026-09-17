@@ -154,7 +154,7 @@ struct PracticeView: View {
                     .font(.title3)
                     .frame(width: 44, height: 44)
             }
-            .foregroundStyle(isCurrentMarkedForReview ? Color.gold : Color.olive)
+            .foregroundStyle(isCurrentMarkedForReview ? AnyShapeStyle(.goldShine) : AnyShapeStyle(Color.olive))
             .accessibilityLabel(
                 isCurrentMarkedForReview
                     ? String(localized: "Remove ayah from review")
@@ -202,7 +202,7 @@ struct PracticeView: View {
                         }
                     }
             }
-            .foregroundStyle(Color.gold)
+            .foregroundStyle(.goldShine)
             .disabled(isRecordingBusy)
             .accessibilityIdentifier("practice.play")
             .accessibilityLabel(isPlaybackActive ? String(localized: "Pause") : String(localized: "Play"))

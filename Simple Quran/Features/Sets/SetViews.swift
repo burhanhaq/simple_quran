@@ -30,7 +30,7 @@ struct SetListView: View {
                                 HStack(spacing: 12) {
                                     Image(systemName: "text.book.closed")
                                         .font(.title3)
-                                        .foregroundStyle(Color.gold)
+                                        .foregroundStyle(.goldShine)
                                         .frame(width: 32)
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(set.title).font(.headline).foregroundStyle(Color.appBrownText)

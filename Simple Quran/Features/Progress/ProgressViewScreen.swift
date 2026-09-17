@@ -62,7 +62,7 @@ struct ProgressViewScreen: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("\(insights.knownCount)")
                     .font(.largeTitle.weight(.bold))
-                    .foregroundStyle(Color.gold)
+                    .foregroundStyle(.goldShine)
                 Text(String(localized: "Ayahs you know"))
                     .font(.headline)
                     .foregroundStyle(Color.appBrownText)
@@ -123,7 +123,7 @@ struct ProgressViewScreen: View {
                         .foregroundStyle(Color.appBrownText)
                     Text("\(item.surah.englishName) \(item.knownCount)/\(item.ayahCount)")
                         .font(.title3.weight(.semibold))
-                        .foregroundStyle(Color.gold)
+                        .foregroundStyle(.goldShine)
                 }
             }
             .accessibilityIdentifier("progress.closest")
@@ -198,7 +198,7 @@ struct ProgressViewScreen: View {
                 Spacer()
                 if showsPlay {
                     Image(systemName: "play.circle.fill")
-                        .foregroundStyle(Color.gold)
+                        .foregroundStyle(.goldShine)
                         .font(.title2)
                 }
             }
