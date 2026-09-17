@@ -81,7 +81,16 @@ final class NowPlayingBridge {
         perform: @escaping @MainActor () -> MPRemoteCommandHandlerStatus
     ) {
         let target = command.addTarget { _ in
-            Self.runOnMainActor(perform)
+            if Thread.isMainThread {
+                return MainActor.assumeIsolated {
+                    perform()
+                }
+            }
+            return DispatchQueue.main.sync {
+                MainActor.assumeIsolated {
+                    perform()
+                }
+            }
         }
         commandTargets.append((command, target))
     }
@@ -91,16 +100,5 @@ final class NowPlayingBridge {
             registration.command.removeTarget(registration.target)
         }
         commandTargets.removeAll()
-    }
-
-    nonisolated private static func runOnMainActor(
-        _ work: @escaping @MainActor () -> MPRemoteCommandHandlerStatus
-    ) -> MPRemoteCommandHandlerStatus {
-        if Thread.isMainThread {
-            return MainActor.assumeIsolated(work)
-        }
-        return DispatchQueue.main.sync {
-            MainActor.assumeIsolated(work)
-        }
     }
 }
