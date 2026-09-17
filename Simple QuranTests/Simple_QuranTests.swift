@@ -201,6 +201,58 @@ private func makeCoordinatorFixture(
     return (PlaybackCoordinator(source: audioSource, fileStore: fileStore), set, catalog)
 }
 
+struct AudioInterruptionPolicyTests {
+    @Test func suspendedInterruptionsDoNotPause() {
+        #expect(AudioInterruptionPolicy.actionForBegan(wasSuspended: true) == .ignore)
+        #expect(AudioInterruptionPolicy.actionForBegan(wasSuspended: false) == .pausePreservingIntent)
+    }
+
+    @Test func playbackIntentSurvivesInterruptionsWithoutShouldResume() {
+        #expect(AudioInterruptionPolicy.actionForEnded(shouldResume: false, hasPlaybackIntent: true) == .resume)
+        #expect(AudioInterruptionPolicy.actionForEnded(shouldResume: true, hasPlaybackIntent: true) == .resume)
+        #expect(AudioInterruptionPolicy.actionForEnded(shouldResume: true, hasPlaybackIntent: false) == .ignore)
+        #expect(AudioInterruptionPolicy.actionForEnded(shouldResume: false, hasPlaybackIntent: false) == .ignore)
+    }
+}
+
+struct PracticePlaybackLifecycleTests {
+    @Test func reappearingTheSameCollectionDoesNotRestartPlayback() {
+        let id = UUID()
+        #expect(
+            PracticePlaybackLifecycle.shouldPrepareNewSession(
+                activeSetID: id,
+                currentGlobalAyah: 12,
+                openingSetID: id
+            ) == false
+        )
+    }
+
+    @Test func aNewOrStoppedSessionPreparesPlaybackAgain() {
+        let id = UUID()
+        #expect(
+            PracticePlaybackLifecycle.shouldPrepareNewSession(
+                activeSetID: id,
+                currentGlobalAyah: nil,
+                openingSetID: id
+            )
+        )
+        #expect(
+            PracticePlaybackLifecycle.shouldPrepareNewSession(
+                activeSetID: UUID(),
+                currentGlobalAyah: 1,
+                openingSetID: id
+            )
+        )
+        #expect(
+            PracticePlaybackLifecycle.shouldPrepareNewSession(
+                activeSetID: nil,
+                currentGlobalAyah: nil,
+                openingSetID: id
+            )
+        )
+    }
+}
+
 struct ReviewSchedulerTests {
     @Test func listeningIsNotMasteryAndRatingsScheduleReviews() {
         let scheduler = ReviewScheduler()
