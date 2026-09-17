@@ -63,9 +63,8 @@ final class AudioSessionController {
                 object: AVAudioSession.sharedInstance(),
                 queue: .main
             ) { [weak self] notification in
-                let userInfo = notification.userInfo
-                let rawType = userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
-                let rawOptions = userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+                let rawType = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+                let rawOptions = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
                 Task { @MainActor in
                     guard let self,
                           let rawType,
@@ -74,7 +73,7 @@ final class AudioSessionController {
                     switch type {
                     case .began:
                         guard AudioInterruptionPolicy.actionForBegan(
-                            wasSuspended: Self.interruptionWasSuspended(userInfo)
+                            wasSuspended: false
                         ) == .pausePreservingIntent else { return }
                         self.onEvent?(.interruptionBegan)
                     case .ended:
@@ -114,12 +113,4 @@ final class AudioSessionController {
         )
     }
 
-    private static func interruptionWasSuspended(_ userInfo: [AnyHashable: Any]?) -> Bool {
-        if let rawReason = userInfo?[AVAudioSessionInterruptionReasonKey] as? UInt,
-           let reason = AVAudioSession.InterruptionReason(rawValue: rawReason),
-           reason == .appWasSuspended {
-            return true
-        }
-        return false
-    }
 }

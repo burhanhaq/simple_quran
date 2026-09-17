@@ -15,7 +15,7 @@ nonisolated enum MasteryStrength: String, Equatable, Hashable, Sendable, CaseIte
 }
 
 extension VerseProgressSnapshot {
-    var masteryStrength: MasteryStrength? {
+    nonisolated var masteryStrength: MasteryStrength? {
         if isWeak || recallState == .learning {
             return .needsWork
         }
