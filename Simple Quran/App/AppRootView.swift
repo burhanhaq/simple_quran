@@ -103,14 +103,16 @@ private struct MiniPlayerTransport: View {
 
             Button(action: togglePlayback) {
                 ZStack {
-                    Image(systemName: environment.playback.snapshot.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                        .font(.system(size: 36))
-                        .frame(width: 44, height: 44)
-                        .opacity(environment.playback.snapshot.isLoading ? 0.35 : 1)
+                    PlayGlyph(
+                        systemName: environment.playback.snapshot.isPlaying ? "pause.fill" : "play.fill",
+                        size: 36
+                    )
+                    .opacity(environment.playback.snapshot.isLoading ? 0.35 : 1)
                     if environment.playback.snapshot.isLoading {
                         ProgressView()
                     }
                 }
+                .frame(width: 44, height: 44)
                 .contentShape(Rectangle())
             }
             .accessibilityLabel(

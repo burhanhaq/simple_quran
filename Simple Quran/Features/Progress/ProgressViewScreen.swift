@@ -197,9 +197,7 @@ struct ProgressViewScreen: View {
                 }
                 Spacer()
                 if showsPlay {
-                    Image(systemName: "play.circle.fill")
-                        .foregroundStyle(.goldShine)
-                        .font(.title2)
+                    PlayGlyph()
                 }
             }
         }

@@ -187,22 +187,22 @@ struct PracticeView: View {
             Spacer(minLength: 4)
 
             Button(action: togglePlayback) {
-                Image(systemName: isPlaybackActive ? "pause.circle.fill" : "play.circle.fill")
-                    .font(.system(size: 46))
-                    .frame(width: 52, height: 48)
-                    .overlay(alignment: .topTrailing) {
-                        if !environment.playback.snapshot.repetitionLabel.isEmpty {
-                            Text(environment.playback.snapshot.repetitionLabel)
-                                .font(.caption2.bold())
-                                .foregroundStyle(Color.appBrownText)
-                                .padding(.horizontal, 5)
-                                .padding(.vertical, 2)
-                                .background(Color.appWarmSurface, in: Capsule())
-                                .offset(x: 9, y: -2)
-                        }
+                PlayGlyph(
+                    systemName: isPlaybackActive ? "pause.fill" : "play.fill",
+                    size: 52
+                )
+                .overlay(alignment: .topTrailing) {
+                    if !environment.playback.snapshot.repetitionLabel.isEmpty {
+                        Text(environment.playback.snapshot.repetitionLabel)
+                            .font(.caption2.bold())
+                            .foregroundStyle(Color.appBrownText)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 2)
+                            .background(Color.appWarmSurface, in: Capsule())
+                            .offset(x: 9, y: -2)
                     }
+                }
             }
-            .foregroundStyle(.goldShine)
             .disabled(isRecordingBusy)
             .accessibilityIdentifier("practice.play")
             .accessibilityLabel(isPlaybackActive ? String(localized: "Pause") : String(localized: "Play"))

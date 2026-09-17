@@ -10,9 +10,9 @@ enum AppTheme {
     static var goldShine: LinearGradient {
         LinearGradient(
             colors: [
-                Color(.displayP3, red: 1.00, green: 0.95, blue: 0.72, opacity: 1),
-                Color(.displayP3, red: 0.83, green: 0.65, blue: 0.16, opacity: 1),
-                Color(.displayP3, red: 0.52, green: 0.36, blue: 0.06, opacity: 1)
+                Color(.displayP3, red: 1.00, green: 0.97, blue: 0.72, opacity: 1),
+                Color(.displayP3, red: 0.96, green: 0.78, blue: 0.22, opacity: 1),
+                Color(.displayP3, red: 0.82, green: 0.64, blue: 0.12, opacity: 1)
             ],
             startPoint: .topLeading,
             endPoint: .bottomTrailing
@@ -35,6 +35,7 @@ extension Color {
     static let secondaryWarm = Color("SecondaryText")
     static let olive = Color("OliveAccent")
     static let gold = Color("GoldAccent")
+    static let ink = Color("Ink")
     static let appHighlightFill = Color("HighlightFill")
     static let dangerWarm = Color("DangerText")
 }
@@ -61,6 +62,27 @@ struct WarmCard<Content: View>: View {
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
             .background(Color.appWarmSurface, in: RoundedRectangle(cornerRadius: AppTheme.cornerRadius, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: AppTheme.cornerRadius, style: .continuous)
+                    .strokeBorder(Color.gold.opacity(0.4), lineWidth: 1)
+            )
+    }
+}
+
+struct PlayGlyph: View {
+    var systemName: String = "play.fill"
+    var size: CGFloat = 36
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.system(size: size * 0.42, weight: .semibold))
+            .foregroundStyle(.goldShine)
+            .offset(x: systemName.hasPrefix("play") ? size * 0.04 : 0)
+            .frame(width: size, height: size)
+            .background(Color.ink, in: Circle())
+            .overlay {
+                Circle().strokeBorder(.goldShine, lineWidth: 1)
+            }
     }
 }
 

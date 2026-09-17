@@ -85,7 +85,7 @@ struct HomeView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(String(localized: "Continue last session"))
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(Color.olive)
+                            .foregroundStyle(Color.gold)
                         Text(last.title)
                             .font(.title3.weight(.bold))
                             .foregroundStyle(Color.appBrownText)
@@ -160,7 +160,7 @@ struct HomeView: View {
                         Text(subtitle).font(.caption).foregroundStyle(Color.secondaryWarm)
                     }
                     Spacer()
-                    Image(systemName: "play.circle.fill").foregroundStyle(.goldShine).font(.title2)
+                    PlayGlyph()
                 }
             }
         }

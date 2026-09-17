@@ -114,8 +114,8 @@ private func drawIcon(in ctx: CGContext, appearance: Appearance) {
 }
 
 private func fillBackground(in ctx: CGContext, canvas: CGRect) {
-    let center = CGColor(colorSpace: p3, components: [0.165, 0.094, 0.047, 1])!
-    let edge = CGColor(colorSpace: p3, components: [0.110, 0.063, 0.031, 1])!
+    let center = CGColor(colorSpace: p3, components: [0.039, 0.039, 0.039, 1])!
+    let edge = CGColor(colorSpace: p3, components: [0.067, 0.067, 0.067, 1])!
     let gradient = CGGradient(colorsSpace: p3, colors: [center, edge] as CFArray, locations: [0, 1])!
     ctx.drawRadialGradient(
         gradient,
@@ -269,12 +269,12 @@ private func strokePath(
 }
 
 private func strokeGold(_ path: CGPath, width: CGFloat, in ctx: CGContext, canvas: CGRect) {
-    let highlight = CGColor(colorSpace: p3, components: [1.00, 0.95, 0.72, 1])!
-    let mid = CGColor(colorSpace: p3, components: [0.83, 0.65, 0.16, 1])!
-    let bronze = CGColor(colorSpace: p3, components: [0.52, 0.36, 0.06, 1])!
+    let highlight = CGColor(colorSpace: p3, components: [1.00, 0.97, 0.72, 1])!
+    let mid = CGColor(colorSpace: p3, components: [0.96, 0.78, 0.22, 1])!
+    let edge = CGColor(colorSpace: p3, components: [0.82, 0.64, 0.12, 1])!
     let gold = CGGradient(
         colorsSpace: p3,
-        colors: [highlight, mid, bronze] as CFArray,
+        colors: [highlight, mid, edge] as CFArray,
         locations: [0, 0.45, 1]
     )!
 
