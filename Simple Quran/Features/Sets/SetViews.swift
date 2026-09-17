@@ -206,33 +206,18 @@ struct SetDetailView: View {
     }
 
     private func passageCard(_ passage: PracticePassage) -> some View {
-        let verses = environment.quran.verses(in: passage.range)
-        let first = verses.first
-        let last = verses.last
-        return WarmCard {
-            VStack(alignment: .leading, spacing: 6) {
-                Text(title(for: verses))
-                    .font(.headline)
-                    .foregroundStyle(Color.appBrownText)
-                if let first, let last {
-                    Text("\(first.reference) – \(last.reference)")
-                        .font(.caption)
-                        .foregroundStyle(Color.secondaryWarm)
-                }
-            }
+        WarmCard {
+            Text(PassageLabel.passage(passage.range, catalog: environment.quran))
+                .font(.headline)
+                .foregroundStyle(Color.appBrownText)
         }
-    }
-
-    private func title(for verses: [QuranVerse]) -> String {
-        let surahs = Set(verses.map(\.surahNumber)).sorted()
-        let names = surahs.compactMap { environment.quran.surah(number: $0)?.englishName }
-        return names.joined(separator: ", ")
     }
 
     private func draftFromSet() -> SetDraft {
         let draft = SetDraft()
         draft.existingID = practiceSet.id
         draft.title = practiceSet.title
+        draft.hasCustomTitle = true
         draft.passages = practiceSet.orderedPassages.map { OrderedPassage(id: $0.id, order: $0.order, range: $0.range) }
         draft.settings = practiceSet.settings
         return draft
@@ -245,12 +230,19 @@ struct SetEditorView: View {
     var draft: SetDraft
     var onSaved: (() -> Void)?
     @State private var errorMessage: UserFacingMessage?
+    @State private var showPracticeOptions: Bool
+
+    init(draft: SetDraft, onSaved: (() -> Void)? = nil) {
+        self.draft = draft
+        self.onSaved = onSaved
+        _showPracticeOptions = State(initialValue: draft.settings != .default)
+    }
 
     var body: some View {
         NavigationStack {
             Form {
                 Section(String(localized: "Name")) {
-                    TextField(String(localized: "Collection name"), text: Bindable(draft).title)
+                    TextField(String(localized: "Collection name"), text: titleBinding)
                         .accessibilityIdentifier("set.editor.title")
                 }
                 Section(String(localized: "Passages")) {
@@ -260,7 +252,7 @@ struct SetEditorView: View {
                     }
                     ForEach(Array(draft.passages.enumerated()), id: \.element.id) { index, passage in
                         HStack {
-                            Text(label(for: passage.range))
+                            Text(PassageLabel.passage(passage.range, catalog: environment.quran))
                             Spacer()
                             Button(role: .destructive) {
                                 draft.passages.remove(at: index)
@@ -275,24 +267,30 @@ struct SetEditorView: View {
                         reindex()
                     }
                 }
-                Section(String(localized: "Practice defaults")) {
-                    Picker(String(localized: "Repeat ayah"), selection: Bindable(draft).settings.ayahRepeatCount) {
-                        ForEach(RepeatCount.ayahPresets) { value in
-                            Text(value.label).tag(value)
+                Section {
+                    DisclosureGroup(isExpanded: $showPracticeOptions) {
+                        Picker(String(localized: "Repeat ayah"), selection: Bindable(draft).settings.ayahRepeatCount) {
+                            ForEach(RepeatCount.ayahPresets) { value in
+                                Text(value.label).tag(value)
+                            }
                         }
-                    }
-                    Picker(String(localized: "Repeat collection"), selection: Bindable(draft).settings.setRepeatCount) {
-                        ForEach(RepeatCount.setPresets) { value in
-                            Text(value.label).tag(value)
+                        Picker(String(localized: "Repeat collection"), selection: Bindable(draft).settings.setRepeatCount) {
+                            ForEach(RepeatCount.setPresets) { value in
+                                Text(value.label).tag(value)
+                            }
                         }
+                        Stepper(value: Bindable(draft).settings.pauseSeconds, in: 0...5) {
+                            Text(draft.settings.pauseSeconds == 0
+                                 ? String(localized: "Pause after ayah: Off")
+                                 : String(localized: "Pause after ayah: \(draft.settings.pauseSeconds)s"))
+                        }
+                        Toggle(String(localized: "Hide Arabic for recall"), isOn: Bindable(draft).settings.hideArabic)
+                        Toggle(String(localized: "Advance manually"), isOn: Bindable(draft).settings.advanceManually)
+                    } label: {
+                        Text(String(localized: "Practice options"))
                     }
-                    Stepper(value: Bindable(draft).settings.pauseSeconds, in: 0...5) {
-                        Text(draft.settings.pauseSeconds == 0
-                             ? String(localized: "Pause after ayah: Off")
-                             : String(localized: "Pause after ayah: \(draft.settings.pauseSeconds)s"))
-                    }
-                    Toggle(String(localized: "Hide Arabic for recall"), isOn: Bindable(draft).settings.hideArabic)
-                    Toggle(String(localized: "Advance manually"), isOn: Bindable(draft).settings.advanceManually)
+                } footer: {
+                    Text(String(localized: "You can change these while practicing."))
                 }
             }
             .navigationTitle(draft.existingID == nil ? String(localized: "New Collection") : String(localized: "Edit Collection"))
@@ -317,11 +315,11 @@ struct SetEditorView: View {
         }
     }
 
-    private func label(for range: VerseRange) -> String {
-        guard let first = environment.quran.verse(globalAyah: range.startGlobalAyah),
-              let last = environment.quran.verse(globalAyah: range.endGlobalAyah)
-        else { return "\(range.startGlobalAyah)–\(range.endGlobalAyah)" }
-        return "\(first.reference) – \(last.reference)"
+    private var titleBinding: Binding<String> {
+        Binding(
+            get: { draft.displayTitle(catalog: environment.quran) },
+            set: { draft.setTitle($0, catalog: environment.quran) }
+        )
     }
 
     private func reindex() {
@@ -332,11 +330,12 @@ struct SetEditorView: View {
 
     private func save() {
         let ranges = draft.passages.sorted { $0.order < $1.order }.map(\.range)
+        let title = draft.resolvedTitle(catalog: environment.quran)
         do {
             if let id = draft.existingID, let set = try environment.store.set(id: id) {
-                try environment.store.updateSet(set, title: draft.resolvedTitle, passages: ranges, settings: draft.settings)
+                try environment.store.updateSet(set, title: title, passages: ranges, settings: draft.settings)
             } else {
-                _ = try environment.store.createSet(title: draft.resolvedTitle, passages: ranges, settings: draft.settings)
+                _ = try environment.store.createSet(title: title, passages: ranges, settings: draft.settings)
             }
             onSaved?()
             dismiss()

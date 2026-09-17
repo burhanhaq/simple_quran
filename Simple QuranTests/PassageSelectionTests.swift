@@ -11,7 +11,8 @@ struct PassageSelectionTests {
         #expect(selection.highlights(1, collected: []))
         #expect(selection.highlights(2, collected: []) == false)
 
-        let range = try #require(selection.tap(7))
+        let completed = selection.tap(7)
+        let range = try #require(completed)
         #expect(range.startGlobalAyah == 1)
         #expect(range.endGlobalAyah == 7)
         #expect(selection.isSelecting == false)
@@ -22,7 +23,8 @@ struct PassageSelectionTests {
     @Test func reversedTapsStillProduceAnOrderedRange() throws {
         var selection = PassageSelection()
         #expect(selection.tap(7) == nil)
-        let range = try #require(selection.tap(1))
+        let completed = selection.tap(1)
+        let range = try #require(completed)
         #expect(range.startGlobalAyah == 1)
         #expect(range.endGlobalAyah == 7)
     }
@@ -30,7 +32,8 @@ struct PassageSelectionTests {
     @Test func tappingTheStartAyahAgainCollectsASingleAyah() throws {
         var selection = PassageSelection()
         #expect(selection.tap(5) == nil)
-        let range = try #require(selection.tap(5))
+        let completed = selection.tap(5)
+        let range = try #require(completed)
         #expect(range.startGlobalAyah == 5)
         #expect(range.endGlobalAyah == 5)
         #expect(range.count == 1)

@@ -51,7 +51,7 @@ final class PlaybackCoordinator {
         isPlaying: false,
         isLoading: false,
         hideArabic: false,
-        ayahRepeat: .three,
+        ayahRepeat: .one,
         setRepeat: .one,
         pauseSeconds: 0,
         advanceManually: false,

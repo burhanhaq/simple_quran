@@ -33,7 +33,7 @@ nonisolated struct PracticeSettings: Equatable, Sendable, Codable {
     var advanceManually: Bool
 
     static let `default` = PracticeSettings(
-        ayahRepeatCount: .three,
+        ayahRepeatCount: .one,
         setRepeatCount: .one,
         pauseSeconds: 0,
         hideArabic: false,

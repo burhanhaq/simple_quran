@@ -96,18 +96,19 @@ nonisolated struct QuranSearchIndex: Sendable {
               let surah = catalog.surah(number: surahNumber)
         else { return nil }
 
+        let title = PassageLabel.passage(range, catalog: catalog)
         if start == end {
             return QuranSearchHit(
                 id: "verse-\(range.startGlobalAyah)",
                 kind: .verse(range.startGlobalAyah),
-                title: "\(surah.englishName) \(start)",
+                title: title,
                 subtitle: surah.arabicName
             )
         }
         return QuranSearchHit(
             id: "range-\(range.startGlobalAyah)-\(range.endGlobalAyah)",
             kind: .range(range),
-            title: "\(surah.englishName) \(start)–\(end)",
+            title: title,
             subtitle: surah.arabicName
         )
     }

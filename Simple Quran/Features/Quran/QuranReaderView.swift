@@ -204,7 +204,7 @@ struct QuranReaderView: View {
 
     private func collect(_ verse: QuranVerse) {
         if let range = selection.tap(verse.globalAyah) {
-            environment.collectionDraft.append(range, titleHint: titleHint(for: range))
+            environment.collectionDraft.append(range)
         }
     }
 
@@ -215,7 +215,7 @@ struct QuranReaderView: View {
 
     private func collectWholeVisibleRange() {
         guard let range = visibleRange else { return }
-        environment.collectionDraft.append(range, titleHint: destination.title(in: environment.quran))
+        environment.collectionDraft.append(range)
         environment.isCollectingAyahs = true
         selection.reset()
     }
@@ -262,28 +262,12 @@ struct QuranReaderView: View {
             .map(\.range)
         guard !passages.isEmpty else { return }
         environment.playback.startListening(
-            title: environment.collectionDraft.resolvedTitle,
+            title: environment.collectionDraft.resolvedTitle(catalog: environment.quran),
             passages: passages,
             fromAyah: passages.first?.startGlobalAyah,
             catalog: environment.quran,
             allowStreaming: environment.settings.streamWhenMissing
         )
         environment.playback.resume()
-    }
-
-    private func titleHint(for range: VerseRange) -> String {
-        guard let first = environment.quran.verse(globalAyah: range.startGlobalAyah),
-              let last = environment.quran.verse(globalAyah: range.endGlobalAyah),
-              let surah = environment.quran.surah(number: first.surahNumber)
-        else {
-            return destination.title(in: environment.quran)
-        }
-        if first.globalAyah == last.globalAyah {
-            return "\(surah.englishName) \(first.ayahInSurah)"
-        }
-        if first.surahNumber == last.surahNumber {
-            return "\(surah.englishName) \(first.ayahInSurah)–\(last.ayahInSurah)"
-        }
-        return destination.title(in: environment.quran)
     }
 }

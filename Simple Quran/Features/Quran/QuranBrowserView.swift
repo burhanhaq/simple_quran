@@ -156,7 +156,7 @@ struct QuranBrowserView: View {
             }
         case .range(let range):
             guard let verse = environment.quran.verse(globalAyah: range.startGlobalAyah) else { return }
-            environment.collectionDraft.append(range, titleHint: hit.title)
+            environment.collectionDraft.append(range)
             environment.isCollectingAyahs = true
             navigationPath.append(.surah(number: verse.surahNumber, scrollToAyah: range.startGlobalAyah))
         }

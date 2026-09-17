@@ -32,6 +32,8 @@ struct QuranIntegrityTests {
 struct PracticePlaybackCursorTests {
     @Test func practiceStartsWithContinuousPlayback() {
         #expect(PracticeSettings.default.pauseSeconds == 0)
+        #expect(PracticeSettings.default.ayahRepeatCount == .one)
+        #expect(PracticeSettings.default.setRepeatCount == .one)
         #expect(PracticeSettings.listening.ayahRepeatCount == .one)
         #expect(PracticeSettings.listening.setRepeatCount == .one)
         #expect(PracticeSettings.listening.hideArabic == false)
@@ -238,12 +240,12 @@ private func makeCoordinatorFixture(
 }
 
 struct AudioInterruptionPolicyTests {
-    @Test func suspendedInterruptionsDoNotPause() {
+    @Test @MainActor func suspendedInterruptionsDoNotPause() {
         #expect(AudioInterruptionPolicy.actionForBegan(wasSuspended: true) == .ignore)
         #expect(AudioInterruptionPolicy.actionForBegan(wasSuspended: false) == .pausePreservingIntent)
     }
 
-    @Test func playbackIntentSurvivesInterruptionsWithoutShouldResume() {
+    @Test @MainActor func playbackIntentSurvivesInterruptionsWithoutShouldResume() {
         #expect(AudioInterruptionPolicy.actionForEnded(shouldResume: false, hasPlaybackIntent: true) == .resume)
         #expect(AudioInterruptionPolicy.actionForEnded(shouldResume: true, hasPlaybackIntent: true) == .resume)
         #expect(AudioInterruptionPolicy.actionForEnded(shouldResume: true, hasPlaybackIntent: false) == .ignore)
@@ -252,7 +254,7 @@ struct AudioInterruptionPolicyTests {
 }
 
 struct PracticePlaybackLifecycleTests {
-    @Test func reappearingTheSameCollectionDoesNotRestartPlayback() {
+    @Test @MainActor func reappearingTheSameCollectionDoesNotRestartPlayback() {
         let id = UUID()
         #expect(
             PracticePlaybackLifecycle.shouldPrepareNewSession(
@@ -263,7 +265,7 @@ struct PracticePlaybackLifecycleTests {
         )
     }
 
-    @Test func aNewOrStoppedSessionPreparesPlaybackAgain() {
+    @Test @MainActor func aNewOrStoppedSessionPreparesPlaybackAgain() {
         let id = UUID()
         #expect(
             PracticePlaybackLifecycle.shouldPrepareNewSession(
@@ -316,8 +318,10 @@ struct ReviewSchedulerTests {
 struct SearchAndAudioSourceTests {
     @Test func searchFindsKahfRangeAndJuzAmma() throws {
         let catalog = try BundledQuranCatalog.loadFromBundle()
+        let kahfRange = try catalog.range(surah: 18, startAyah: 1, endAyah: 10)
         let kahf = catalog.search("18:1-10")
         #expect(kahf.hits.contains { if case .range(let range) = $0.kind { return range.count == 10 }; return false })
+        #expect(kahf.hits.contains { $0.title == PassageLabel.passage(kahfRange, catalog: catalog) })
         let amma = catalog.search("juz amma")
         #expect(amma.hits.contains { if case .juz(30) = $0.kind { return true }; return false })
     }

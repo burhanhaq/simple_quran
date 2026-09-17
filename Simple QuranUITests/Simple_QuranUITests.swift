@@ -51,11 +51,9 @@ final class Simple_QuranUITests: XCTestCase {
         app.buttons["quran.tray.save"].tap()
         let title = app.textFields["set.editor.title"]
         XCTAssertTrue(title.waitForExistence(timeout: 5))
-        title.tap()
-        title.typeText("Al-Fatiha")
         app.buttons["set.editor.save"].tap()
         app.tabBars.buttons["Collections"].tap()
-        XCTAssertTrue(app.staticTexts["Al-Fatiha"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["Al-Faatiha"].waitForExistence(timeout: 5))
     }
 
     @MainActor

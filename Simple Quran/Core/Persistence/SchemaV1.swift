@@ -66,7 +66,7 @@ final class PracticeSet {
     var settings: PracticeSettings {
         get {
             PracticeSettings(
-                ayahRepeatCount: Self.decode(ayahRepeatRaw) ?? .three,
+                ayahRepeatCount: Self.decode(ayahRepeatRaw) ?? .one,
                 setRepeatCount: Self.decode(setRepeatRaw) ?? .one,
                 pauseSeconds: pauseSeconds,
                 hideArabic: hideArabic,
