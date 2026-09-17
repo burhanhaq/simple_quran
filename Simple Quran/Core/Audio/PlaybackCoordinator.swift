@@ -113,31 +113,42 @@ final class PlaybackCoordinator {
     }
 
     func start(set: PracticeSet, catalog: any QuranCatalog, resume: Bool, allowStreaming: Bool) {
-        resetQueue()
-        session = nil
-        self.catalog = catalog
-        self.allowStreaming = allowStreaming
-        activeSet = set
-        let ranges = set.orderedPassages.map(\.range)
-        versesInSet = ranges.flatMap { catalog.verses(in: $0) }
-        cursor = PracticePlaybackCursor(
-            passages: ranges,
+        preparePlayback(
+            title: set.title,
+            passages: set.orderedPassages.map(\.range),
             settings: set.settings,
-            resumeAt: resume ? set.lastGlobalAyah : nil
+            resumeAt: resume ? set.lastGlobalAyah : nil,
+            catalog: catalog,
+            allowStreaming: allowStreaming,
+            set: set
         )
-        coveredAyahs = []
-        repetitionCount = 0
-        listeningSeconds = 0
-        playbackBeganAt = nil
-        userMessage = nil
-        snapshot.setID = set.id
-        snapshot.setTitle = set.title
-        snapshot.hideArabic = set.settings.hideArabic
-        snapshot.ayahRepeat = set.settings.ayahRepeatCount
-        snapshot.setRepeat = set.settings.setRepeatCount
-        snapshot.pauseSeconds = set.settings.clampedPauseSeconds
-        snapshot.advanceManually = set.settings.advanceManually
-        prepareCurrentStep()
+    }
+
+    func startListening(
+        title: String,
+        passages: [VerseRange],
+        fromAyah: Int? = nil,
+        catalog: any QuranCatalog,
+        allowStreaming: Bool
+    ) {
+        guard !passages.isEmpty else { return }
+        preparePlayback(
+            title: title,
+            passages: passages,
+            settings: .listening,
+            resumeAt: fromAyah,
+            catalog: catalog,
+            allowStreaming: allowStreaming,
+            set: nil
+        )
+    }
+
+    func isPrepared(for passages: [VerseRange]) -> Bool {
+        versesInSet.map(\.globalAyah) == passages.flatMap(\.globalAyahs)
+    }
+
+    func containsAyah(_ globalAyah: Int) -> Bool {
+        versesInSet.contains { $0.globalAyah == globalAyah }
     }
 
     func pause() {
@@ -248,6 +259,42 @@ final class PlaybackCoordinator {
 
     private func refreshAfterNavigation(autoplay: Bool) {
         rebuildQueue(autoplay: autoplay)
+    }
+
+    private func preparePlayback(
+        title: String,
+        passages: [VerseRange],
+        settings: PracticeSettings,
+        resumeAt: Int?,
+        catalog: any QuranCatalog,
+        allowStreaming: Bool,
+        set: PracticeSet?
+    ) {
+        resetQueue()
+        session = nil
+        self.catalog = catalog
+        self.allowStreaming = allowStreaming
+        activeSet = set
+        versesInSet = passages.flatMap { catalog.verses(in: $0) }
+        cursor = PracticePlaybackCursor(
+            passages: passages,
+            settings: settings,
+            resumeAt: resumeAt
+        )
+        coveredAyahs = []
+        repetitionCount = 0
+        listeningSeconds = 0
+        playbackBeganAt = nil
+        userMessage = nil
+        shouldAutoplay = false
+        snapshot.setID = set?.id
+        snapshot.setTitle = title
+        snapshot.hideArabic = settings.hideArabic
+        snapshot.ayahRepeat = settings.ayahRepeatCount
+        snapshot.setRepeat = settings.setRepeatCount
+        snapshot.pauseSeconds = settings.clampedPauseSeconds
+        snapshot.advanceManually = settings.advanceManually
+        prepareCurrentStep()
     }
 
     private func prepareCurrentStep() {

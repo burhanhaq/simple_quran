@@ -31,6 +31,7 @@ final class AppSettings {
         static let streamWhenMissing = "settings.streamWhenMissing"
         static let lastTab = "settings.lastTab"
         static let quranReadingLayout = "settings.quranReadingLayout"
+        static let hasSeenQuranHint = "settings.hasSeenQuranHint"
     }
 
     var wifiOnly: Bool {
@@ -45,12 +46,17 @@ final class AppSettings {
         didSet { defaults.set(quranReadingLayout.rawValue, forKey: Key.quranReadingLayout) }
     }
 
+    var hasSeenQuranHint: Bool {
+        didSet { defaults.set(hasSeenQuranHint, forKey: Key.hasSeenQuranHint) }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         self.wifiOnly = defaults.object(forKey: Key.wifiOnly) as? Bool ?? false
         self.streamWhenMissing = defaults.object(forKey: Key.streamWhenMissing) as? Bool ?? true
         self.quranReadingLayout = defaults.string(forKey: Key.quranReadingLayout)
             .flatMap(QuranReadingLayout.init(rawValue:)) ?? .ayahByAyah
+        self.hasSeenQuranHint = defaults.bool(forKey: Key.hasSeenQuranHint)
     }
 }
 
@@ -67,6 +73,9 @@ final class AppEnvironment {
     var selectedTab: AppTab = .home
     var catalogLoadError: UserFacingMessage?
     var persistenceLoadError: UserFacingMessage?
+    var collectionDraft = SetDraft()
+    var isCollectingAyahs = false
+    var isPresentingCollectionEditor = false
 
     init(
         quran: BundledQuranCatalog,
@@ -89,6 +98,27 @@ final class AppEnvironment {
             recorder?.cancelComparisonPlayback()
         }
         downloads.updateCellular(!settings.wifiOnly)
+    }
+
+    func enterQuranToListen() {
+        isCollectingAyahs = false
+        selectedTab = .quran
+    }
+
+    func enterQuranForCollecting() {
+        isCollectingAyahs = true
+        selectedTab = .quran
+    }
+
+    func presentCollectionEditor() {
+        guard !collectionDraft.passages.isEmpty else { return }
+        isPresentingCollectionEditor = true
+    }
+
+    func clearCollectionDraft() {
+        collectionDraft = SetDraft()
+        isCollectingAyahs = false
+        isPresentingCollectionEditor = false
     }
 }
 
