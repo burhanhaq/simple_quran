@@ -5,21 +5,24 @@ struct HomeView: View {
     @Environment(AppEnvironment.self) private var environment
     @Query(filter: #Predicate<PracticeSet> { $0.deletedAt == nil && $0.archivedAt == nil }, sort: \PracticeSet.updatedAt, order: .reverse)
     private var sets: [PracticeSet]
+    @Query private var verseProgress: [VerseProgress]
     @State private var showSettings = false
     @State private var practiceSet: PracticeSet?
-    @State private var errorMessage: UserFacingMessage?
 
     var body: some View {
+        let insights = progressInsights
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     if let loadError = environment.catalogLoadError {
                         FriendlyErrorView(message: loadError)
                     }
+                    habitCard(insights)
                     continueCard
-                    dueSection
+                    if !sets.isEmpty {
+                        needsAttentionSection(practicedToday: insights.practicedToday)
+                    }
                     recentSection
-                    statsRow
                 }
                 .padding()
             }
@@ -45,9 +48,36 @@ struct HomeView: View {
     }
 
     @ViewBuilder
+    private func habitCard(_ insights: ProgressInsights) -> some View {
+        if insights.practicedCount > 0 {
+            WarmCard {
+                VStack(alignment: .leading, spacing: 6) {
+                    if insights.practicedToday {
+                        Text(String(localized: "Practiced today"))
+                            .font(.title3.weight(.bold))
+                            .foregroundStyle(Color.appBrownText)
+                        if insights.currentStreak > 1 {
+                            Text(String(localized: "\(insights.currentStreak) day streak"))
+                                .foregroundStyle(Color.olive)
+                        }
+                    } else if insights.currentStreak > 0 {
+                        Text(String(localized: "Keep your \(insights.currentStreak) day streak"))
+                            .font(.title3.weight(.bold))
+                            .foregroundStyle(Color.appBrownText)
+                    } else {
+                        Text(String(localized: "A short session keeps your ayahs fresh"))
+                            .font(.title3.weight(.bold))
+                            .foregroundStyle(Color.appBrownText)
+                    }
+                }
+            }
+            .accessibilityIdentifier("home.habit")
+        }
+    }
+
+    @ViewBuilder
     private var continueCard: some View {
-        let last = sets.first { $0.lastPractisedAt != nil }
-        if let last {
+        if let last = lastPractisedSet {
             Button {
                 practiceSet = last
             } label: {
@@ -79,57 +109,44 @@ struct HomeView: View {
         }
     }
 
-    private var dueSection: some View {
-        let due = dueSets
+    private func needsAttentionSection(practicedToday: Bool) -> some View {
+        let due = needsAttention
         return VStack(alignment: .leading, spacing: 10) {
-            Text(String(localized: "Due for review"))
+            Text(String(localized: "Needs attention"))
                 .font(.headline)
                 .foregroundStyle(Color.appBrownText)
             if due.isEmpty {
-                Text(String(localized: "Nothing is due today. Open a collection whenever you’re ready."))
-                    .foregroundStyle(Color.secondaryWarm)
+                Text(
+                    practicedToday
+                        ? String(localized: "Your ayahs are fresh. Open a collection if you want to keep going.")
+                        : String(localized: "Pick up a collection whenever you’re ready.")
+                )
+                .foregroundStyle(Color.secondaryWarm)
             } else {
-                ForEach(due, id: \.id) { set in
-                    setRow(set, badge: String(localized: "Due"))
+                ForEach(due, id: \.set.id) { item in
+                    setRow(item.set, subtitle: String(localized: "\(item.dueCount) ayahs need review"))
                 }
             }
         }
         .accessibilityIdentifier("home.due")
     }
 
+    @ViewBuilder
     private var recentSection: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text(String(localized: "Recently practiced"))
-                .font(.headline)
-                .foregroundStyle(Color.appBrownText)
-            ForEach(sets.prefix(5), id: \.id) { set in
-                setRow(set, badge: nil)
+        let recent = recentPractisedSets
+        if !recent.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(String(localized: "Recently practiced"))
+                    .font(.headline)
+                    .foregroundStyle(Color.appBrownText)
+                ForEach(recent, id: \.id) { set in
+                    setRow(set, subtitle: passageSummary(set))
+                }
             }
         }
     }
 
-    private var statsRow: some View {
-        let progress = (try? environment.store.allProgress()) ?? []
-        let learning = progress.filter { $0.recallState == .learning || $0.recallState == .strengthening }.count
-        let dueAyahs = progress.filter(\.isDue).count
-        let days = Set(progress.compactMap { $0.lastPractisedAt.map { Calendar.current.startOfDay(for: $0) } }).count
-        return HStack {
-            stat(String(localized: "Learning"), "\(learning)")
-            stat(String(localized: "Due ayahs"), "\(dueAyahs)")
-            stat(String(localized: "Days practiced"), "\(days)")
-        }
-    }
-
-    private func stat(_ title: String, _ value: String) -> some View {
-        WarmCard {
-            VStack(alignment: .leading, spacing: 4) {
-                Text(value).font(.title2.weight(.bold)).foregroundStyle(Color.gold)
-                Text(title).font(.caption).foregroundStyle(Color.secondaryWarm)
-            }
-        }
-    }
-
-    private func setRow(_ set: PracticeSet, badge: String?) -> some View {
+    private func setRow(_ set: PracticeSet, subtitle: String) -> some View {
         Button {
             practiceSet = set
         } label: {
@@ -137,12 +154,9 @@ struct HomeView: View {
                 HStack {
                     VStack(alignment: .leading, spacing: 4) {
                         Text(set.title).font(.headline).foregroundStyle(Color.appBrownText)
-                        Text(passageSummary(set)).font(.caption).foregroundStyle(Color.secondaryWarm)
+                        Text(subtitle).font(.caption).foregroundStyle(Color.secondaryWarm)
                     }
                     Spacer()
-                    if let badge {
-                        StatusChip(title: badge, tint: .gold)
-                    }
                     Image(systemName: "play.circle.fill").foregroundStyle(Color.gold).font(.title2)
                 }
             }
@@ -151,8 +165,45 @@ struct HomeView: View {
         .accessibilityIdentifier("home.set.\(set.id.uuidString)")
     }
 
-    private var dueSets: [PracticeSet] {
-        (try? environment.store.dueSets(now: .now)) ?? []
+    private var snapshots: [VerseProgressSnapshot] {
+        verseProgress.map(\.snapshot)
+    }
+
+    private var progressInsights: ProgressInsights {
+        ProgressInsights.make(
+            snapshots: snapshots,
+            surahs: environment.quran.surahs,
+            now: .now,
+            calendar: .current
+        )
+    }
+
+    private var lastPractisedSet: PracticeSet? {
+        sets
+            .filter { $0.lastPractisedAt != nil }
+            .max { ($0.lastPractisedAt ?? .distantPast) < ($1.lastPractisedAt ?? .distantPast) }
+    }
+
+    private var needsAttention: [(set: PracticeSet, dueCount: Int)] {
+        let now = Date()
+        return sets.compactMap { set in
+            let count = ProgressInsights.dueAyahCount(
+                in: set.orderedPassages.map(\.range),
+                snapshots: snapshots,
+                now: now
+            )
+            return count > 0 ? (set, count) : nil
+        }
+    }
+
+    private var recentPractisedSets: [PracticeSet] {
+        let continueID = lastPractisedSet?.id
+        return Array(
+            sets
+                .filter { $0.lastPractisedAt != nil && $0.id != continueID }
+                .sorted { ($0.lastPractisedAt ?? .distantPast) > ($1.lastPractisedAt ?? .distantPast) }
+                .prefix(3)
+        )
     }
 
     private func passageSummary(_ set: PracticeSet) -> String {

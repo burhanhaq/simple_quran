@@ -59,9 +59,11 @@ nonisolated struct VerseProgressSnapshot: Equatable, Sendable {
         )
     }
 
-    var isDue: Bool {
+    var isDue: Bool { isDue(at: Date()) }
+
+    func isDue(at now: Date) -> Bool {
         guard let nextReviewAt else { return recallState != .new && isWeak }
-        return nextReviewAt <= Date()
+        return nextReviewAt <= now
     }
 }
 
