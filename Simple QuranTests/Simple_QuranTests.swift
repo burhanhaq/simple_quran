@@ -130,6 +130,75 @@ struct PlaybackCoordinatorTests {
         #expect(playback.repetitionCount == 0)
         playback.stop()
     }
+
+    @Test @MainActor func skipWhilePausedAdvancesWithoutASessionOrPlayback() throws {
+        let (playback, set, catalog) = try makeCoordinatorFixture(start: 1, end: 3)
+        playback.start(set: set, catalog: catalog, resume: true, allowStreaming: true)
+
+        #expect(playback.session == nil)
+        #expect(playback.snapshot.currentGlobalAyah == 1)
+        #expect(playback.hasPreparedQueue == false)
+
+        playback.skipForward()
+
+        #expect(playback.session == nil)
+        #expect(playback.snapshot.currentGlobalAyah == 2)
+        #expect(playback.snapshot.isPlaying == false)
+        #expect(playback.snapshot.isLoading == false)
+        #expect(playback.hasPreparedQueue)
+        playback.stop()
+    }
+
+    @Test @MainActor func skipAfterPauseKeepsTheCurrentAyahAndQueue() throws {
+        let (playback, set, catalog) = try makeCoordinatorFixture(start: 1, end: 3, lastAyah: 2)
+        playback.start(set: set, catalog: catalog, resume: true, allowStreaming: true)
+
+        playback.resume()
+        playback.pause()
+        #expect(playback.snapshot.currentGlobalAyah == 2)
+        #expect(playback.snapshot.isPlaying == false)
+
+        playback.skipBack()
+        #expect(playback.snapshot.currentGlobalAyah == 1)
+        #expect(playback.snapshot.isPlaying == false)
+        #expect(playback.hasPreparedQueue)
+
+        playback.skipForward()
+        #expect(playback.snapshot.currentGlobalAyah == 2)
+        #expect(playback.snapshot.isPlaying == false)
+        #expect(playback.hasPreparedQueue)
+        playback.stop()
+    }
+
+    @Test @MainActor func resumeNotifiesWillStartAudio() throws {
+        let (playback, set, catalog) = try makeCoordinatorFixture(start: 1, end: 2)
+        var count = 0
+        playback.onWillStartAudio = { count += 1 }
+        playback.start(set: set, catalog: catalog, resume: true, allowStreaming: true)
+        playback.resume()
+        #expect(count == 1)
+        playback.stop()
+    }
+}
+
+@MainActor
+private func makeCoordinatorFixture(
+    start: Int,
+    end: Int,
+    lastAyah: Int? = nil
+) throws -> (PlaybackCoordinator, PracticeSet, BundledQuranCatalog) {
+    let container = try PersistenceController.makeContainer(inMemory: true)
+    let store = PracticeStore(context: container.mainContext)
+    let range = try VerseRange(startGlobalAyah: start, endGlobalAyah: end)
+    let set = try store.createSet(title: "Transport practice", passages: [range], settings: .default)
+    set.lastGlobalAyah = lastAyah
+    let catalog = try BundledQuranCatalog.loadFromBundle()
+    let audioSource = AlQuranCloudAudioSource()
+    let fileStore = AudioFileStore(
+        reciter: audioSource.reciter,
+        baseDirectory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+    )
+    return (PlaybackCoordinator(source: audioSource, fileStore: fileStore), set, catalog)
 }
 
 struct AudioInterruptionPolicyTests {
