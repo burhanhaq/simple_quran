@@ -22,7 +22,7 @@ struct PlaybackSnapshot: Equatable {
 final class PlaybackCoordinator {
     private let source: AudioSource
     private let fileStore: AudioFileStore
-    private var nowPlaying: NowPlayingBridge
+    private let nowPlaying: NowPlayingBridge
     private let logger = Logger(subsystem: "com.simpleAzaan.Simple-Quran1", category: "playback")
 
     private var player: AVQueuePlayer
@@ -71,7 +71,7 @@ final class PlaybackCoordinator {
         self.fileStore = fileStore
         let player = Self.makePlayer()
         self.player = player
-        self.nowPlaying = NowPlayingBridge(player: player)
+        self.nowPlaying = NowPlayingBridge()
         bindRemoteCommands()
         AudioSessionController.shared.onEvent = { [weak self] event in
             guard let self else { return }
@@ -157,6 +157,7 @@ final class PlaybackCoordinator {
         player.pause()
         snapshot.isPlaying = false
         snapshot.isLoading = false
+        refreshNowPlayingIfPublished()
     }
 
     func resume() {
@@ -271,6 +272,7 @@ final class PlaybackCoordinator {
         set: PracticeSet?
     ) {
         resetQueue()
+        nowPlaying.clear()
         session = nil
         self.catalog = catalog
         self.allowStreaming = allowStreaming
@@ -333,6 +335,7 @@ final class PlaybackCoordinator {
                 return
             }
             observeReadiness(of: first, autoplay: autoplay)
+            refreshNowPlayingIfPublished()
         } catch {
             failPlayback(error)
         }
@@ -340,7 +343,6 @@ final class PlaybackCoordinator {
 
     private func fillQueue() throws {
         let targetDepth = snapshot.advanceManually ? 1 : 8
-        var lastAyah = snapshot.currentGlobalAyah
         while player.items().count < targetDepth, let step = queueCursor?.current {
             switch step {
             case .ayah(let ayah, _, _):
@@ -357,14 +359,12 @@ final class PlaybackCoordinator {
                 }
                 let item = AVPlayerItem(url: resolved.url)
                 item.preferredForwardBufferDuration = 10
-                stampNowPlaying(on: item, globalAyah: ayah)
                 queuedItems[ObjectIdentifier(item)] = QueuedItemInfo(
                     step: step,
                     completesStep: true,
                     isLocal: resolved.isLocal
                 )
                 player.insert(item, after: nil)
-                lastAyah = ayah
             case .silence(let seconds):
                 guard seconds > 0, let url = silenceURL() else {
                     queueCursor?.advanceAfterCompletion()
@@ -372,9 +372,6 @@ final class PlaybackCoordinator {
                 }
                 for index in 0..<seconds {
                     let item = AVPlayerItem(url: url)
-                    if let lastAyah {
-                        stampNowPlaying(on: item, globalAyah: lastAyah)
-                    }
                     queuedItems[ObjectIdentifier(item)] = QueuedItemInfo(
                         step: step,
                         completesStep: index == seconds - 1,
@@ -385,11 +382,6 @@ final class PlaybackCoordinator {
             }
             queueCursor?.advanceAfterCompletion()
         }
-    }
-
-    private func stampNowPlaying(on item: AVPlayerItem, globalAyah: Int) {
-        guard let verse = catalog?.verse(globalAyah: globalAyah) else { return }
-        nowPlaying.stamp(item, setTitle: snapshot.setTitle, verse: verse, reciter: source.reciter)
     }
 
     private func observeReadiness(of item: AVPlayerItem, autoplay: Bool) {
@@ -471,6 +463,7 @@ final class PlaybackCoordinator {
             playbackBeganAt = .now
             snapshot.isPlaying = true
         }
+        refreshNowPlayingIfPublished()
         do {
             try fillQueue()
         } catch {
@@ -505,6 +498,7 @@ final class PlaybackCoordinator {
         player.pause()
         snapshot.isPlaying = false
         snapshot.isLoading = false
+        refreshNowPlayingIfPublished()
         if let appError = error as? AppError {
             userMessage = UserFacingMessage.from(appError)
         } else {
@@ -519,6 +513,7 @@ final class PlaybackCoordinator {
         resetQueue()
         snapshot.isPlaying = false
         snapshot.isLoading = false
+        nowPlaying.clear()
     }
 
     private func resetQueue() {
@@ -533,8 +528,6 @@ final class PlaybackCoordinator {
         resetQueue()
         let player = Self.makePlayer()
         self.player = player
-        nowPlaying = NowPlayingBridge(player: player)
-        bindRemoteCommands()
     }
 
     private func startPlayer() {
@@ -544,7 +537,7 @@ final class PlaybackCoordinator {
         snapshot.isPlaying = true
         snapshot.isLoading = false
         updateIdleTimer()
-        nowPlaying.becomeActive()
+        publishNowPlaying()
     }
 
     private func pausePreservingAutoplayIntent() {
@@ -552,6 +545,7 @@ final class PlaybackCoordinator {
         player.pause()
         snapshot.isPlaying = false
         snapshot.isLoading = false
+        refreshNowPlayingIfPublished()
     }
 
     private func resumeIfNeededAfterBecomingActive() {
@@ -577,6 +571,25 @@ final class PlaybackCoordinator {
         guard let playbackBeganAt else { return }
         listeningSeconds += max(0, Date.now.timeIntervalSince(playbackBeganAt))
         self.playbackBeganAt = nil
+    }
+
+    private func publishNowPlaying() {
+        guard let ayah = snapshot.currentGlobalAyah,
+              let verse = catalog?.verse(globalAyah: ayah)
+        else { return }
+        nowPlaying.publish(
+            setTitle: snapshot.setTitle,
+            verse: verse,
+            reciter: source.reciter,
+            isPlaying: snapshot.isPlaying,
+            elapsedTime: player.currentTime().seconds,
+            duration: player.currentItem?.duration.seconds
+        )
+    }
+
+    private func refreshNowPlayingIfPublished() {
+        guard nowPlaying.isPublished else { return }
+        publishNowPlaying()
     }
 
     private func removeItemObservers() {

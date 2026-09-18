@@ -3,6 +3,13 @@ import SwiftData
 import Testing
 @testable import Simple_Quran
 
+struct AppConfigurationTests {
+    @Test func appDeclaresBackgroundAudioMode() {
+        let modes = Bundle.main.object(forInfoDictionaryKey: "UIBackgroundModes") as? [String]
+        #expect(modes?.contains("audio") == true)
+    }
+}
+
 struct QuranIntegrityTests {
     @Test func bundledCorpusPassesIntegrityChecks() throws {
         let catalog = try BundledQuranCatalog.loadFromBundle()
@@ -241,8 +248,9 @@ private func makeCoordinatorFixture(
 
 struct AudioInterruptionPolicyTests {
     @Test @MainActor func suspendedInterruptionsDoNotPause() {
-        #expect(AudioInterruptionPolicy.actionForBegan(wasSuspended: true) == .ignore)
-        #expect(AudioInterruptionPolicy.actionForBegan(wasSuspended: false) == .pausePreservingIntent)
+        #expect(AudioInterruptionPolicy.actionForBegan(reasonRawValue: 1) == .ignore)
+        #expect(AudioInterruptionPolicy.actionForBegan(reasonRawValue: 0) == .pausePreservingIntent)
+        #expect(AudioInterruptionPolicy.actionForBegan(reasonRawValue: nil) == .pausePreservingIntent)
     }
 
     @Test @MainActor func playbackIntentSurvivesInterruptionsWithoutShouldResume() {

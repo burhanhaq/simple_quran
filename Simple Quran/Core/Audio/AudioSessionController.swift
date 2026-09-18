@@ -22,8 +22,14 @@ enum AudioInterruptionAction: Equatable {
 }
 
 enum AudioInterruptionPolicy {
-    static func actionForBegan(wasSuspended: Bool) -> AudioInterruptionAction {
-        wasSuspended ? .ignore : .pausePreservingIntent
+    // AVAudioSession.InterruptionReason.appWasSuspended has raw value 1. The
+    // case is deprecated because newer iOS versions no longer send it, but the
+    // value is still delivered by older system behavior and must not be
+    // treated as a user-visible playback interruption.
+    private static let appWasSuspendedReason: UInt = 1
+
+    static func actionForBegan(reasonRawValue: UInt?) -> AudioInterruptionAction {
+        reasonRawValue == appWasSuspendedReason ? .ignore : .pausePreservingIntent
     }
 
     static func actionForEnded(shouldResume _: Bool, hasPlaybackIntent: Bool) -> AudioInterruptionAction {
@@ -63,8 +69,10 @@ final class AudioSessionController {
                 object: AVAudioSession.sharedInstance(),
                 queue: .main
             ) { [weak self] notification in
-                let rawType = notification.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
-                let rawOptions = notification.userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+                let userInfo = notification.userInfo
+                let rawType = userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt
+                let rawOptions = userInfo?[AVAudioSessionInterruptionOptionKey] as? UInt ?? 0
+                let rawReason = userInfo?[AVAudioSessionInterruptionReasonKey] as? UInt
                 Task { @MainActor in
                     guard let self,
                           let rawType,
@@ -73,7 +81,7 @@ final class AudioSessionController {
                     switch type {
                     case .began:
                         guard AudioInterruptionPolicy.actionForBegan(
-                            wasSuspended: false
+                            reasonRawValue: rawReason
                         ) == .pausePreservingIntent else { return }
                         self.onEvent?(.interruptionBegan)
                     case .ended:

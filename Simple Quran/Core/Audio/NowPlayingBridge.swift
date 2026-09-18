@@ -1,26 +1,24 @@
-import AVFoundation
 import Foundation
 import MediaPlayer
 
 @MainActor
 final class NowPlayingBridge {
-    private let session: MPNowPlayingSession
+    private let infoCenter = MPNowPlayingInfoCenter.default()
+    private let commandCenter = MPRemoteCommandCenter.shared()
     private var commandTargets: [(command: MPRemoteCommand, target: Any)] = []
+    private(set) var isPublished = false
 
-    init(player: AVPlayer) {
-        session = MPNowPlayingSession(players: [player])
-        session.automaticallyPublishesNowPlayingInfo = true
-        let center = session.remoteCommandCenter
-        center.playCommand.isEnabled = true
-        center.pauseCommand.isEnabled = true
-        center.togglePlayPauseCommand.isEnabled = true
-        center.nextTrackCommand.isEnabled = true
-        center.previousTrackCommand.isEnabled = true
-        center.changePlaybackPositionCommand.isEnabled = false
-        center.seekForwardCommand.isEnabled = false
-        center.seekBackwardCommand.isEnabled = false
-        center.skipForwardCommand.isEnabled = false
-        center.skipBackwardCommand.isEnabled = false
+    init() {
+        commandCenter.playCommand.isEnabled = true
+        commandCenter.pauseCommand.isEnabled = true
+        commandCenter.togglePlayPauseCommand.isEnabled = true
+        commandCenter.nextTrackCommand.isEnabled = true
+        commandCenter.previousTrackCommand.isEnabled = true
+        commandCenter.changePlaybackPositionCommand.isEnabled = false
+        commandCenter.seekForwardCommand.isEnabled = false
+        commandCenter.seekBackwardCommand.isEnabled = false
+        commandCenter.skipForwardCommand.isEnabled = false
+        commandCenter.skipBackwardCommand.isEnabled = false
     }
 
     func handle(
@@ -32,48 +30,64 @@ final class NowPlayingBridge {
         previous: @escaping @MainActor () -> Void
     ) {
         removeCommandTargets()
-        let center = session.remoteCommandCenter
-        bind(center.playCommand) {
+        bind(commandCenter.playCommand) {
             guard hasItem() else { return .noActionableNowPlayingItem }
             play()
             return .success
         }
-        bind(center.pauseCommand) {
+        bind(commandCenter.pauseCommand) {
             guard hasItem() else { return .noActionableNowPlayingItem }
             pause()
             return .success
         }
-        bind(center.togglePlayPauseCommand) {
+        bind(commandCenter.togglePlayPauseCommand) {
             guard hasItem() else { return .noActionableNowPlayingItem }
             toggle()
             return .success
         }
-        bind(center.nextTrackCommand) {
+        bind(commandCenter.nextTrackCommand) {
             guard hasItem() else { return .noActionableNowPlayingItem }
             next()
             return .success
         }
-        bind(center.previousTrackCommand) {
+        bind(commandCenter.previousTrackCommand) {
             guard hasItem() else { return .noActionableNowPlayingItem }
             previous()
             return .success
         }
     }
 
-    func becomeActive() {
-        session.becomeActiveIfPossible { _ in }
-    }
-
     func clear() {
-        session.nowPlayingInfoCenter.nowPlayingInfo = nil
+        infoCenter.nowPlayingInfo = nil
+        infoCenter.playbackState = .stopped
+        isPublished = false
     }
 
-    func stamp(_ item: AVPlayerItem, setTitle: String, verse: QuranVerse, reciter: Reciter) {
-        item.nowPlayingInfo = [
+    func publish(
+        setTitle: String,
+        verse: QuranVerse,
+        reciter: Reciter,
+        isPlaying: Bool,
+        elapsedTime: Double?,
+        duration: Double?
+    ) {
+        var info: [String: Any] = [
             MPMediaItemPropertyTitle: verse.reference,
             MPMediaItemPropertyAlbumTitle: setTitle,
-            MPMediaItemPropertyArtist: reciter.englishName
+            MPMediaItemPropertyArtist: reciter.englishName,
+            MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue,
+            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
+            MPNowPlayingInfoPropertyDefaultPlaybackRate: 1.0
         ]
+        if let elapsedTime, elapsedTime.isFinite, elapsedTime >= 0 {
+            info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = elapsedTime
+        }
+        if let duration, duration.isFinite, duration > 0 {
+            info[MPMediaItemPropertyPlaybackDuration] = duration
+        }
+        infoCenter.nowPlayingInfo = info
+        infoCenter.playbackState = isPlaying ? .playing : .paused
+        isPublished = true
     }
 
     private func bind(
