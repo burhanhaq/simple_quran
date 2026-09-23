@@ -16,6 +16,7 @@ struct QuranReaderView: View {
             }
         }
         .background(Color.parchment.ignoresSafeArea())
+        .parchmentNavigationBar()
         .navigationTitle(destination.title(in: environment.quran))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -81,6 +82,7 @@ struct QuranReaderView: View {
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 10) {
+                    readingBanner
                     if shouldShowHint {
                         hintBanner
                     }
@@ -126,6 +128,9 @@ struct QuranReaderView: View {
 
     private var mushafLayout: some View {
         VStack(alignment: .leading, spacing: 0) {
+            readingBanner
+                .padding(.horizontal)
+                .padding(.top, 12)
             if shouldShowHint {
                 hintBanner
                     .padding(.horizontal)
@@ -147,6 +152,17 @@ struct QuranReaderView: View {
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
+    }
+
+    private var readingBanner: some View {
+        let arabicName: String? = {
+            guard case .surah(let number, _) = destination else { return nil }
+            return environment.quran.surah(number: number)?.arabicName
+        }()
+        return ReadingBanner(
+            title: arabicName ?? destination.title(in: environment.quran),
+            isArabic: arabicName != nil
+        )
     }
 
     private var visibleRange: VerseRange? {
@@ -218,7 +234,7 @@ struct QuranReaderView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .background(Color.olive.opacity(0.12), in: RoundedRectangle(cornerRadius: AppTheme.tightRadius, style: .continuous))
+        .background(Color.bronze.opacity(0.12), in: RoundedRectangle(cornerRadius: AppTheme.tightRadius, style: .continuous))
         .accessibilityIdentifier("quran.collectBanner")
     }
 

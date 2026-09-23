@@ -25,12 +25,12 @@ struct PassageTrayView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(Color.gold)
+                .tint(Color.bronze)
                 .accessibilityIdentifier("quran.tray.save")
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
-        .background(.regularMaterial)
+        .background(Color.appWarmSurface)
     }
 }

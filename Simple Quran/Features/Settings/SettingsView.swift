@@ -11,34 +11,54 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
+                Section(String(localized: "Reading")) {
+                    Picker(String(localized: "Appearance"), selection: Bindable(environment.settings).appearance) {
+                        ForEach(AppAppearance.allCases) { appearance in
+                            Text(appearance.title).tag(appearance)
+                        }
+                    }
+                    .accessibilityIdentifier("settings.appearance")
+                    .warmListRow()
+                }
                 Section(String(localized: "Audio")) {
                     Toggle(String(localized: "Wi-Fi only downloads"), isOn: Bindable(environment.settings).wifiOnly)
                         .onChange(of: environment.settings.wifiOnly) { _, wifiOnly in
                             environment.downloads.updateCellular(!wifiOnly)
                         }
+                        .warmListRow()
                     Toggle(String(localized: "Stream if an ayah isn’t downloaded"), isOn: Bindable(environment.settings).streamWhenMissing)
+                        .warmListRow()
                     LabeledContent(String(localized: "Downloaded audio")) {
                         Text(ByteCountFormatter.string(fromByteCount: environment.downloads.fileStore.totalByteCount(), countStyle: .file))
                     }
+                    .warmListRow()
                     Button(String(localized: "Remove downloaded recitation"), role: .destructive) {
                         confirmRemoveDownloads = true
                     }
+                    .warmListRow()
                 }
                 Section(String(localized: "Recordings")) {
                     Button(String(localized: "Delete all recordings"), role: .destructive) {
                         confirmRemoveRecordings = true
                     }
+                    .warmListRow()
                     Text(String(localized: "Recordings stay on this device and are never uploaded."))
                         .font(.footnote)
                         .foregroundStyle(Color.secondaryWarm)
+                        .warmListRow()
                 }
                 Section(String(localized: "About")) {
                     Button(String(localized: "Acknowledgements")) { showAcknowledgements = true }
+                        .warmListRow()
                     Button(String(localized: "Privacy")) { showPrivacy = true }
+                        .warmListRow()
                     LabeledContent(String(localized: "Page convention"), value: String(localized: "604-page Madani Hafs"))
+                        .warmListRow()
                     LabeledContent(String(localized: "Reciter"), value: environment.audioSource.reciter.englishName)
+                        .warmListRow()
                 }
             }
+            .warmListChrome()
             .navigationTitle(String(localized: "Settings"))
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -101,6 +121,7 @@ struct AcknowledgementsView: View {
                 .foregroundStyle(Color.appBrownText)
             }
             .background(Color.parchment)
+            .parchmentNavigationBar()
             .navigationTitle(String(localized: "Acknowledgements"))
         }
     }
@@ -120,6 +141,7 @@ struct PrivacyView: View {
                 .foregroundStyle(Color.appBrownText)
             }
             .background(Color.parchment)
+            .parchmentNavigationBar()
             .navigationTitle(String(localized: "Privacy"))
         }
     }

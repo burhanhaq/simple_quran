@@ -30,7 +30,7 @@ struct SetListView: View {
                                 HStack(spacing: 12) {
                                     Image(systemName: "text.book.closed")
                                         .font(.title3)
-                                        .foregroundStyle(.goldShine)
+                                        .foregroundStyle(Color.bronze)
                                         .frame(width: 32)
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(set.title).font(.headline).foregroundStyle(Color.appBrownText)
@@ -38,6 +38,7 @@ struct SetListView: View {
                                     }
                                 }
                             }
+                            .warmListRow()
                             .accessibilityIdentifier("sets.row.\(set.id.uuidString)")
                         }
                     }
@@ -50,12 +51,12 @@ struct SetListView: View {
                             } label: {
                                 Text(set.title).foregroundStyle(Color.secondaryWarm)
                             }
+                            .warmListRow()
                         }
                     }
                 }
             }
-            .scrollContentBackground(.hidden)
-            .background(Color.parchment)
+            .warmListChrome()
             .navigationTitle(String(localized: "Collections"))
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -106,19 +107,21 @@ struct SetDetailView: View {
                 }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.large)
-                .tint(Color.gold)
+                .tint(Color.bronze)
                 .accessibilityIdentifier("set.practise")
                 Button {
-                        environment.downloads.download(ayahs: allAyahs)
+                    environment.downloads.download(ayahs: allAyahs)
                 } label: {
                     Label(String(localized: "Download for Offline Practice"), systemImage: "arrow.down.circle")
                         .frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(.bordered)
+                }
+                .buttonStyle(.bordered)
+                .tint(Color.bronze)
             }
             .padding()
         }
         .background(Color.parchment.ignoresSafeArea())
+        .parchmentNavigationBar()
         .navigationTitle(String(localized: "Collection"))
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -244,11 +247,13 @@ struct SetEditorView: View {
                 Section(String(localized: "Name")) {
                     TextField(String(localized: "Collection name"), text: titleBinding)
                         .accessibilityIdentifier("set.editor.title")
+                        .warmListRow()
                 }
                 Section(String(localized: "Passages")) {
                     if draft.passages.isEmpty {
                         Text(String(localized: "Add ayahs from the Quran tab. A collection can include passages from different surahs."))
                             .foregroundStyle(Color.secondaryWarm)
+                            .warmListRow()
                     }
                     ForEach(Array(draft.passages.enumerated()), id: \.element.id) { index, passage in
                         HStack {
@@ -261,6 +266,7 @@ struct SetEditorView: View {
                                 Image(systemName: "trash")
                             }
                         }
+                        .warmListRow()
                     }
                     .onMove { indices, newOffset in
                         draft.passages.move(fromOffsets: indices, toOffset: newOffset)
@@ -274,25 +280,32 @@ struct SetEditorView: View {
                                 Text(value.label).tag(value)
                             }
                         }
+                        .warmListRow()
                         Picker(String(localized: "Repeat collection"), selection: Bindable(draft).settings.setRepeatCount) {
                             ForEach(RepeatCount.setPresets) { value in
                                 Text(value.label).tag(value)
                             }
                         }
+                        .warmListRow()
                         Stepper(value: Bindable(draft).settings.pauseSeconds, in: 0...5) {
                             Text(draft.settings.pauseSeconds == 0
                                  ? String(localized: "Pause after ayah: Off")
                                  : String(localized: "Pause after ayah: \(draft.settings.pauseSeconds)s"))
                         }
+                        .warmListRow()
                         Toggle(String(localized: "Hide Arabic for recall"), isOn: Bindable(draft).settings.hideArabic)
+                            .warmListRow()
                         Toggle(String(localized: "Advance manually"), isOn: Bindable(draft).settings.advanceManually)
+                            .warmListRow()
                     } label: {
                         Text(String(localized: "Practice options"))
                     }
+                    .warmListRow()
                 } footer: {
                     Text(String(localized: "You can change these while practicing."))
                 }
             }
+            .warmListChrome()
             .navigationTitle(draft.existingID == nil ? String(localized: "New Collection") : String(localized: "Edit Collection"))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

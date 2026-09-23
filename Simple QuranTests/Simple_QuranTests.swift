@@ -405,3 +405,30 @@ struct PracticeStoreTests {
         #expect(try store.progress(for: 255).nextReviewAt == nil)
     }
 }
+
+struct AppearanceSettingTests {
+    @Test @MainActor func appearanceDefaultsToLight() throws {
+        let isolated = try isolatedDefaults()
+        defer { isolated.defaults.removePersistentDomain(forName: isolated.name) }
+        #expect(AppSettings(defaults: isolated.defaults).appearance == .light)
+    }
+
+    @Test @MainActor func appearanceRoundTripsNightAndSystem() throws {
+        let isolated = try isolatedDefaults()
+        defer { isolated.defaults.removePersistentDomain(forName: isolated.name) }
+        let settings = AppSettings(defaults: isolated.defaults)
+
+        settings.appearance = .night
+        #expect(AppSettings(defaults: isolated.defaults).appearance == .night)
+
+        settings.appearance = .system
+        #expect(AppSettings(defaults: isolated.defaults).appearance == .system)
+    }
+
+    private func isolatedDefaults() throws -> (name: String, defaults: UserDefaults) {
+        let name = "appearance-settings-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: name))
+        defaults.removePersistentDomain(forName: name)
+        return (name, defaults)
+    }
+}

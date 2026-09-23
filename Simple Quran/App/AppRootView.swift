@@ -11,6 +11,7 @@ struct AppRootView: View {
                     .padding()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(Color.parchment.ignoresSafeArea())
+                    .parchmentNavigationBar()
                     .navigationTitle(String(localized: "Simple Quran"))
             }
         } else {
@@ -28,8 +29,10 @@ struct AppRootView: View {
                     ProgressViewScreen()
                 }
             }
-            .tint(Color.gold)
+            .tint(Color.bronze)
             .background(Color.parchment.ignoresSafeArea())
+            .toolbarBackground(Color.parchment, for: .tabBar)
+            .toolbarBackgroundVisibility(.visible, for: .tabBar)
             .tabViewBottomAccessory(isEnabled: environment.playback.snapshot.currentGlobalAyah != nil) {
                 if let ayah = environment.playback.snapshot.currentGlobalAyah {
                     GlobalMiniPlayer(ayah: ayah)
@@ -136,7 +139,7 @@ private struct MiniPlayerTransport: View {
             }
         }
         .buttonStyle(.plain)
-        .foregroundStyle(.goldShine)
+        .foregroundStyle(Color.bronze)
     }
 
     private func togglePlayback() {
