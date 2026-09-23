@@ -1,6 +1,22 @@
 import Foundation
 import Observation
 
+enum AppAppearance: String, CaseIterable, Identifiable {
+    case light
+    case night
+    case system
+
+    var id: String { rawValue }
+
+    var title: String {
+        switch self {
+        case .light: String(localized: "Light")
+        case .night: String(localized: "Night")
+        case .system: String(localized: "System")
+        }
+    }
+}
+
 enum QuranReadingLayout: String, CaseIterable, Identifiable {
     case ayahByAyah
     case mushaf
@@ -32,6 +48,7 @@ final class AppSettings {
         static let lastTab = "settings.lastTab"
         static let quranReadingLayout = "settings.quranReadingLayout"
         static let hasSeenQuranHint = "settings.hasSeenQuranHint"
+        static let appearance = "settings.appearance"
     }
 
     var wifiOnly: Bool {
@@ -50,6 +67,10 @@ final class AppSettings {
         didSet { defaults.set(hasSeenQuranHint, forKey: Key.hasSeenQuranHint) }
     }
 
+    var appearance: AppAppearance {
+        didSet { defaults.set(appearance.rawValue, forKey: Key.appearance) }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         self.wifiOnly = defaults.object(forKey: Key.wifiOnly) as? Bool ?? false
@@ -57,6 +78,8 @@ final class AppSettings {
         self.quranReadingLayout = defaults.string(forKey: Key.quranReadingLayout)
             .flatMap(QuranReadingLayout.init(rawValue:)) ?? .ayahByAyah
         self.hasSeenQuranHint = defaults.bool(forKey: Key.hasSeenQuranHint)
+        self.appearance = defaults.string(forKey: Key.appearance)
+            .flatMap(AppAppearance.init(rawValue:)) ?? .light
     }
 }
 

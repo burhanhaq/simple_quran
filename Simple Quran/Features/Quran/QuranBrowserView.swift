@@ -39,9 +39,9 @@ struct QuranBrowserView: View {
                             HStack(spacing: 12) {
                                 Text("\(surah.number)")
                                     .font(.caption.weight(.semibold))
-                                    .foregroundStyle(Color.olive)
+                                    .foregroundStyle(Color.bronze)
                                     .frame(width: 30, height: 30)
-                                    .background(Color.olive.opacity(0.12), in: Circle())
+                                    .background(Color.bronze.opacity(0.12), in: Circle())
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(surah.englishName)
                                         .font(.headline)
@@ -58,6 +58,7 @@ struct QuranBrowserView: View {
                                     .environment(\.layoutDirection, .rightToLeft)
                             }
                         }
+                        .warmListRow()
                         .accessibilityIdentifier("quran.surah.\(surah.number)")
                     }
                 case .juz:
@@ -70,6 +71,7 @@ struct QuranBrowserView: View {
                             )
                             .foregroundStyle(Color.appBrownText)
                         }
+                        .warmListRow()
                         .accessibilityIdentifier("quran.juz.\(juz.number)")
                     }
                 case .pages:
@@ -78,12 +80,12 @@ struct QuranBrowserView: View {
                             Text(String(localized: "Page \(page.number)"))
                                 .foregroundStyle(Color.appBrownText)
                         }
+                        .warmListRow()
                         .accessibilityIdentifier("quran.page.\(page.number)")
                     }
                 }
             }
-            .scrollContentBackground(.hidden)
-            .background(Color.parchment)
+            .warmListChrome()
             .navigationTitle(String(localized: "Quran"))
             .searchable(text: $query, prompt: String(localized: "Surah, juz, page, or 18:1-10"))
             .toolbar {
@@ -94,6 +96,7 @@ struct QuranBrowserView: View {
                         }
                     }
                     .pickerStyle(.segmented)
+                    .tint(Color.bronze)
                     .frame(maxWidth: 280)
                 }
                 ToolbarItem(placement: .topBarTrailing) {
@@ -121,7 +124,7 @@ struct QuranBrowserView: View {
             Text(String(localized: "Choose a surah, juz, or page, then tap the first and last ayah."))
                 .font(.footnote)
                 .foregroundStyle(Color.secondaryWarm)
-                .listRowBackground(Color.olive.opacity(0.08))
+                .listRowBackground(Color.bronze.opacity(0.12))
         }
     }
 
@@ -138,6 +141,7 @@ struct QuranBrowserView: View {
                         Text(hit.subtitle).font(.caption).foregroundStyle(Color.secondaryWarm)
                     }
                 }
+                .warmListRow()
             }
         }
     }

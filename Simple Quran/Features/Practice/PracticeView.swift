@@ -15,6 +15,7 @@ struct PracticeView: View {
                 controls
             }
             .background(Color.parchment.ignoresSafeArea())
+            .parchmentNavigationBar()
             .navigationTitle(practiceSet.title)
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
@@ -154,7 +155,7 @@ struct PracticeView: View {
                     .font(.title3)
                     .frame(width: 44, height: 44)
             }
-            .foregroundStyle(isCurrentMarkedForReview ? AnyShapeStyle(.goldShine) : AnyShapeStyle(Color.olive))
+            .foregroundStyle(isCurrentMarkedForReview ? Color.bronze : Color.secondaryWarm)
             .accessibilityLabel(
                 isCurrentMarkedForReview
                     ? String(localized: "Remove ayah from review")
@@ -248,7 +249,7 @@ struct PracticeView: View {
         .overlay(alignment: .top) {
             Divider().overlay(Color.secondaryWarm.opacity(0.25))
         }
-        .background(.regularMaterial)
+        .background(Color.appWarmSurface)
     }
 
     private var ratingSheet: some View {
@@ -258,8 +259,10 @@ struct PracticeView: View {
                     Button(rating.title) {
                         rate(rating)
                     }
+                    .warmListRow()
                 }
             }
+            .warmListChrome()
             .navigationTitle(String(localized: "How did recall feel?"))
             .toolbar {
                 ToolbarItem(placement: .cancellationAction) {

@@ -80,9 +80,28 @@ struct SimpleQuranApp: App {
 
     var body: some Scene {
         WindowGroup {
-            AppRootView()
+            AppearanceRoot()
                 .environment(environment)
                 .modelContainer(container)
+        }
+    }
+}
+
+private struct AppearanceRoot: View {
+    @Environment(AppEnvironment.self) private var environment
+
+    var body: some View {
+        AppRootView()
+            .preferredColorScheme(environment.settings.appearance.preferredColorScheme)
+    }
+}
+
+extension AppAppearance {
+    var preferredColorScheme: ColorScheme? {
+        switch self {
+        case .light: .light
+        case .night: .dark
+        case .system: nil
         }
     }
 }

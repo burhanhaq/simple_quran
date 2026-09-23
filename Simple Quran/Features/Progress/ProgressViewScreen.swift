@@ -37,6 +37,7 @@ struct ProgressViewScreen: View {
                 .padding()
             }
             .background(Color.parchment.ignoresSafeArea())
+            .parchmentNavigationBar()
             .navigationTitle(String(localized: "Progress"))
             .fullScreenCover(item: $practiceSet) { set in
                 PracticeView(practiceSet: set)
@@ -62,7 +63,7 @@ struct ProgressViewScreen: View {
             VStack(alignment: .leading, spacing: 12) {
                 Text("\(insights.knownCount)")
                     .font(.largeTitle.weight(.bold))
-                    .foregroundStyle(.goldShine)
+                    .foregroundStyle(Color.bronze)
                 Text(String(localized: "Ayahs you know"))
                     .font(.headline)
                     .foregroundStyle(Color.appBrownText)
@@ -123,7 +124,7 @@ struct ProgressViewScreen: View {
                         .foregroundStyle(Color.appBrownText)
                     Text("\(item.surah.englishName) \(item.knownCount)/\(item.ayahCount)")
                         .font(.title3.weight(.semibold))
-                        .foregroundStyle(.goldShine)
+                        .foregroundStyle(Color.bronze)
                 }
             }
             .accessibilityIdentifier("progress.closest")

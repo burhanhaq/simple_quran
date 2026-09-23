@@ -6,18 +6,6 @@ enum AppTheme {
     static let tightRadius: CGFloat = 12
     static let controlHeight: CGFloat = 48
 
-    static var goldShine: LinearGradient {
-        LinearGradient(
-            colors: [
-                Color(.displayP3, red: 1.00, green: 0.97, blue: 0.72, opacity: 1),
-                Color(.displayP3, red: 0.96, green: 0.78, blue: 0.22, opacity: 1),
-                Color(.displayP3, red: 0.82, green: 0.64, blue: 0.12, opacity: 1)
-            ],
-            startPoint: .topLeading,
-            endPoint: .bottomTrailing
-        )
-    }
-
     static func registerFonts() {
         guard let url = Bundle.main.url(forResource: "AmiriQuran", withExtension: "ttf", subdirectory: "Resources/Fonts")
             ?? Bundle.main.url(forResource: "AmiriQuran", withExtension: "ttf", subdirectory: "Fonts")
@@ -34,13 +22,9 @@ extension Color {
     static let secondaryWarm = Color("SecondaryText")
     static let olive = Color("OliveAccent")
     static let gold = Color("GoldAccent")
-    static let ink = Color("Ink")
+    static let bronze = Color("Bronze")
     static let appHighlightFill = Color("HighlightFill")
     static let dangerWarm = Color("DangerText")
-}
-
-extension ShapeStyle where Self == LinearGradient {
-    static var goldShine: LinearGradient { AppTheme.goldShine }
 }
 
 extension Font {
@@ -63,7 +47,7 @@ struct WarmCard<Content: View>: View {
             .background(Color.appWarmSurface, in: RoundedRectangle(cornerRadius: AppTheme.cornerRadius, style: .continuous))
             .overlay(
                 RoundedRectangle(cornerRadius: AppTheme.cornerRadius, style: .continuous)
-                    .strokeBorder(Color.gold.opacity(0.4), lineWidth: 1)
+                    .strokeBorder(Color.bronze.opacity(0.35), lineWidth: 1)
             )
     }
 }
@@ -75,12 +59,12 @@ struct PlayGlyph: View {
     var body: some View {
         Image(systemName: systemName)
             .font(.system(size: size * 0.42, weight: .semibold))
-            .foregroundStyle(.goldShine)
+            .foregroundStyle(Color.appBrownText)
             .offset(x: systemName.hasPrefix("play") ? size * 0.04 : 0)
             .frame(width: size, height: size)
-            .background(Color.ink, in: Circle())
+            .background(Color.appWarmSurface, in: Circle())
             .overlay {
-                Circle().strokeBorder(.goldShine, lineWidth: 1)
+                Circle().strokeBorder(Color.gold, lineWidth: 1)
             }
     }
 }
@@ -133,7 +117,7 @@ struct EmptyStateView: View {
         VStack(spacing: 14) {
             Image(systemName: "book.closed")
                 .font(.largeTitle)
-                .foregroundStyle(.goldShine)
+                .foregroundStyle(Color.bronze)
             Text(title)
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(Color.appBrownText)
@@ -143,12 +127,12 @@ struct EmptyStateView: View {
                 .multilineTextAlignment(.center)
             Button(actionTitle, action: action)
                 .buttonStyle(.borderedProminent)
-                .tint(Color.gold)
+                .tint(Color.bronze)
                 .accessibilityIdentifier(actionIdentifier)
             if let secondaryTitle, let secondaryAction {
                 Button(secondaryTitle, action: secondaryAction)
                     .buttonStyle(.bordered)
-                    .tint(Color.olive)
+                    .tint(Color.bronze)
                     .accessibilityIdentifier(secondaryIdentifier)
             }
         }
@@ -167,7 +151,7 @@ struct QuranAyahText: View {
         VStack(alignment: .leading, spacing: 10) {
             Text(hidden ? "••••••" : verse.text)
                 .font(.quran())
-                .lineSpacing(8)
+                .lineSpacing(12)
                 .foregroundStyle(Color.appBrownText)
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
@@ -189,10 +173,6 @@ struct QuranAyahText: View {
             RoundedRectangle(cornerRadius: AppTheme.tightRadius, style: .continuous)
                 .fill(fillColor)
         )
-        .overlay(
-            RoundedRectangle(cornerRadius: AppTheme.tightRadius, style: .continuous)
-                .stroke(strokeStyle, lineWidth: isCurrent ? 1.5 : 1)
-        )
         .accessibilityAddTraits(isCurrent || isInPassage ? .isSelected : [])
     }
 
@@ -201,19 +181,9 @@ struct QuranAyahText: View {
             return Color.appHighlightFill.opacity(0.55)
         }
         if isInPassage {
-            return Color.olive.opacity(0.14)
+            return Color.bronze.opacity(0.14)
         }
         return Color.clear
-    }
-
-    private var strokeStyle: AnyShapeStyle {
-        if isCurrent {
-            return AnyShapeStyle(.goldShine)
-        }
-        if isInPassage {
-            return AnyShapeStyle(Color.olive.opacity(0.45))
-        }
-        return AnyShapeStyle(Color.clear)
     }
 }
 
@@ -242,7 +212,7 @@ struct BasmalaHeader: View {
     var body: some View {
         Text("بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ")
             .font(.quran(size: 25))
-            .foregroundStyle(Color.olive)
+            .foregroundStyle(Color.appBrownText)
             .multilineTextAlignment(.center)
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
@@ -270,10 +240,54 @@ struct FriendlyErrorView: View {
             if let retry {
                 Button(String(localized: "Try again"), action: retry)
                     .buttonStyle(.bordered)
-                    .tint(Color.gold)
+                    .tint(Color.bronze)
             }
         }
         .padding()
         .background(Color.appWarmSurface, in: RoundedRectangle(cornerRadius: AppTheme.tightRadius, style: .continuous))
+    }
+}
+
+struct ReadingBanner: View {
+    var title: String
+    var isArabic: Bool
+
+    var body: some View {
+        VStack(spacing: 10) {
+            rule
+            Text(title)
+                .font(isArabic ? .quran(size: 28) : .title3.weight(.semibold))
+                .foregroundStyle(Color.appBrownText)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: .infinity)
+                .environment(\.layoutDirection, isArabic ? .rightToLeft : .leftToRight)
+            rule
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+    }
+
+    private var rule: some View {
+        Rectangle()
+            .fill(Color.bronze.opacity(0.55))
+            .frame(width: 88, height: 1)
+    }
+}
+
+extension View {
+    func parchmentNavigationBar() -> some View {
+        toolbarBackground(Color.parchment, for: .navigationBar)
+            .toolbarBackgroundVisibility(.visible, for: .navigationBar)
+    }
+
+    func warmListChrome() -> some View {
+        scrollContentBackground(.hidden)
+            .background(Color.parchment.ignoresSafeArea())
+            .listRowSeparatorTint(Color.bronze.opacity(0.25))
+            .parchmentNavigationBar()
+    }
+
+    func warmListRow() -> some View {
+        listRowBackground(Color.appWarmSurface)
     }
 }

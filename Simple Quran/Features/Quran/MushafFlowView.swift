@@ -48,7 +48,7 @@ struct MushafAttributedPage {
 enum MushafTextBuilder {
     static let hiddenPlaceholder = "••••••"
     static let highlightColor = (UIColor(named: "HighlightFill") ?? .systemYellow).withAlphaComponent(0.45)
-    static let collectedColor = (UIColor(named: "OliveAccent") ?? .systemGreen).withAlphaComponent(0.14)
+    static let collectedColor = (UIColor(named: "Bronze") ?? .label).withAlphaComponent(0.14)
 
     static func make(
         verses: [QuranVerse],
@@ -60,13 +60,13 @@ enum MushafTextBuilder {
         let bodyFont = scaledFont(name: "AmiriQuran", size: 28, textStyle: .title2, category: contentSizeCategory)
         let basmalaFont = scaledFont(name: "AmiriQuran", size: 25, textStyle: .title3, category: contentSizeCategory)
         let bodyColor = UIColor(named: "BrownText") ?? .label
-        let basmalaColor = UIColor(named: "OliveAccent") ?? .secondaryLabel
+        let bronzeColor = UIColor(named: "Bronze") ?? bodyColor
 
         let bodyParagraph = NSMutableParagraphStyle()
         bodyParagraph.alignment = .justified
         bodyParagraph.baseWritingDirection = .rightToLeft
-        bodyParagraph.lineSpacing = 8
-        bodyParagraph.paragraphSpacing = 10
+        bodyParagraph.lineSpacing = 12
+        bodyParagraph.paragraphSpacing = 14
 
         let basmalaParagraph = NSMutableParagraphStyle()
         basmalaParagraph.alignment = .center
@@ -91,7 +91,7 @@ enum MushafTextBuilder {
                     string: "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ\n",
                     attributes: [
                         .font: basmalaFont,
-                        .foregroundColor: basmalaColor,
+                        .foregroundColor: bodyColor,
                         .paragraphStyle: basmalaParagraph
                     ]
                 ))
@@ -99,18 +99,26 @@ enum MushafTextBuilder {
 
             let visibleText = verse.globalAyah == hiddenAyah ? hiddenPlaceholder : verse.text
             let sajdahMarker = verse.sajdah == .none ? "" : " ۩"
-            let segmentText = "\(visibleText)\(sajdahMarker) ﴿\(arabicIndicNumber(verse.ayahInSurah))﴾ "
+            let bodyText = "\(visibleText)\(sajdahMarker) "
+            let markerText = "﴿\(arabicIndicNumber(verse.ayahInSurah))﴾ "
             let location = result.length
-            var attributes: [NSAttributedString.Key: Any] = [
+            var bodyAttributes: [NSAttributedString.Key: Any] = [
                 .font: bodyFont,
                 .foregroundColor: bodyColor,
                 .paragraphStyle: bodyParagraph
             ]
             if let link = URL(string: "simplequran://ayah/\(verse.globalAyah)") {
-                attributes[.link] = link
+                bodyAttributes[.link] = link
             }
-            result.append(NSAttributedString(string: segmentText, attributes: attributes))
-            ayahRanges[verse.globalAyah] = NSRange(location: location, length: segmentText.utf16.count)
+            let markerAttributes: [NSAttributedString.Key: Any] = [
+                .font: bodyFont,
+                .foregroundColor: bronzeColor,
+                .paragraphStyle: bodyParagraph
+            ]
+            result.append(NSAttributedString(string: bodyText, attributes: bodyAttributes))
+            result.append(NSAttributedString(string: markerText, attributes: markerAttributes))
+            let segmentLength = (bodyText as NSString).length + (markerText as NSString).length
+            ayahRanges[verse.globalAyah] = NSRange(location: location, length: segmentLength)
         }
 
         return MushafAttributedPage(text: result, ayahRanges: ayahRanges)

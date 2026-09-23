@@ -27,6 +27,7 @@ struct HomeView: View {
                 .padding()
             }
             .background(Color.parchment.ignoresSafeArea())
+            .parchmentNavigationBar()
             .navigationTitle(String(localized: "Today"))
             .toolbar {
                 ToolbarItem(placement: .topBarTrailing) {
@@ -85,7 +86,7 @@ struct HomeView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(String(localized: "Continue last session"))
                             .font(.subheadline.weight(.semibold))
-                            .foregroundStyle(Color.gold)
+                            .foregroundStyle(Color.bronze)
                         Text(last.title)
                             .font(.title3.weight(.bold))
                             .foregroundStyle(Color.appBrownText)
