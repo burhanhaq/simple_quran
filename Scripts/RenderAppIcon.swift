@@ -7,6 +7,7 @@ private let p3 = CGColorSpace(name: CGColorSpace.displayP3)!
 
 private enum Appearance {
     case fullColor
+    case dark
     case tinted
 }
 
@@ -43,8 +44,9 @@ func main() throws -> Int32 {
 
     try FileManager.default.createDirectory(at: iconSet, withIntermediateDirectories: true)
     try writePNG(appearance: .fullColor, to: iconSet.appendingPathComponent("AppIcon.png"))
+    try writePNG(appearance: .dark, to: iconSet.appendingPathComponent("AppIcon-Dark.png"))
     try writePNG(appearance: .tinted, to: iconSet.appendingPathComponent("AppIcon-Tinted.png"))
-    fputs("Wrote AppIcon.png and AppIcon-Tinted.png\n", stdout)
+    fputs("Wrote AppIcon.png, AppIcon-Dark.png, and AppIcon-Tinted.png\n", stdout)
     return 0
 }
 
@@ -85,8 +87,8 @@ private func renderPNG(appearance: Appearance) -> Data? {
 
 private func drawIcon(in ctx: CGContext, appearance: Appearance) {
     let canvas = CGRect(x: 0, y: 0, width: canvasSize, height: canvasSize)
-    if appearance == .fullColor {
-        fillBackground(in: ctx, canvas: canvas)
+    if appearance != .tinted {
+        fillBackground(in: ctx, canvas: canvas, appearance: appearance)
     }
 
     let outer = ArchMetrics(
@@ -113,17 +115,41 @@ private func drawIcon(in ctx: CGContext, appearance: Appearance) {
     }
 }
 
-private func fillBackground(in ctx: CGContext, canvas: CGRect) {
-    let center = CGColor(colorSpace: p3, components: [0.039, 0.039, 0.039, 1])!
-    let edge = CGColor(colorSpace: p3, components: [0.067, 0.067, 0.067, 1])!
+private func fillBackground(in ctx: CGContext, canvas: CGRect, appearance: Appearance) {
+    let center: CGColor
+    let edge: CGColor
+    switch appearance {
+    case .fullColor:
+        center = CGColor(colorSpace: p3, components: [1.0, 0.98, 0.92, 1])!
+        edge = CGColor(colorSpace: p3, components: [0.89, 0.83, 0.71, 1])!
+    case .dark:
+        center = CGColor(colorSpace: p3, components: [0.20, 0.16, 0.12, 1])!
+        edge = CGColor(colorSpace: p3, components: [0.10, 0.075, 0.06, 1])!
+    case .tinted:
+        return
+    }
     let gradient = CGGradient(colorsSpace: p3, colors: [center, edge] as CFArray, locations: [0, 1])!
     ctx.drawRadialGradient(
         gradient,
-        startCenter: CGPoint(x: canvas.midX, y: canvas.midY - 40),
+        startCenter: CGPoint(x: canvas.midX, y: canvas.midY - 80),
         startRadius: 0,
         endCenter: CGPoint(x: canvas.midX, y: canvas.midY),
-        endRadius: canvas.width * 0.72,
+        endRadius: canvas.width * 0.78,
         options: [.drawsAfterEndLocation]
+    )
+
+    let glowColor = appearance == .dark
+        ? CGColor(colorSpace: p3, components: [0.78, 0.52, 0.17, 0.13])!
+        : CGColor(colorSpace: p3, components: [0.99, 0.74, 0.28, 0.15])!
+    let clear = CGColor(colorSpace: p3, components: [0.99, 0.74, 0.28, 0])!
+    let halo = CGGradient(colorsSpace: p3, colors: [glowColor, clear] as CFArray, locations: [0, 1])!
+    ctx.drawRadialGradient(
+        halo,
+        startCenter: CGPoint(x: canvas.midX, y: canvas.midY - 30),
+        startRadius: 0,
+        endCenter: CGPoint(x: canvas.midX, y: canvas.midY),
+        endRadius: canvas.width * 0.48,
+        options: []
     )
 }
 
@@ -262,16 +288,25 @@ private func strokePath(
         ctx.setLineWidth(width)
         ctx.addPath(path)
         ctx.strokePath()
-    case .fullColor:
-        strokeGold(path, width: width, in: ctx, canvas: canvas)
+    case .fullColor, .dark:
+        strokeGold(path, width: width, appearance: appearance, in: ctx, canvas: canvas)
     }
     ctx.restoreGState()
 }
 
-private func strokeGold(_ path: CGPath, width: CGFloat, in ctx: CGContext, canvas: CGRect) {
-    let highlight = CGColor(colorSpace: p3, components: [1.00, 0.97, 0.72, 1])!
-    let mid = CGColor(colorSpace: p3, components: [0.96, 0.78, 0.22, 1])!
-    let edge = CGColor(colorSpace: p3, components: [0.82, 0.64, 0.12, 1])!
+private func strokeGold(_ path: CGPath, width: CGFloat, appearance: Appearance, in ctx: CGContext, canvas: CGRect) {
+    let highlight: CGColor
+    let mid: CGColor
+    let edge: CGColor
+    if appearance == .dark {
+        highlight = CGColor(colorSpace: p3, components: [1.00, 0.92, 0.67, 1])!
+        mid = CGColor(colorSpace: p3, components: [0.87, 0.69, 0.38, 1])!
+        edge = CGColor(colorSpace: p3, components: [0.65, 0.43, 0.16, 1])!
+    } else {
+        highlight = CGColor(colorSpace: p3, components: [0.72, 0.49, 0.22, 1])!
+        mid = CGColor(colorSpace: p3, components: [0.56, 0.36, 0.13, 1])!
+        edge = CGColor(colorSpace: p3, components: [0.37, 0.22, 0.08, 1])!
+    }
     let gold = CGGradient(
         colorsSpace: p3,
         colors: [highlight, mid, edge] as CFArray,
@@ -292,10 +327,13 @@ private func strokeGold(_ path: CGPath, width: CGFloat, in ctx: CGContext, canva
         options: [.drawsBeforeStartLocation, .drawsAfterEndLocation]
     )
 
+    let sheenStart = appearance == .dark
+        ? CGColor(colorSpace: p3, components: [1, 0.98, 0.86, 0.85])!
+        : CGColor(colorSpace: p3, components: [1, 0.91, 0.68, 0.28])!
     let sheen = CGGradient(
         colorsSpace: p3,
         colors: [
-            CGColor(colorSpace: p3, components: [1, 0.98, 0.86, 0.85])!,
+            sheenStart,
             CGColor(colorSpace: p3, components: [1, 0.94, 0.72, 0])!
         ] as CFArray,
         locations: [0, 1]

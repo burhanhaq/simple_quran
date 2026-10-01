@@ -18,12 +18,16 @@ enum AppTheme {
 extension Color {
     static let parchment = Color("ParchmentBackground")
     static let appWarmSurface = Color("WarmSurface")
+    static let surfaceHighlight = Color("SurfaceHighlight")
     static let appBrownText = Color("BrownText")
     static let secondaryWarm = Color("SecondaryText")
     static let olive = Color("OliveAccent")
     static let gold = Color("GoldAccent")
+    static let goldButtonText = Color("GoldButtonText")
     static let bronze = Color("Bronze")
     static let appHighlightFill = Color("HighlightFill")
+    static let appCollectedFill = Color("CollectedFill")
+    static let warmBorder = Color("WarmBorder")
     static let dangerWarm = Color("DangerText")
 }
 
@@ -34,9 +38,11 @@ extension Font {
 }
 
 struct WarmCard<Content: View>: View {
+    var emphasized: Bool
     var content: () -> Content
 
-    init(@ViewBuilder content: @escaping () -> Content) {
+    init(emphasized: Bool = false, @ViewBuilder content: @escaping () -> Content) {
+        self.emphasized = emphasized
         self.content = content
     }
 
@@ -44,11 +50,71 @@ struct WarmCard<Content: View>: View {
         content()
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(Color.appWarmSurface, in: RoundedRectangle(cornerRadius: AppTheme.cornerRadius, style: .continuous))
-            .overlay(
+            .background {
                 RoundedRectangle(cornerRadius: AppTheme.cornerRadius, style: .continuous)
-                    .strokeBorder(Color.bronze.opacity(0.35), lineWidth: 1)
-            )
+                    .fill(LinearGradient(
+                        colors: [Color.surfaceHighlight, Color.appWarmSurface],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: AppTheme.cornerRadius, style: .continuous)
+                    .strokeBorder(Color.warmBorder.opacity(0.72), lineWidth: 0.75)
+            }
+            .shadow(color: emphasized ? Color.gold.opacity(0.15) : .black.opacity(0.045), radius: emphasized ? 18 : 10, y: emphasized ? 7 : 3)
+    }
+}
+
+struct WarmButtonStyle: ButtonStyle {
+    enum Emphasis {
+        case primary
+        case secondary
+    }
+
+    var emphasis: Emphasis = .primary
+    @Environment(\.isEnabled) private var isEnabled
+
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(.subheadline.weight(.semibold))
+            .foregroundStyle(emphasis == .primary ? Color.goldButtonText : Color.bronze)
+            .padding(.horizontal, 18)
+            .frame(minHeight: AppTheme.controlHeight)
+            .background {
+                RoundedRectangle(cornerRadius: AppTheme.tightRadius, style: .continuous)
+                    .fill(LinearGradient(
+                        colors: emphasis == .primary
+                            ? [Color(red: 0.94, green: 0.79, blue: 0.51), Color.gold]
+                            : [Color.surfaceHighlight, Color.appWarmSurface],
+                        startPoint: .topLeading,
+                        endPoint: .bottomTrailing
+                    ))
+            }
+            .overlay {
+                RoundedRectangle(cornerRadius: AppTheme.tightRadius, style: .continuous)
+                    .strokeBorder(
+                        emphasis == .primary ? Color.gold.opacity(0.75) : Color.warmBorder,
+                        lineWidth: 0.75
+                    )
+            }
+            .shadow(color: emphasis == .primary ? Color.gold.opacity(0.18) : .clear, radius: 10, y: 4)
+            .opacity(isEnabled ? 1 : 0.48)
+            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+    }
+}
+
+struct WarmSymbol: View {
+    var systemName: String
+    var size: CGFloat = 40
+
+    var body: some View {
+        Image(systemName: systemName)
+            .font(.system(size: size * 0.46, weight: .medium))
+            .symbolRenderingMode(.hierarchical)
+            .foregroundStyle(Color.bronze)
+            .frame(width: size, height: size)
+            .background(Color.appCollectedFill, in: Circle())
     }
 }
 
@@ -59,13 +125,20 @@ struct PlayGlyph: View {
     var body: some View {
         Image(systemName: systemName)
             .font(.system(size: size * 0.42, weight: .semibold))
-            .foregroundStyle(Color.appBrownText)
+            .foregroundStyle(Color.goldButtonText)
             .offset(x: systemName.hasPrefix("play") ? size * 0.04 : 0)
             .frame(width: size, height: size)
-            .background(Color.appWarmSurface, in: Circle())
-            .overlay {
-                Circle().strokeBorder(Color.gold, lineWidth: 1)
+            .background {
+                Circle().fill(LinearGradient(
+                    colors: [Color(red: 0.96, green: 0.83, blue: 0.57), Color.gold],
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                ))
             }
+            .overlay {
+                Circle().strokeBorder(Color.gold.opacity(0.8), lineWidth: 0.75)
+            }
+            .shadow(color: Color.gold.opacity(0.22), radius: 8, y: 3)
     }
 }
 
@@ -115,9 +188,7 @@ struct EmptyStateView: View {
 
     var body: some View {
         VStack(spacing: 14) {
-            Image(systemName: "book.closed")
-                .font(.largeTitle)
-                .foregroundStyle(Color.bronze)
+            WarmSymbol(systemName: "book.closed", size: 56)
             Text(title)
                 .font(.title3.weight(.semibold))
                 .foregroundStyle(Color.appBrownText)
@@ -126,13 +197,11 @@ struct EmptyStateView: View {
                 .foregroundStyle(Color.secondaryWarm)
                 .multilineTextAlignment(.center)
             Button(actionTitle, action: action)
-                .buttonStyle(.borderedProminent)
-                .tint(Color.bronze)
+                .buttonStyle(WarmButtonStyle())
                 .accessibilityIdentifier(actionIdentifier)
             if let secondaryTitle, let secondaryAction {
                 Button(secondaryTitle, action: secondaryAction)
-                    .buttonStyle(.bordered)
-                    .tint(Color.bronze)
+                    .buttonStyle(WarmButtonStyle(emphasis: .secondary))
                     .accessibilityIdentifier(secondaryIdentifier)
             }
         }
@@ -178,10 +247,10 @@ struct QuranAyahText: View {
 
     private var fillColor: Color {
         if isCurrent {
-            return Color.appHighlightFill.opacity(0.55)
+            return Color.appHighlightFill
         }
         if isInPassage {
-            return Color.bronze.opacity(0.14)
+            return Color.appCollectedFill
         }
         return Color.clear
     }
@@ -239,12 +308,15 @@ struct FriendlyErrorView: View {
             }
             if let retry {
                 Button(String(localized: "Try again"), action: retry)
-                    .buttonStyle(.bordered)
-                    .tint(Color.bronze)
+                    .buttonStyle(WarmButtonStyle(emphasis: .secondary))
             }
         }
         .padding()
         .background(Color.appWarmSurface, in: RoundedRectangle(cornerRadius: AppTheme.tightRadius, style: .continuous))
+        .overlay {
+            RoundedRectangle(cornerRadius: AppTheme.tightRadius, style: .continuous)
+                .strokeBorder(Color.warmBorder.opacity(0.7), lineWidth: 0.75)
+        }
     }
 }
 
@@ -269,8 +341,8 @@ struct ReadingBanner: View {
 
     private var rule: some View {
         Rectangle()
-            .fill(Color.bronze.opacity(0.55))
-            .frame(width: 88, height: 1)
+            .fill(LinearGradient(colors: [.clear, Color.gold, .clear], startPoint: .leading, endPoint: .trailing))
+            .frame(width: 112, height: 1)
     }
 }
 
@@ -283,7 +355,7 @@ extension View {
     func warmListChrome() -> some View {
         scrollContentBackground(.hidden)
             .background(Color.parchment.ignoresSafeArea())
-            .listRowSeparatorTint(Color.bronze.opacity(0.25))
+            .listRowSeparatorTint(Color.warmBorder.opacity(0.8))
             .parchmentNavigationBar()
     }
 

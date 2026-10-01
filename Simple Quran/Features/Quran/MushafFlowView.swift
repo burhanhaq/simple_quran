@@ -47,8 +47,8 @@ struct MushafAttributedPage {
 
 enum MushafTextBuilder {
     static let hiddenPlaceholder = "••••••"
-    static let highlightColor = (UIColor(named: "HighlightFill") ?? .systemYellow).withAlphaComponent(0.45)
-    static let collectedColor = (UIColor(named: "Bronze") ?? .label).withAlphaComponent(0.14)
+    static let highlightColor = UIColor(named: "HighlightFill") ?? .systemYellow
+    static let collectedColor = UIColor(named: "CollectedFill") ?? .secondarySystemBackground
 
     static func make(
         verses: [QuranVerse],

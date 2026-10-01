@@ -28,10 +28,7 @@ struct SetListView: View {
                                 SetDetailView(practiceSet: set)
                             } label: {
                                 HStack(spacing: 12) {
-                                    Image(systemName: "text.book.closed")
-                                        .font(.title3)
-                                        .foregroundStyle(Color.bronze)
-                                        .frame(width: 32)
+                                    WarmSymbol(systemName: "text.book.closed")
                                     VStack(alignment: .leading, spacing: 4) {
                                         Text(set.title).font(.headline).foregroundStyle(Color.appBrownText)
                                         Text(summary(set)).font(.caption).foregroundStyle(Color.secondaryWarm)
@@ -105,9 +102,7 @@ struct SetDetailView: View {
                     Label(String(localized: "Start Practice"), systemImage: "play.fill")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.large)
-                .tint(Color.bronze)
+                .buttonStyle(WarmButtonStyle())
                 .accessibilityIdentifier("set.practise")
                 Button {
                     environment.downloads.download(ayahs: allAyahs)
@@ -115,8 +110,7 @@ struct SetDetailView: View {
                     Label(String(localized: "Download for Offline Practice"), systemImage: "arrow.down.circle")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.bordered)
-                .tint(Color.bronze)
+                .buttonStyle(WarmButtonStyle(emphasis: .secondary))
             }
             .padding()
         }

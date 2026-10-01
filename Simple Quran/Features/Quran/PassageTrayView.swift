@@ -16,21 +16,22 @@ struct PassageTrayView: View {
                     Label(String(localized: "Listen to these"), systemImage: "play.fill")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.bordered)
-                .tint(Color.olive)
+                .buttonStyle(WarmButtonStyle(emphasis: .secondary))
                 .accessibilityIdentifier("quran.tray.listen")
 
                 Button(action: onSave) {
                     Label(String(localized: "Save"), systemImage: "square.and.arrow.down")
                         .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.borderedProminent)
-                .tint(Color.bronze)
+                .buttonStyle(WarmButtonStyle())
                 .accessibilityIdentifier("quran.tray.save")
             }
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)
         .background(Color.appWarmSurface)
+        .overlay(alignment: .top) {
+            Color.warmBorder.frame(height: 0.75)
+        }
     }
 }

@@ -59,7 +59,7 @@ struct ProgressViewScreen: View {
     }
 
     private func heroCard(_ insights: ProgressInsights) -> some View {
-        WarmCard {
+        WarmCard(emphasized: true) {
             VStack(alignment: .leading, spacing: 12) {
                 Text("\(insights.knownCount)")
                     .font(.largeTitle.weight(.bold))
@@ -194,7 +194,7 @@ struct ProgressViewScreen: View {
                         .foregroundStyle(Color.appBrownText)
                     Text(MasteryStrength.needsWork.title)
                         .font(.caption)
-                        .foregroundStyle(Color.olive)
+                        .foregroundStyle(Color.dangerWarm)
                 }
                 Spacer()
                 if showsPlay {

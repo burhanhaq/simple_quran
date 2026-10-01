@@ -30,8 +30,9 @@ struct AppRootView: View {
                 }
             }
             .tint(Color.bronze)
+            .symbolRenderingMode(.hierarchical)
             .background(Color.parchment.ignoresSafeArea())
-            .toolbarBackground(Color.parchment, for: .tabBar)
+            .toolbarBackground(Color.appWarmSurface, for: .tabBar)
             .toolbarBackgroundVisibility(.visible, for: .tabBar)
             .tabViewBottomAccessory(isEnabled: environment.playback.snapshot.currentGlobalAyah != nil) {
                 if let ayah = environment.playback.snapshot.currentGlobalAyah {

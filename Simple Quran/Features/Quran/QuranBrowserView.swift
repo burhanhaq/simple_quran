@@ -41,7 +41,7 @@ struct QuranBrowserView: View {
                                     .font(.caption.weight(.semibold))
                                     .foregroundStyle(Color.bronze)
                                     .frame(width: 30, height: 30)
-                                    .background(Color.bronze.opacity(0.12), in: Circle())
+                                    .background(Color.appCollectedFill, in: Circle())
                                 VStack(alignment: .leading, spacing: 3) {
                                     Text(surah.englishName)
                                         .font(.headline)
@@ -124,7 +124,7 @@ struct QuranBrowserView: View {
             Text(String(localized: "Choose a surah, juz, or page, then tap the first and last ayah."))
                 .font(.footnote)
                 .foregroundStyle(Color.secondaryWarm)
-                .listRowBackground(Color.bronze.opacity(0.12))
+                .listRowBackground(Color.appCollectedFill)
         }
     }
 

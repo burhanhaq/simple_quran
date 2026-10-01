@@ -82,7 +82,7 @@ struct HomeView: View {
             Button {
                 practiceSet = last
             } label: {
-                WarmCard {
+                WarmCard(emphasized: true) {
                     VStack(alignment: .leading, spacing: 8) {
                         Text(String(localized: "Continue last session"))
                             .font(.subheadline.weight(.semibold))

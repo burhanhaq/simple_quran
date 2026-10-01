@@ -180,7 +180,7 @@ struct PracticeView: View {
                     }
                 }
             }
-            .foregroundStyle(isActivelyRecording ? Color.dangerWarm : Color.olive)
+            .foregroundStyle(isActivelyRecording ? Color.dangerWarm : Color.secondaryWarm)
             .disabled(environment.recorder.phase == .finishing)
             .accessibilityIdentifier("practice.record")
             .accessibilityLabel(recordAccessibilityLabel)
@@ -215,7 +215,7 @@ struct PracticeView: View {
                     .font(.title2)
                     .frame(width: 44, height: 44)
             }
-            .foregroundStyle(environment.recorder.hasRecording ? Color.olive : Color.secondaryWarm.opacity(0.55))
+            .foregroundStyle(environment.recorder.hasRecording ? Color.bronze : Color.secondaryWarm.opacity(0.55))
             .disabled(!environment.recorder.hasRecording || isRecordingBusy)
             .accessibilityLabel(
                 environment.recorder.isPlayingComparison
@@ -237,7 +237,7 @@ struct PracticeView: View {
                     .font(.title3)
                     .frame(width: 44, height: 44)
             }
-            .foregroundStyle(Color.olive)
+            .foregroundStyle(environment.playback.snapshot.hideArabic ? Color.bronze : Color.secondaryWarm)
             .accessibilityLabel(
                 environment.playback.snapshot.hideArabic
                     ? String(localized: "Show Arabic")
@@ -247,7 +247,7 @@ struct PracticeView: View {
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .overlay(alignment: .top) {
-            Divider().overlay(Color.secondaryWarm.opacity(0.25))
+            Color.warmBorder.frame(height: 0.75)
         }
         .background(Color.appWarmSurface)
     }

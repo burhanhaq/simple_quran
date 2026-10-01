@@ -234,7 +234,7 @@ struct QuranReaderView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(12)
-        .background(Color.bronze.opacity(0.12), in: RoundedRectangle(cornerRadius: AppTheme.tightRadius, style: .continuous))
+        .background(Color.appCollectedFill, in: RoundedRectangle(cornerRadius: AppTheme.tightRadius, style: .continuous))
         .accessibilityIdentifier("quran.collectBanner")
     }
 
