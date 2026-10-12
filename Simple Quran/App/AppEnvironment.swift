@@ -26,7 +26,7 @@ enum QuranReadingLayout: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .ayahByAyah: String(localized: "Ayah by Ayah")
-        case .mushaf: String(localized: "Mushaf Flow")
+        case .mushaf: String(localized: "Continuous text")
         }
     }
 
@@ -51,6 +51,27 @@ final class AppSettings {
         static let appearance = "settings.appearance"
     }
 
+    var learningStart: Int {
+        didSet { defaults.set(learningStart, forKey: "learning.start") }
+    }
+    var learningEnd: Int {
+        didSet { defaults.set(learningEnd, forKey: "learning.end") }
+    }
+    var readingAyah: Int {
+        didSet { defaults.set(readingAyah, forKey: "reading.ayah") }
+    }
+    var practiceByPage: Bool {
+        didSet { defaults.set(practiceByPage, forKey: "learning.byPage") }
+    }
+    var generatedPracticeIDs: [String] {
+        didSet { defaults.set(generatedPracticeIDs, forKey: "learning.generatedIDs") }
+    }
+
+    func remember(_ range: VerseRange) {
+        learningStart = range.startGlobalAyah
+        learningEnd = range.endGlobalAyah
+    }
+
     var wifiOnly: Bool {
         didSet { defaults.set(wifiOnly, forKey: Key.wifiOnly) }
     }
@@ -73,6 +94,11 @@ final class AppSettings {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        learningStart = defaults.integer(forKey: "learning.start")
+        learningEnd = defaults.integer(forKey: "learning.end")
+        readingAyah = defaults.integer(forKey: "reading.ayah")
+        practiceByPage = defaults.bool(forKey: "learning.byPage")
+        generatedPracticeIDs = defaults.stringArray(forKey: "learning.generatedIDs") ?? []
         self.wifiOnly = defaults.object(forKey: Key.wifiOnly) as? Bool ?? false
         self.streamWhenMissing = defaults.object(forKey: Key.streamWhenMissing) as? Bool ?? true
         self.quranReadingLayout = defaults.string(forKey: Key.quranReadingLayout)
@@ -94,11 +120,10 @@ final class AppEnvironment {
     let recorder: RecitationRecordingController
     let settings: AppSettings
     var selectedTab: AppTab = .home
+    var readerRoute: ReaderRoute?
+    var activePracticeIsReview = false
     var catalogLoadError: UserFacingMessage?
     var persistenceLoadError: UserFacingMessage?
-    var collectionDraft = SetDraft()
-    var isCollectingAyahs = false
-    var isPresentingCollectionEditor = false
 
     init(
         quran: BundledQuranCatalog,
@@ -120,34 +145,46 @@ final class AppEnvironment {
         playback.onWillStartAudio = { [weak recorder] in
             recorder?.cancelComparisonPlayback()
         }
+        playback.onPositionChanged = { [weak playback, weak store, weak settings] ayah in
+            if let active = playback?.activeSet {
+                active.lastGlobalAyah = ayah
+                do { try store?.save() }
+                catch { playback?.userMessage = .from(.persistenceFailure) }
+            } else { settings?.readingAyah = ayah }
+        }
         downloads.updateCellular(!settings.wifiOnly)
     }
 
-    func enterQuranToListen() {
-        isCollectingAyahs = false
-        selectedTab = .quran
+    func openReader(_ destination: QuranDestination) {
+        readerRoute = ReaderRoute(destination: destination)
     }
 
-    func enterQuranForCollecting() {
-        isCollectingAyahs = true
-        selectedTab = .quran
+    func openPractice(_ range: VerseRange, isReview: Bool = false) {
+        guard let verse = quran.verse(globalAyah: range.startGlobalAyah) else { return }
+        readerRoute = ReaderRoute(destination: .surah(number: verse.surahNumber, scrollToAyah: range.startGlobalAyah), practiceRange: range, isReview: isReview)
     }
 
-    func presentCollectionEditor() {
-        guard !collectionDraft.passages.isEmpty else { return }
-        isPresentingCollectionEditor = true
+    func reopenPlayer() {
+        guard let ayah = playback.snapshot.currentGlobalAyah,
+              let verse = quran.verse(globalAyah: ayah) else { return }
+        readerRoute = ReaderRoute(destination: .surah(number: verse.surahNumber, scrollToAyah: ayah),
+                                  savedPractice: playback.activeSet, resumePlayback: true, isReview: activePracticeIsReview)
     }
 
-    func clearCollectionDraft() {
-        collectionDraft = SetDraft()
-        isCollectingAyahs = false
-        isPresentingCollectionEditor = false
+    func practice(for range: VerseRange) throws -> PracticeSet {
+        if let existing = try store.activeSets().first(where: { $0.orderedPassages.map(\.range) == [range] }) {
+            return existing
+        }
+        let title = PassageLabel.passage(range, catalog: quran)
+        let created = try store.createSet(title: title, passages: [range], settings: .default)
+        settings.generatedPracticeIDs.append(created.id.uuidString)
+        return created
     }
+
+
 }
 
 enum AppTab: Hashable {
     case home
     case quran
-    case sets
-    case progress
 }

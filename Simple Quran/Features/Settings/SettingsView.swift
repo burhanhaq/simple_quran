@@ -43,6 +43,9 @@ struct SettingsView: View {
                     }
                     .warmListRow()
                 }
+                Section("Your practice") {
+                    NavigationLink("Saved passages") { SetListView() }.warmListRow()
+                }
                 Section(String(localized: "Recordings")) {
                     Button(String(localized: "Delete all recordings"), role: .destructive) {
                         confirmRemoveRecordings = true
@@ -138,9 +141,9 @@ struct PrivacyView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 16) {
-                    Text(String(localized: "Simple Quran is local-first. Collections, progress, downloads, and recordings stay on this device."))
-                    Text(String(localized: "The microphone is used only when you record a collection. Recordings never leave the device unless you later choose a backup feature."))
-                    Text(String(localized: "Downloaded recitation can be deleted in Settings. Personal recordings can be deleted per collection or all at once."))
+                    Text(String(localized: "Simple Quran is local-first. Saved passages, progress, downloads, and recordings stay on this device."))
+                    Text(String(localized: "The microphone is used only when you record a passage. Recordings never leave the device unless you later choose a backup feature."))
+                    Text(String(localized: "Downloaded recitation can be deleted in Settings. Personal recordings can be deleted per passage or all at once."))
                     Text(String(localized: "No account is required. No analytics SDK is included."))
                 }
                 .padding()

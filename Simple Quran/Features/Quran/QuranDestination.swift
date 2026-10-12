@@ -40,8 +40,8 @@ nonisolated enum QuranDestination: Hashable, Sendable {
     var collectWholeTitle: String {
         switch self {
         case .surah: String(localized: "Practice this surah")
-        case .juz: String(localized: "Collect this juz")
-        case .page: String(localized: "Collect this page")
+        case .juz: String(localized: "Practice this juz")
+        case .page: String(localized: "Practice this page")
         }
     }
 }

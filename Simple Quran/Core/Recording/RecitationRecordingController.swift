@@ -103,6 +103,7 @@ final class RecitationRecordingController: NSObject, AVAudioRecorderDelegate, AV
     }
 
     func stopRecording() {
+        countdownToken = nil
         switch phase {
         case .countdown:
             countdownToken = nil

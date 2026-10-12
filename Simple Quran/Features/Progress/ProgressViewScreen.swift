@@ -3,335 +3,124 @@ import SwiftUI
 
 struct ProgressViewScreen: View {
     @Environment(AppEnvironment.self) private var environment
-    @Query private var verseProgress: [VerseProgress]
-    @Query(filter: #Predicate<PracticeSet> { $0.deletedAt == nil && $0.archivedAt == nil }, sort: \PracticeSet.updatedAt, order: .reverse)
-    private var sets: [PracticeSet]
-    @State private var practiceSet: PracticeSet?
+    @Query private var progress: [VerseProgress]
+
+    private var practiced: Set<Int> { Set(progress.filter { $0.exposureCount > 0 || $0.recallAttempts > 0 }.map(\.globalAyah)) }
+    private var surahs: [Surah] {
+        environment.quran.surahs.filter { surah in practiced.contains { $0 >= surah.startGlobalAyah && $0 <= surah.endGlobalAyah } }
+    }
 
     var body: some View {
-        let insights = progressInsights
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 20) {
-                    if insights.knownCount == 0 && insights.practicedCount == 0 {
-                        VStack(alignment: .leading, spacing: 24) {
-                            Text(String(localized: "Every ayah is a step forward."))
-                                .font(.system(.title, design: .serif).weight(.medium))
-                                .foregroundStyle(Color.appBrownText)
-                            WarmCard(emphasized: true) {
-                                VStack(alignment: .leading, spacing: 16) {
-                                    WarmSymbol(systemName: "leaf", size: 48)
-                                    Text(String(localized: "Your journey begins here"))
-                                        .font(.title2.weight(.semibold)).foregroundStyle(Color.appBrownText)
-                                    Text(String(localized: "As you practice, you’ll see the ayahs you know, the ones to revisit, and the habit you’re building."))
-                                        .foregroundStyle(Color.secondaryWarm)
-                                    Button { environment.enterQuranForCollecting() } label: {
-                                        Label(String(localized: "Choose your first passage"), systemImage: "arrow.right")
-                                            .frame(maxWidth: .infinity)
-                                    }
-                                    .buttonStyle(WarmButtonStyle())
-                                }
+        List {
+            Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(practiced.isEmpty ? "Every ayah is a beginning." : "\(practiced.count) ayahs practiced.")
+                        .font(.system(.title, design: .serif))
+                    Text("Your progress grows each time you return.").font(.subheadline).foregroundStyle(Color.secondaryWarm)
+                }.padding(.vertical, 16)
+            }.listRowBackground(Color.clear)
+            if surahs.isEmpty {
+                Button("Choose a surah") { environment.selectedTab = .quran }.warmListRow()
+            }
+            ForEach(surahs) { surah in
+                NavigationLink { SurahProgressView(surah: surah) } label: {
+                    VStack(alignment: .leading, spacing: 7) {
+                        Text(surah.englishName).font(.headline)
+                        let count = practiced.filter { $0 >= surah.startGlobalAyah && $0 <= surah.endGlobalAyah }.count
+                        Text(count == surah.ayahCount ? "Whole surah practiced · Keep it close with review" : "\(count) ayahs practiced")
+                            .font(.caption).foregroundStyle(Color.secondaryWarm)
+                    }.padding(.vertical, 6)
+                }.warmListRow()
+            }
+        }
+        .foregroundStyle(Color.appBrownText).warmListChrome().navigationTitle("Your progress")
+    }
+}
+
+struct SurahProgressView: View {
+    @Environment(AppEnvironment.self) private var environment
+    @Query private var progress: [VerseProgress]
+    let surah: Surah
+    @State private var knownRange: VerseRange?
+    @State private var showKnown = false
+    @State private var errorMessage: UserFacingMessage?
+
+    private var passages: [VerseRange] {
+        var result: [VerseRange] = []
+        var start = surah.startGlobalAyah
+        while start <= surah.endGlobalAyah, let range = LearningPassage.suggested(from: start, catalog: environment.quran) {
+            result.append(range)
+            start = range.endGlobalAyah + 1
+        }
+        return result
+    }
+    private var snapshots: [Int: VerseProgressSnapshot] { Dictionary(uniqueKeysWithValues: progress.map { ($0.globalAyah, $0.snapshot) }) }
+
+    var body: some View {
+        List {
+            Section {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text("A little more each time.").font(.system(.title2, design: .serif))
+                    Text("Choose any passage to practice or revisit. These suggested passages can be changed in the reader.")
+                        .font(.subheadline).foregroundStyle(Color.secondaryWarm)
+                    Button("Read surah") { environment.openReader(.surah(number: surah.number)) }
+                        .frame(minHeight: 44)
+                }.padding(.vertical, 8)
+            }.listRowBackground(Color.clear)
+            Section("Your passages") {
+                ForEach(passages, id: \.self) { range in
+                    Button { environment.openPractice(range) } label: {
+                        HStack(spacing: 14) {
+                            Image(systemName: statusSymbol(range)).foregroundStyle(Color.olive).frame(width: 24)
+                            VStack(alignment: .leading, spacing: 5) {
+                                Text(LearningPassage.ayahLabel(range, catalog: environment.quran)).font(.headline)
+                                Text(status(range)).font(.caption).foregroundStyle(Color.secondaryWarm)
                             }
-                            SectionHeading(title: String(localized: "A simple rhythm"))
-                            rhythmStep("1", title: String(localized: "Listen & repeat"), detail: String(localized: "Let each ayah become familiar at your own pace."))
-                            rhythmStep("2", title: String(localized: "Recall & recite"), detail: String(localized: "Hide the text and record yourself when you’re ready."))
-                            rhythmStep("3", title: String(localized: "Reflect & revisit"), detail: String(localized: "Rate your recall to know what needs another look."))
+                            Spacer()
+                            Image(systemName: "chevron.right").font(.caption).foregroundStyle(Color.secondaryWarm)
+                        }.padding(.vertical, 8)
+                    }.buttonStyle(.plain).warmListRow()
+                        .contextMenu {
+                            Button("I already know these ayahs") { knownRange = range; showKnown = true }
                         }
-                    } else {
-                        if insights.knownCount == 0 {
-                            practicedWithoutStrengthCard(insights.practicedCount)
-                        } else {
-                            heroCard(insights)
-                        }
-                        completedSurahsCard(insights.completedSurahs)
-                        closestCard(insights.closestInProgress)
-                        juz30Card(insights)
-                        needsWorkSection(insights.weakAyahs)
-                        habitFooter(insights)
-                    }
-                }
-                .padding(20)
-                .frame(maxWidth: 720)
-                .frame(maxWidth: .infinity)
-            }
-            .background(Color.parchment.ignoresSafeArea())
-            .parchmentNavigationBar()
-            .navigationTitle(String(localized: "Progress"))
-            .fullScreenCover(item: $practiceSet) { set in
-                PracticeView(practiceSet: set)
-            }
-        }
-    }
-
-    private func rhythmStep(_ number: String, title: String, detail: String) -> some View {
-        HStack(alignment: .top, spacing: 16) {
-            Text(number).font(.subheadline.weight(.semibold)).foregroundStyle(Color.bronze)
-                .frame(width: 34, height: 34).background(Color.appCollectedFill, in: Circle())
-            VStack(alignment: .leading, spacing: 5) {
-                Text(title).font(.headline).foregroundStyle(Color.appBrownText)
-                Text(detail).font(.subheadline).foregroundStyle(Color.secondaryWarm)
-            }
-        }
-    }
-
-    private func practicedWithoutStrengthCard(_ practicedCount: Int) -> some View {
-        WarmCard {
-            VStack(alignment: .leading, spacing: 8) {
-                Text(String(localized: "You’ve practiced \(practicedCount) ayahs"))
-                    .font(.title3.weight(.bold))
-                    .foregroundStyle(Color.appBrownText)
-                Text(String(localized: "Rate a session to see strength."))
-                    .foregroundStyle(Color.secondaryWarm)
-            }
-        }
-        .accessibilityIdentifier("progress.practiced")
-    }
-
-    private func heroCard(_ insights: ProgressInsights) -> some View {
-        WarmCard(emphasized: true) {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("\(insights.knownCount)")
-                    .font(.largeTitle.weight(.bold))
-                    .foregroundStyle(Color.bronze)
-                Text(String(localized: "Ayahs you know"))
-                    .font(.headline)
-                    .foregroundStyle(Color.appBrownText)
-                Text(String(localized: "across \(insights.surahsWithKnownAyahs) surahs"))
-                    .foregroundStyle(Color.secondaryWarm)
-                StrengthBar(
-                    needsWork: insights.needsWorkCount,
-                    growing: insights.growingCount,
-                    strong: insights.strongCount
-                )
-                strengthLegend(insights)
-            }
-        }
-        .accessibilityIdentifier("progress.hero")
-    }
-
-    private func strengthLegend(_ insights: ProgressInsights) -> some View {
-        HStack(spacing: 14) {
-            ForEach(MasteryStrength.legendOrder, id: \.self) { strength in
-                let count = insights.count(of: strength)
-                if count > 0 {
-                    HStack(spacing: 6) {
-                        Circle()
-                            .fill(color(for: strength))
-                            .frame(width: 8, height: 8)
-                        Text("\(strength.title) · \(count)")
-                            .font(.caption)
-                            .foregroundStyle(Color.secondaryWarm)
-                    }
                 }
             }
-        }
-    }
-
-    @ViewBuilder
-    private func completedSurahsCard(_ surahs: [Surah]) -> some View {
-        if !surahs.isEmpty {
-            WarmCard {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text(String(localized: "\(surahs.count) surahs complete"))
-                        .font(.headline)
-                        .foregroundStyle(Color.appBrownText)
-                    Text(surahs.map(\.englishName).joined(separator: " · "))
-                        .foregroundStyle(Color.olive)
-                }
-            }
-            .accessibilityIdentifier("progress.completed")
-        }
-    }
-
-    @ViewBuilder
-    private func closestCard(_ item: InProgressSurah?) -> some View {
-        if let item {
-            WarmCard {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(String(localized: "Closest to complete"))
-                        .font(.headline)
-                        .foregroundStyle(Color.appBrownText)
-                    Text("\(item.surah.englishName) \(item.knownCount)/\(item.ayahCount)")
-                        .font(.title3.weight(.semibold))
-                        .foregroundStyle(Color.bronze)
-                }
-            }
-            .accessibilityIdentifier("progress.closest")
-        }
-    }
-
-    @ViewBuilder
-    private func juz30Card(_ insights: ProgressInsights) -> some View {
-        if insights.juz30HasProgress {
-            WarmCard {
-                VStack(alignment: .leading, spacing: 6) {
-                    Text(String(localized: "Juz 30"))
-                        .font(.headline)
-                        .foregroundStyle(Color.appBrownText)
-                    Text(
-                        String(
-                            localized: "\(insights.juz30CompletedCount) of \(ProgressInsights.juz30SurahCount) surahs"
-                        )
-                    )
-                    .foregroundStyle(Color.olive)
-                }
-            }
-            .accessibilityIdentifier("progress.juz30")
-        }
-    }
-
-    @ViewBuilder
-    private func needsWorkSection(_ ayahs: [VerseProgressSnapshot]) -> some View {
-        if !ayahs.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                Text(String(localized: "Needs work"))
-                    .font(.headline)
-                    .foregroundStyle(Color.appBrownText)
-                ForEach(ayahs, id: \.globalAyah) { item in
-                    if let verse = environment.quran.verse(globalAyah: item.globalAyah) {
-                        weakAyahRow(item, verse: verse)
-                    }
-                }
-            }
-            .accessibilityIdentifier("progress.weak")
-        }
-    }
-
-    @ViewBuilder
-    private func weakAyahRow(_ item: VerseProgressSnapshot, verse: QuranVerse) -> some View {
-        let collection = collection(containing: item.globalAyah)
-        if let collection {
-            Button {
-                practiceSet = collection
-            } label: {
-                weakAyahCard(verse: verse, showsPlay: true)
-            }
-            .buttonStyle(.plain)
-            .accessibilityIdentifier("progress.weak.\(item.globalAyah)")
-        } else {
-            weakAyahCard(verse: verse, showsPlay: false)
-                .accessibilityIdentifier("progress.weak.\(item.globalAyah)")
-        }
-    }
-
-    private func weakAyahCard(verse: QuranVerse, showsPlay: Bool) -> some View {
-        WarmCard {
-            HStack {
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(verse.reference)
-                        .font(.headline)
-                        .foregroundStyle(Color.appBrownText)
-                    Text(MasteryStrength.needsWork.title)
-                        .font(.caption)
-                        .foregroundStyle(Color.dangerWarm)
-                }
-                Spacer()
-                if showsPlay {
-                    PlayGlyph()
-                }
+            Section {
+                Button("Review the whole surah") { environment.openPractice(.clamped(start: surah.startGlobalAyah, end: surah.endGlobalAyah)) }
+                    .warmListRow()
+                Button("I already know this surah") {
+                    knownRange = .clamped(start: surah.startGlobalAyah, end: surah.endGlobalAyah)
+                    showKnown = true
+                }.warmListRow()
             }
         }
-    }
-
-    @ViewBuilder
-    private func habitFooter(_ insights: ProgressInsights) -> some View {
-        if insights.practicedCount > 0 {
-            WarmCard {
-                HStack {
-                    if insights.currentStreak > 0 {
-                        Text(String(localized: "\(insights.currentStreak) day streak"))
-                            .font(.headline)
-                            .foregroundStyle(Color.appBrownText)
-                    } else {
-                        Text(String(localized: "Practice days"))
-                            .font(.headline)
-                            .foregroundStyle(Color.appBrownText)
-                    }
-                    Spacer()
-                    HStack(spacing: 6) {
-                        ForEach(Array(insights.lastSevenDays.enumerated()), id: \.offset) { _, practiced in
-                            Circle()
-                                .fill(practiced ? Color.gold : Color.secondaryWarm.opacity(0.25))
-                                .frame(width: 8, height: 8)
-                        }
-                    }
-                    .accessibilityElement(children: .ignore)
-                    .accessibilityLabel(String(localized: "Last seven days"))
-                }
+        .foregroundStyle(Color.appBrownText).warmListChrome().navigationTitle(surah.englishName)
+        .confirmationDialog("Can you recite these ayahs from memory?", isPresented: $showKnown, titleVisibility: .visible) {
+            Button("Yes, I know them") {
+                guard let knownRange else { return }
+                do { try environment.store.applyRating(.solid, ayahs: knownRange.globalAyahs, now: .now) }
+                catch { errorMessage = .from(.persistenceFailure) }
             }
-            .accessibilityIdentifier("progress.habit")
-        }
+            Button("Cancel", role: .cancel) {}
+        } message: { Text("We’ll remember this and suggest a review later.") }
+        .alert(errorMessage?.title ?? "", isPresented: Binding(get: { errorMessage != nil }, set: { if !$0 { errorMessage = nil } })) {
+            Button("OK", role: .cancel) {}
+        } message: { Text(errorMessage?.message ?? "") }
     }
 
-    private var progressInsights: ProgressInsights {
-        ProgressInsights.make(
-            snapshots: verseProgress.map(\.snapshot),
-            surahs: environment.quran.surahs,
-            now: .now,
-            calendar: .current
-        )
+    private func status(_ range: VerseRange) -> String {
+        let items = range.globalAyahs.compactMap { snapshots[$0] }
+        if items.contains(where: { $0.isDue }) { return "Ready to revisit" }
+        if items.count == range.count && items.allSatisfy({ $0.lastRating == .solid }) { return "Recalled from memory" }
+        if items.count == range.count && items.allSatisfy({ $0.exposureCount > 0 || $0.recallAttempts > 0 }) { return "Practiced · Revisit anytime" }
+        if range.contains(environment.settings.learningStart) { return "Continue here" }
+        if items.contains(where: { $0.exposureCount > 0 || $0.recallAttempts > 0 }) { return "In progress" }
+        return "Ready when you are"
     }
-
-    private func collection(containing globalAyah: Int) -> PracticeSet? {
-        sets.first { set in
-            set.orderedPassages.contains { $0.range.contains(globalAyah) }
-        }
-    }
-
-    private func color(for strength: MasteryStrength) -> Color {
-        switch strength {
-        case .strong: .gold
-        case .growing: .olive
-        case .needsWork: .dangerWarm
-        }
-    }
-}
-
-private extension MasteryStrength {
-    static let legendOrder: [MasteryStrength] = [.strong, .growing, .needsWork]
-}
-
-private struct StrengthBar: View {
-    var needsWork: Int
-    var growing: Int
-    var strong: Int
-
-    private struct Segment: Identifiable {
-        var id: MasteryStrength
-        var count: Int
-        var color: Color
-    }
-
-    private var segments: [Segment] {
-        [
-            Segment(id: .strong, count: strong, color: .gold),
-            Segment(id: .growing, count: growing, color: .olive),
-            Segment(id: .needsWork, count: needsWork, color: .dangerWarm)
-        ]
-        .filter { $0.count > 0 }
-    }
-
-    private var total: Int { needsWork + growing + strong }
-
-    var body: some View {
-        GeometryReader { geo in
-            HStack(spacing: 3) {
-                ForEach(segments) { segment in
-                    Capsule()
-                        .fill(segment.color)
-                        .frame(width: barWidth(for: segment.count, in: geo.size.width))
-                }
-            }
-        }
-        .frame(height: 10)
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(String(localized: "Recall strength"))
-    }
-
-    private func barWidth(for count: Int, in totalWidth: CGFloat) -> CGFloat {
-        guard total > 0 else { return 0 }
-        let spacing = CGFloat(max(segments.count - 1, 0)) * 3
-        let usable = max(totalWidth - spacing, 0)
-        return usable * CGFloat(count) / CGFloat(total)
+    private func statusSymbol(_ range: VerseRange) -> String {
+        let items = range.globalAyahs.compactMap { snapshots[$0] }
+        if items.contains(where: { $0.isDue }) { return "arrow.counterclockwise" }
+        if items.count == range.count && items.allSatisfy({ $0.exposureCount > 0 || $0.recallAttempts > 0 }) { return "checkmark.circle" }
+        return range.contains(environment.settings.learningStart) ? "leaf" : "circle"
     }
 }

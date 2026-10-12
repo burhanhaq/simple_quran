@@ -66,6 +66,8 @@ final class PlaybackCoordinator {
     var activeSet: PracticeSet?
     var versesInSet: [QuranVerse] = []
     var onWillStartAudio: (() -> Void)?
+    var onPositionChanged: ((Int) -> Void)?
+    var passageRanges: [VerseRange] { preparedPassages }
     var hasPreparedQueue: Bool { player.currentItem != nil }
 
     init(source: AudioSource, fileStore: AudioFileStore) {
@@ -489,6 +491,7 @@ final class PlaybackCoordinator {
     private func updateSnapshot(for step: QueueItem) {
         guard case .ayah(let ayah, let repetition, let total) = step else { return }
         snapshot.currentGlobalAyah = ayah
+        onPositionChanged?(ayah)
         snapshot.repetitionLabel = total == 0 ? "\(repetition)/∞" : (total == 1 ? "" : "\(repetition)/\(total)")
     }
 

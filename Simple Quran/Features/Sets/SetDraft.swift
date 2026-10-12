@@ -28,7 +28,7 @@ final class SetDraft {
             if !trimmed.isEmpty { return trimmed }
         }
         let generated = generatedTitle(catalog: catalog)
-        return generated.isEmpty ? String(localized: "Untitled collection") : generated
+        return generated.isEmpty ? String(localized: "Saved passage") : generated
     }
 
     func setTitle(_ value: String, catalog: some QuranCatalog) {

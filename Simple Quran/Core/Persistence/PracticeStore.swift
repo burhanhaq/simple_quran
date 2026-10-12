@@ -169,6 +169,46 @@ final class PracticeStore: PracticeStoring {
         try context.save()
     }
 
+    /// Commit the user's explicit passage-level reflection as one transaction.
+    /// Merely opening the reader or playing audio never marks a passage learned.
+    func completePractice(_ set: PracticeSet, ayahs: [Int], rating: RecallRating?, lastAyah: Int?, seconds: Double, repetitions: Int) throws {
+        let now = Date()
+        do {
+            for ayah in Set(ayahs) {
+                let model = try progressModel(for: ayah)
+                model.exposureCount += 1
+                model.lastPractisedAt = now
+                model.listeningSeconds += seconds / Double(max(ayahs.count, 1))
+                if let rating {
+                    let decision = scheduler.apply(rating: rating, to: model.snapshot, now: now)
+                    var snapshot = model.snapshot
+                    snapshot.recallState = decision.state
+                    snapshot.lastRating = rating
+                    snapshot.streak = decision.streak
+                    snapshot.isWeak = decision.isWeak
+                    snapshot.nextReviewAt = decision.nextReviewAt
+                    snapshot.recallAttempts += 1
+                    model.apply(snapshot)
+                }
+            }
+            let session = PracticeSession(set: set)
+            session.endedAt = now
+            session.completed = true
+            session.coveredAyahCount = Set(ayahs).count
+            session.repetitionCount = repetitions
+            session.finalRatingRaw = rating?.rawValue
+            session.lastGlobalAyah = lastAyah
+            context.insert(session)
+            set.lastGlobalAyah = lastAyah
+            set.lastPractisedAt = now
+            set.updatedAt = now
+            try context.save()
+        } catch {
+            context.rollback()
+            throw AppError.persistenceFailure
+        }
+    }
+
     func continueSet() throws -> PracticeSet? {
         try activeSets()
             .filter { $0.lastPractisedAt != nil }
@@ -234,6 +274,6 @@ final class PracticeStore: PracticeStoring {
 
     private func sanitizedTitle(_ title: String) -> String {
         let trimmed = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        return trimmed.isEmpty ? String(localized: "Untitled collection") : trimmed
+        return trimmed.isEmpty ? String(localized: "Saved passage") : trimmed
     }
 }
