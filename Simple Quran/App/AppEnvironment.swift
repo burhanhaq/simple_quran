@@ -11,7 +11,7 @@ enum AppAppearance: String, CaseIterable, Identifiable {
     var title: String {
         switch self {
         case .light: String(localized: "Light")
-        case .night: String(localized: "Night")
+        case .night: String(localized: "Dark")
         case .system: String(localized: "System")
         }
     }
@@ -79,7 +79,7 @@ final class AppSettings {
             .flatMap(QuranReadingLayout.init(rawValue:)) ?? .ayahByAyah
         self.hasSeenQuranHint = defaults.bool(forKey: Key.hasSeenQuranHint)
         self.appearance = defaults.string(forKey: Key.appearance)
-            .flatMap(AppAppearance.init(rawValue:)) ?? .light
+            .flatMap(AppAppearance.init(rawValue:)) ?? .system
     }
 }
 

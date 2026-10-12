@@ -5,6 +5,11 @@ struct QuranReaderView: View {
     let destination: QuranDestination
     @State private var selection = PassageSelection()
     @State private var showHint = false
+    @State private var showCollectionEditor = false
+    @State private var startsPracticeOnSave = false
+    @State private var pendingPractice: PracticeSet?
+    @State private var practiceSet: PracticeSet?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         Group {
@@ -31,8 +36,8 @@ struct QuranReaderView: View {
 
                 Button(
                     environment.isCollectingAyahs
-                        ? String(localized: "Collecting")
-                        : String(localized: "Collect ayahs")
+                        ? String(localized: "Selecting")
+                        : String(localized: "Select ayahs")
                 ) {
                     toggleCollecting()
                 }
@@ -40,7 +45,7 @@ struct QuranReaderView: View {
                 .accessibilityLabel(
                     environment.isCollectingAyahs
                         ? String(localized: "Finish collecting ayahs")
-                        : String(localized: "Collect ayahs")
+                        : String(localized: "Select ayahs")
                 )
 
                 Menu {
@@ -49,7 +54,7 @@ struct QuranReaderView: View {
                     }
                     if !environment.collectionDraft.passages.isEmpty {
                         Button(String(localized: "Save collection"), systemImage: "square.and.arrow.down") {
-                            environment.presentCollectionEditor()
+                            showCollectionEditor = true
                         }
                     }
                     ReadingLayoutMenu()
@@ -63,10 +68,21 @@ struct QuranReaderView: View {
                 PassageTrayView(
                     summary: environment.collectionDraft.summary(catalog: environment.quran),
                     onListen: listenToDraft,
-                    onSave: { environment.presentCollectionEditor() }
+                    onSave: { showCollectionEditor = true }
                 )
             }
         }
+        .sheet(isPresented: $showCollectionEditor, onDismiss: {
+            practiceSet = pendingPractice
+            pendingPractice = nil
+            startsPracticeOnSave = false
+        }) {
+            SetEditorView(draft: environment.collectionDraft, startsPracticeOnSave: startsPracticeOnSave) { savedSet in
+                if startsPracticeOnSave { pendingPractice = savedSet }
+                environment.clearCollectionDraft()
+            }
+        }
+        .fullScreenCover(item: $practiceSet) { PracticeView(practiceSet: $0) }
         .onAppear {
             if !environment.settings.hasSeenQuranHint {
                 showHint = true
@@ -116,7 +132,16 @@ struct QuranReaderView: View {
                         )
                     }
                 }
-                .padding()
+                .padding(.horizontal, 20)
+                .padding(.vertical, 16)
+                .frame(maxWidth: 760)
+                .frame(maxWidth: .infinity)
+            }
+            .onChange(of: environment.playback.snapshot.currentGlobalAyah) { _, ayah in
+                guard !environment.isCollectingAyahs, let ayah, visibleRange?.contains(ayah) == true else { return }
+                withAnimation(reduceMotion ? nil : .easeInOut(duration: 0.3)) {
+                    proxy.scrollTo(ayah, anchor: .center)
+                }
             }
             .task(id: destination.scrollToAyah) {
                 if let ayah = destination.scrollToAyah {
@@ -155,14 +180,42 @@ struct QuranReaderView: View {
     }
 
     private var readingBanner: some View {
-        let arabicName: String? = {
+        let surah: Surah? = {
             guard case .surah(let number, _) = destination else { return nil }
-            return environment.quran.surah(number: number)?.arabicName
+            return environment.quran.surah(number: number)
         }()
-        return ReadingBanner(
-            title: arabicName ?? destination.title(in: environment.quran),
-            isArabic: arabicName != nil
-        )
+        return VStack(spacing: 14) {
+            VStack(spacing: 10) {
+                ReadingBanner(title: surah?.arabicName ?? destination.title(in: environment.quran), isArabic: surah != nil)
+                if let surah {
+                    Text("\(surah.translation) · \(surah.ayahCount) ayahs")
+                        .font(.caption).foregroundStyle(Color.secondaryWarm)
+                }
+                if !environment.isCollectingAyahs {
+                    Button {
+                        collectWholeVisibleRange()
+                        startsPracticeOnSave = true
+                        showCollectionEditor = true
+                    } label: {
+                        Label(String(localized: "Memorize this passage"), systemImage: "rectangle.stack.badge.plus")
+                            .font(.subheadline.weight(.medium))
+                            .frame(minHeight: 44)
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(Color.bronze)
+                    .accessibilityIdentifier("quran.memorizeWhole")
+                }
+            }
+            .padding(20)
+            .frame(maxWidth: .infinity)
+            .background(Color.appWarmSurface, in: RoundedRectangle(cornerRadius: 24))
+            if let message = environment.playback.userMessage {
+                FriendlyErrorView(message: message) {
+                    environment.playback.userMessage = nil
+                    togglePlay()
+                }
+            }
+        }
     }
 
     private var visibleRange: VerseRange? {
@@ -216,7 +269,7 @@ struct QuranReaderView: View {
     }
 
     private var hintBanner: some View {
-        Text(String(localized: "Listen here. When you want to memorize or review, collect ayahs."))
+        Text(String(localized: "Tap an ayah to listen from there. Use Select ayahs to save a smaller passage."))
             .font(.footnote)
             .foregroundStyle(Color.secondaryWarm)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -225,7 +278,7 @@ struct QuranReaderView: View {
 
     private var collectBanner: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text(String(localized: "A collection is a group of ayahs you practice together."))
+            Text(String(localized: "Choose the ayahs you want to memorize."))
                 .font(.footnote.weight(.semibold))
                 .foregroundStyle(Color.appBrownText)
             Text(collectInstruction)

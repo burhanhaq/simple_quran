@@ -2,9 +2,9 @@ import CoreText
 import SwiftUI
 
 enum AppTheme {
-    static let cornerRadius: CGFloat = 18
-    static let tightRadius: CGFloat = 12
-    static let controlHeight: CGFloat = 48
+    static let cornerRadius: CGFloat = 24
+    static let tightRadius: CGFloat = 16
+    static let controlHeight: CGFloat = 50
 
     static func registerFonts() {
         guard let url = Bundle.main.url(forResource: "AmiriQuran", withExtension: "ttf", subdirectory: "Resources/Fonts")
@@ -48,21 +48,14 @@ struct WarmCard<Content: View>: View {
 
     var body: some View {
         content()
-            .padding(16)
+            .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background {
-                RoundedRectangle(cornerRadius: AppTheme.cornerRadius, style: .continuous)
-                    .fill(LinearGradient(
-                        colors: [Color.surfaceHighlight, Color.appWarmSurface],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ))
-            }
+            .background(emphasized ? Color.appCollectedFill : Color.appWarmSurface,
+                        in: RoundedRectangle(cornerRadius: AppTheme.cornerRadius))
             .overlay {
-                RoundedRectangle(cornerRadius: AppTheme.cornerRadius, style: .continuous)
-                    .strokeBorder(Color.warmBorder.opacity(0.72), lineWidth: 0.75)
+                RoundedRectangle(cornerRadius: AppTheme.cornerRadius)
+                    .strokeBorder(Color.warmBorder.opacity(0.65), lineWidth: 0.5)
             }
-            .shadow(color: emphasized ? Color.gold.opacity(0.15) : .black.opacity(0.045), radius: emphasized ? 18 : 10, y: emphasized ? 7 : 3)
     }
 }
 
@@ -79,28 +72,10 @@ struct WarmButtonStyle: ButtonStyle {
         configuration.label
             .font(.subheadline.weight(.semibold))
             .foregroundStyle(emphasis == .primary ? Color.goldButtonText : Color.bronze)
-            .padding(.horizontal, 18)
+            .padding(.horizontal, 20)
             .frame(minHeight: AppTheme.controlHeight)
-            .background {
-                RoundedRectangle(cornerRadius: AppTheme.tightRadius, style: .continuous)
-                    .fill(LinearGradient(
-                        colors: emphasis == .primary
-                            ? [Color(red: 0.94, green: 0.79, blue: 0.51), Color.gold]
-                            : [Color.surfaceHighlight, Color.appWarmSurface],
-                        startPoint: .topLeading,
-                        endPoint: .bottomTrailing
-                    ))
-            }
-            .overlay {
-                RoundedRectangle(cornerRadius: AppTheme.tightRadius, style: .continuous)
-                    .strokeBorder(
-                        emphasis == .primary ? Color.gold.opacity(0.75) : Color.warmBorder,
-                        lineWidth: 0.75
-                    )
-            }
-            .shadow(color: emphasis == .primary ? Color.gold.opacity(0.18) : .clear, radius: 10, y: 4)
-            .opacity(isEnabled ? 1 : 0.48)
-            .scaleEffect(configuration.isPressed ? 0.98 : 1)
+            .background(emphasis == .primary ? Color.gold : Color.appCollectedFill, in: Capsule())
+            .opacity(isEnabled ? (configuration.isPressed ? 0.75 : 1) : 0.45)
     }
 }
 
@@ -128,17 +103,7 @@ struct PlayGlyph: View {
             .foregroundStyle(Color.goldButtonText)
             .offset(x: systemName.hasPrefix("play") ? size * 0.04 : 0)
             .frame(width: size, height: size)
-            .background {
-                Circle().fill(LinearGradient(
-                    colors: [Color(red: 0.96, green: 0.83, blue: 0.57), Color.gold],
-                    startPoint: .topLeading,
-                    endPoint: .bottomTrailing
-                ))
-            }
-            .overlay {
-                Circle().strokeBorder(Color.gold.opacity(0.8), lineWidth: 0.75)
-            }
-            .shadow(color: Color.gold.opacity(0.22), radius: 8, y: 3)
+            .background(Color.gold, in: Circle())
     }
 }
 
@@ -348,8 +313,7 @@ struct ReadingBanner: View {
 
 extension View {
     func parchmentNavigationBar() -> some View {
-        toolbarBackground(Color.parchment, for: .navigationBar)
-            .toolbarBackgroundVisibility(.visible, for: .navigationBar)
+        toolbarBackground(.automatic, for: .navigationBar)
     }
 
     func warmListChrome() -> some View {
@@ -361,5 +325,35 @@ extension View {
 
     func warmListRow() -> some View {
         listRowBackground(Color.appWarmSurface)
+    }
+}
+
+/// Decorative linework, drawn once by SwiftUI without image loading or animation.
+struct ArchMotif: View {
+    var body: some View {
+        Canvas { context, size in
+            for index in 0..<5 {
+                let inset = CGFloat(index) * 17
+                let rect = CGRect(x: inset, y: inset, width: max(0, size.width - inset * 2), height: size.height * 1.4)
+                let path = Path(roundedRect: rect, cornerRadius: rect.width / 2)
+                context.stroke(path, with: .color(.white.opacity(0.12)), lineWidth: 1)
+            }
+        }
+        .accessibilityHidden(true)
+    }
+}
+
+struct SectionHeading: View {
+    let title: String
+    var subtitle: String? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text(title).font(.title3.weight(.semibold)).foregroundStyle(Color.appBrownText)
+            if let subtitle {
+                Text(subtitle).font(.subheadline).foregroundStyle(Color.secondaryWarm)
+            }
+        }
+        .accessibilityAddTraits(.isHeader)
     }
 }

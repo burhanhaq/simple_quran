@@ -177,7 +177,8 @@ struct PlaybackCoordinatorTests {
     }
 
     @Test @MainActor func skipWhilePausedAdvancesWithoutASessionOrPlayback() throws {
-        let (playback, set, catalog) = try makeCoordinatorFixture(start: 1, end: 3)
+        let (playback, set, catalog, container) = try makeCoordinatorFixture(start: 1, end: 3)
+        defer { withExtendedLifetime(container) {} }
         playback.start(set: set, catalog: catalog, resume: true, allowStreaming: true)
 
         #expect(playback.session == nil)
@@ -195,7 +196,8 @@ struct PlaybackCoordinatorTests {
     }
 
     @Test @MainActor func skipAfterPauseKeepsTheCurrentAyahAndQueue() throws {
-        let (playback, set, catalog) = try makeCoordinatorFixture(start: 1, end: 3, lastAyah: 2)
+        let (playback, set, catalog, container) = try makeCoordinatorFixture(start: 1, end: 3, lastAyah: 2)
+        defer { withExtendedLifetime(container) {} }
         playback.start(set: set, catalog: catalog, resume: true, allowStreaming: true)
 
         playback.resume()
@@ -215,8 +217,37 @@ struct PlaybackCoordinatorTests {
         playback.stop()
     }
 
+    @Test @MainActor func completedPassageCanBePlayedAgain() throws {
+        let (playback, set, catalog, container) = try makeCoordinatorFixture(start: 1, end: 1)
+        defer { withExtendedLifetime(container) {} }
+        playback.start(set: set, catalog: catalog, resume: false, allowStreaming: false)
+        playback.skipForward()
+        #expect(!playback.hasPreparedQueue)
+        var didRequestPlayback = false
+        playback.onWillStartAudio = { didRequestPlayback = true }
+        playback.resume()
+        #expect(didRequestPlayback)
+        #expect(playback.snapshot.currentGlobalAyah == 1)
+        // The fixture is offline; reaching this error proves replay rebuilt the queue.
+        #expect(playback.userMessage != nil)
+        playback.stop()
+    }
+
+    @Test @MainActor func stoppedPassageIsNoLongerPrepared() throws {
+        let (playback, set, catalog, container) = try makeCoordinatorFixture(start: 1, end: 2)
+        defer { withExtendedLifetime(container) {} }
+        let ranges = set.orderedPassages.map(\.range)
+        playback.start(set: set, catalog: catalog, resume: false, allowStreaming: false)
+        #expect(playback.isPrepared(for: ranges))
+        playback.stop()
+        #expect(!playback.isPrepared(for: ranges))
+        #expect(playback.activeSet == nil)
+        #expect(playback.versesInSet.isEmpty)
+    }
+
     @Test @MainActor func resumeNotifiesWillStartAudio() throws {
-        let (playback, set, catalog) = try makeCoordinatorFixture(start: 1, end: 2)
+        let (playback, set, catalog, container) = try makeCoordinatorFixture(start: 1, end: 2)
+        defer { withExtendedLifetime(container) {} }
         var count = 0
         playback.onWillStartAudio = { count += 1 }
         playback.start(set: set, catalog: catalog, resume: true, allowStreaming: true)
@@ -231,7 +262,7 @@ private func makeCoordinatorFixture(
     start: Int,
     end: Int,
     lastAyah: Int? = nil
-) throws -> (PlaybackCoordinator, PracticeSet, BundledQuranCatalog) {
+) throws -> (PlaybackCoordinator, PracticeSet, BundledQuranCatalog, ModelContainer) {
     let container = try PersistenceController.makeContainer(inMemory: true)
     let store = PracticeStore(context: container.mainContext)
     let range = try VerseRange(startGlobalAyah: start, endGlobalAyah: end)
@@ -243,7 +274,7 @@ private func makeCoordinatorFixture(
         reciter: audioSource.reciter,
         baseDirectory: FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
     )
-    return (PlaybackCoordinator(source: audioSource, fileStore: fileStore), set, catalog)
+    return (PlaybackCoordinator(source: audioSource, fileStore: fileStore), set, catalog, container)
 }
 
 struct AudioInterruptionPolicyTests {
@@ -407,10 +438,10 @@ struct PracticeStoreTests {
 }
 
 struct AppearanceSettingTests {
-    @Test @MainActor func appearanceDefaultsToLight() throws {
+    @Test @MainActor func appearanceDefaultsToSystem() throws {
         let isolated = try isolatedDefaults()
         defer { isolated.defaults.removePersistentDomain(forName: isolated.name) }
-        #expect(AppSettings(defaults: isolated.defaults).appearance == .light)
+        #expect(AppSettings(defaults: isolated.defaults).appearance == .system)
     }
 
     @Test @MainActor func appearanceRoundTripsNightAndSystem() throws {

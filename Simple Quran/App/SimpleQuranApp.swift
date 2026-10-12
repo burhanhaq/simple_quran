@@ -25,7 +25,11 @@ struct SimpleQuranApp: App {
         let container: ModelContainer
         var persistenceLoadError: UserFacingMessage?
         do {
+            #if DEBUG
+            container = try PersistenceController.makeContainer(inMemory: ProcessInfo.processInfo.arguments.contains("-ui-testing"))
+            #else
             container = try PersistenceController.makeContainer()
+            #endif
         } catch {
             // Use an in-memory container only to render a blocking recovery screen.
             // The user cannot unknowingly create data that disappears on relaunch.

@@ -26,79 +26,95 @@ struct QuranBrowserView: View {
         @Bindable var environment = environment
         NavigationStack(path: $navigationPath) {
             List {
+                Section {
+                    VStack(alignment: .leading, spacing: 18) {
+                        HStack(spacing: 12) {
+                            WarmSymbol(systemName: environment.isCollectingAyahs ? "rectangle.stack.badge.plus" : "book.pages", size: 44)
+                            VStack(alignment: .leading, spacing: 4) {
+                                Text(environment.isCollectingAyahs ? String(localized: "Build your practice") : String(localized: "Read. Listen. Remember."))
+                                    .font(.headline).foregroundStyle(Color.appBrownText)
+                                Text(environment.isCollectingAyahs ? String(localized: "Choose a passage to make your own.") : String(localized: "114 surahs · one place to begin"))
+                                    .font(.caption).foregroundStyle(Color.secondaryWarm)
+                            }
+                        }
+                        Picker(String(localized: "Browse"), selection: $mode) {
+                            ForEach(QuranBrowseMode.allCases) { item in
+                                Text(item.title).tag(item)
+                            }
+                        }
+                        .pickerStyle(.segmented)
+                    }
+                    .padding(.vertical, 6)
+                }
+                .listRowBackground(Color.clear)
+                .listRowSeparator(.hidden)
                 if environment.isCollectingAyahs {
                     collectListBanner
                 }
                 if !query.isEmpty {
                     searchSection
-                }
-                switch mode {
-                case .surahs:
-                    ForEach(environment.quran.surahs) { surah in
-                        NavigationLink(value: QuranDestination.surah(number: surah.number)) {
-                            HStack(spacing: 12) {
-                                Text("\(surah.number)")
-                                    .font(.caption.weight(.semibold))
-                                    .foregroundStyle(Color.bronze)
-                                    .frame(width: 30, height: 30)
-                                    .background(Color.appCollectedFill, in: Circle())
-                                VStack(alignment: .leading, spacing: 3) {
-                                    Text(surah.englishName)
-                                        .font(.headline)
+                } else {
+                    switch mode {
+                    case .surahs:
+                        ForEach(environment.quran.surahs) { surah in
+                            NavigationLink(value: QuranDestination.surah(number: surah.number)) {
+                                HStack(spacing: 12) {
+                                    Text("\(surah.number)")
+                                        .font(.caption.weight(.semibold))
+                                        .foregroundStyle(Color.bronze)
+                                        .monospacedDigit()
+                                        .frame(width: 38, height: 38)
+                                        .background(Color.appCollectedFill, in: RoundedRectangle(cornerRadius: 12))
+                                    VStack(alignment: .leading, spacing: 3) {
+                                        Text(surah.englishName)
+                                            .font(.headline)
+                                            .foregroundStyle(Color.appBrownText)
+                                        Text("\(surah.translation) · \(surah.ayahCount) ayahs")
+                                            .font(.caption)
+                                            .foregroundStyle(Color.secondaryWarm)
+                                    }
+                                    Spacer()
+                                    Text(surah.arabicName)
+                                        .font(.quran(size: 23))
                                         .foregroundStyle(Color.appBrownText)
-                                    Text("\(surah.translation) · \(surah.ayahCount) ayahs")
-                                        .font(.caption)
-                                        .foregroundStyle(Color.secondaryWarm)
+                                        .multilineTextAlignment(.leading)
+                                        .environment(\.layoutDirection, .rightToLeft)
                                 }
-                                Spacer()
-                                Text(surah.arabicName)
-                                    .font(.quran(size: 20))
-                                    .foregroundStyle(Color.appBrownText)
-                                    .multilineTextAlignment(.leading)
-                                    .environment(\.layoutDirection, .rightToLeft)
+                                .padding(.vertical, 8)
                             }
+                            .warmListRow()
+                            .accessibilityIdentifier("quran.surah.\(surah.number)")
                         }
-                        .warmListRow()
-                        .accessibilityIdentifier("quran.surah.\(surah.number)")
-                    }
-                case .juz:
-                    ForEach(environment.quran.juzs) { juz in
-                        NavigationLink(value: QuranDestination.juz(juz.number)) {
-                            Text(
-                                juz.number == 30
-                                    ? String(localized: "Juz \(juz.number) · Amma")
-                                    : String(localized: "Juz \(juz.number)")
-                            )
-                            .foregroundStyle(Color.appBrownText)
-                        }
-                        .warmListRow()
-                        .accessibilityIdentifier("quran.juz.\(juz.number)")
-                    }
-                case .pages:
-                    ForEach(environment.quran.pages) { page in
-                        NavigationLink(value: QuranDestination.page(page.number)) {
-                            Text(String(localized: "Page \(page.number)"))
+                    case .juz:
+                        ForEach(environment.quran.juzs) { juz in
+                            NavigationLink(value: QuranDestination.juz(juz.number)) {
+                                Text(
+                                    juz.number == 30
+                                        ? String(localized: "Juz \(juz.number) · Amma")
+                                        : String(localized: "Juz \(juz.number)")
+                                )
                                 .foregroundStyle(Color.appBrownText)
+                            }
+                            .warmListRow()
+                            .accessibilityIdentifier("quran.juz.\(juz.number)")
                         }
-                        .warmListRow()
-                        .accessibilityIdentifier("quran.page.\(page.number)")
+                    case .pages:
+                        ForEach(environment.quran.pages) { page in
+                            NavigationLink(value: QuranDestination.page(page.number)) {
+                                Text(String(localized: "Page \(page.number)"))
+                                    .foregroundStyle(Color.appBrownText)
+                            }
+                            .warmListRow()
+                            .accessibilityIdentifier("quran.page.\(page.number)")
+                        }
                     }
                 }
             }
+            .listStyle(.insetGrouped)
             .warmListChrome()
             .navigationTitle(String(localized: "Quran"))
-            .searchable(text: $query, prompt: String(localized: "Surah, juz, page, or 18:1-10"))
+            .searchable(text: $query, placement: .navigationBarDrawer(displayMode: .always), prompt: String(localized: "Surah, juz, page, or 18:1-10"))
             .toolbar {
-                ToolbarItem(placement: .principal) {
-                    Picker(String(localized: "Browse"), selection: $mode) {
-                        ForEach(QuranBrowseMode.allCases) { item in
-                            Text(item.title).tag(item)
-                        }
-                    }
-                    .pickerStyle(.segmented)
-                    .tint(Color.bronze)
-                    .frame(maxWidth: 280)
-                }
                 ToolbarItem(placement: .topBarTrailing) {
                     if !environment.collectionDraft.passages.isEmpty {
                         Button(String(localized: "Collection · \(environment.collectionDraft.passages.count)")) {
@@ -109,7 +125,7 @@ struct QuranBrowserView: View {
                 }
             }
             .sheet(isPresented: $environment.isPresentingCollectionEditor) {
-                SetEditorView(draft: environment.collectionDraft) {
+                SetEditorView(draft: environment.collectionDraft) { _ in
                     environment.clearCollectionDraft()
                 }
             }
@@ -132,6 +148,10 @@ struct QuranBrowserView: View {
     private var searchSection: some View {
         let hits = environment.quran.search(query).hits
         Section(String(localized: "Results")) {
+            if hits.isEmpty {
+                ContentUnavailableView.search(text: query)
+                    .listRowBackground(Color.clear)
+            }
             ForEach(hits) { hit in
                 Button {
                     apply(hit)

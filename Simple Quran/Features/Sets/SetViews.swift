@@ -12,7 +12,19 @@ struct SetListView: View {
             List {
                 let active = sets.filter { $0.archivedAt == nil }
                 let archived = sets.filter { $0.archivedAt != nil }
-                Section(String(localized: "Collections")) {
+                Section {
+                    VStack(alignment: .leading, spacing: 8) {
+                        Text(String(localized: "Make the words your own."))
+                            .font(.system(.title2, design: .serif).weight(.medium))
+                            .foregroundStyle(Color.appBrownText)
+                        Text(String(localized: "Your saved passages, ready to repeat and revisit."))
+                            .font(.subheadline).foregroundStyle(Color.secondaryWarm)
+                    }
+                    .padding(.vertical, 8)
+                    .listRowBackground(Color.clear)
+                    .listRowSeparator(.hidden)
+                }
+                Section(String(localized: "Your practice library")) {
                     if active.isEmpty {
                         EmptyStateView(
                             title: String(localized: "No collections yet"),
@@ -34,6 +46,7 @@ struct SetListView: View {
                                         Text(summary(set)).font(.caption).foregroundStyle(Color.secondaryWarm)
                                     }
                                 }
+                                .padding(.vertical, 8)
                             }
                             .warmListRow()
                             .accessibilityIdentifier("sets.row.\(set.id.uuidString)")
@@ -93,9 +106,6 @@ struct SetDetailView: View {
                         downloadStatus
                     }
                 }
-                ForEach(practiceSet.orderedPassages, id: \.id) { passage in
-                    passageCard(passage)
-                }
                 Button {
                     showPractice = true
                 } label: {
@@ -111,8 +121,15 @@ struct SetDetailView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(WarmButtonStyle(emphasis: .secondary))
+                SectionHeading(title: String(localized: "Your passages"), subtitle: String(localized: "Listen, repeat, then hide the text to test your recall."))
+                    .padding(.top, 12)
+                ForEach(practiceSet.orderedPassages, id: \.id) { passage in
+                    passageCard(passage)
+                }
             }
-            .padding()
+            .padding(20)
+            .frame(maxWidth: 720)
+            .frame(maxWidth: .infinity)
         }
         .background(Color.parchment.ignoresSafeArea())
         .parchmentNavigationBar()
@@ -225,13 +242,15 @@ struct SetEditorView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.dismiss) private var dismiss
     var draft: SetDraft
-    var onSaved: (() -> Void)?
+    var onSaved: ((PracticeSet) -> Void)?
+    var startsPracticeOnSave: Bool
     @State private var errorMessage: UserFacingMessage?
     @State private var showPracticeOptions: Bool
 
-    init(draft: SetDraft, onSaved: (() -> Void)? = nil) {
+    init(draft: SetDraft, startsPracticeOnSave: Bool = false, onSaved: ((PracticeSet) -> Void)? = nil) {
         self.draft = draft
         self.onSaved = onSaved
+        self.startsPracticeOnSave = startsPracticeOnSave
         _showPracticeOptions = State(initialValue: draft.settings != .default)
     }
 
@@ -306,7 +325,7 @@ struct SetEditorView: View {
                     Button(String(localized: "Cancel")) { dismiss() }
                 }
                 ToolbarItem(placement: .confirmationAction) {
-                    Button(String(localized: "Save")) { save() }
+                    Button(startsPracticeOnSave ? String(localized: "Save & practice") : String(localized: "Save")) { save() }
                         .disabled(draft.passages.isEmpty)
                         .accessibilityIdentifier("set.editor.save")
                 }
@@ -339,12 +358,14 @@ struct SetEditorView: View {
         let ranges = draft.passages.sorted { $0.order < $1.order }.map(\.range)
         let title = draft.resolvedTitle(catalog: environment.quran)
         do {
+            let savedSet: PracticeSet
             if let id = draft.existingID, let set = try environment.store.set(id: id) {
                 try environment.store.updateSet(set, title: title, passages: ranges, settings: draft.settings)
+                savedSet = set
             } else {
-                _ = try environment.store.createSet(title: title, passages: ranges, settings: draft.settings)
+                savedSet = try environment.store.createSet(title: title, passages: ranges, settings: draft.settings)
             }
-            onSaved?()
+            onSaved?(savedSet)
             dismiss()
         } catch {
             errorMessage = UserFacingMessage.from(.persistenceFailure)

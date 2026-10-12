@@ -32,8 +32,6 @@ struct AppRootView: View {
             .tint(Color.bronze)
             .symbolRenderingMode(.hierarchical)
             .background(Color.parchment.ignoresSafeArea())
-            .toolbarBackground(Color.appWarmSurface, for: .tabBar)
-            .toolbarBackgroundVisibility(.visible, for: .tabBar)
             .tabViewBottomAccessory(isEnabled: environment.playback.snapshot.currentGlobalAyah != nil) {
                 if let ayah = environment.playback.snapshot.currentGlobalAyah {
                     GlobalMiniPlayer(ayah: ayah)
@@ -47,21 +45,38 @@ private struct GlobalMiniPlayer: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.tabViewBottomAccessoryPlacement) private var placement
     let ayah: Int
+    @State private var showPlayer = false
+    @State private var practiceSet: PracticeSet?
 
     private var isInline: Bool { placement == .inline }
 
     var body: some View {
         let verse = environment.quran.verse(globalAyah: ayah)
         HStack(spacing: 12) {
-            MiniPlayerMetadata(
-                title: environment.playback.snapshot.setTitle,
-                reference: verse?.reference ?? "",
-                showsTitle: !isInline
-            )
+            Button {
+                if let activeSet = environment.playback.activeSet { practiceSet = activeSet }
+                else { showPlayer = true }
+            } label: {
+                HStack(spacing: 10) {
+                    if !isInline { WarmSymbol(systemName: "waveform", size: 34) }
+                    MiniPlayerMetadata(
+                        title: environment.playback.snapshot.setTitle,
+                        reference: environment.playback.userMessage != nil ? String(localized: "Audio unavailable · open player") : verse.map { String(localized: "Ayah \($0.ayahInSurah)") } ?? "",
+                        showsTitle: !isInline
+                    )
+                    Spacer(minLength: 0)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(String(localized: "Open player"))
+            .accessibilityIdentifier("playback.open")
             Spacer(minLength: 8)
             MiniPlayerTransport(showsSkipButtons: !isInline)
         }
         .padding(.horizontal, 16)
+        .sheet(isPresented: $showPlayer) { ListeningPlayerView() }
+        .fullScreenCover(item: $practiceSet) { PracticeView(practiceSet: $0) }
     }
 }
 
@@ -74,13 +89,13 @@ private struct MiniPlayerMetadata: View {
         VStack(alignment: .leading, spacing: 2) {
             if showsTitle {
                 Text(title)
-                    .font(.caption)
-                    .foregroundStyle(Color.secondaryWarm)
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(Color.appBrownText)
                     .lineLimit(1)
             }
             Text(reference)
-                .font(.subheadline.weight(.semibold))
-                .foregroundStyle(Color.appBrownText)
+                .font(.caption)
+                .foregroundStyle(Color.secondaryWarm)
                 .lineLimit(1)
         }
     }
@@ -91,7 +106,7 @@ private struct MiniPlayerTransport: View {
     let showsSkipButtons: Bool
 
     var body: some View {
-        HStack(spacing: 24) {
+        HStack(spacing: 8) {
             if showsSkipButtons {
                 Button {
                     environment.playback.skipBack()
@@ -108,7 +123,7 @@ private struct MiniPlayerTransport: View {
             Button(action: togglePlayback) {
                 ZStack {
                     PlayGlyph(
-                        systemName: environment.playback.snapshot.isPlaying ? "pause.fill" : "play.fill",
+                        systemName: (environment.playback.snapshot.isPlaying || environment.playback.snapshot.isLoading) ? "pause.fill" : "play.fill",
                         size: 36
                     )
                     .opacity(environment.playback.snapshot.isLoading ? 0.35 : 1)
@@ -120,7 +135,7 @@ private struct MiniPlayerTransport: View {
                 .contentShape(Rectangle())
             }
             .accessibilityLabel(
-                environment.playback.snapshot.isPlaying
+                (environment.playback.snapshot.isPlaying || environment.playback.snapshot.isLoading)
                     ? String(localized: "Pause")
                     : String(localized: "Play")
             )
@@ -144,7 +159,7 @@ private struct MiniPlayerTransport: View {
     }
 
     private func togglePlayback() {
-        if environment.playback.snapshot.isPlaying {
+        if environment.playback.snapshot.isPlaying || environment.playback.snapshot.isLoading {
             environment.playback.pause()
         } else {
             environment.playback.resume()

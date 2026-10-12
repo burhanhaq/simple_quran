@@ -14,12 +14,28 @@ struct ProgressViewScreen: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     if insights.knownCount == 0 && insights.practicedCount == 0 {
-                        EmptyStateView(
-                            title: String(localized: "See your progress here"),
-                            message: String(localized: "Practice your first ayah. Start with Al-Fatihah or a short surah from Juz 30."),
-                            actionTitle: String(localized: "Browse the Quran")
-                        ) {
-                            environment.selectedTab = .quran
+                        VStack(alignment: .leading, spacing: 24) {
+                            Text(String(localized: "Every ayah is a step forward."))
+                                .font(.system(.title, design: .serif).weight(.medium))
+                                .foregroundStyle(Color.appBrownText)
+                            WarmCard(emphasized: true) {
+                                VStack(alignment: .leading, spacing: 16) {
+                                    WarmSymbol(systemName: "leaf", size: 48)
+                                    Text(String(localized: "Your journey begins here"))
+                                        .font(.title2.weight(.semibold)).foregroundStyle(Color.appBrownText)
+                                    Text(String(localized: "As you practice, you’ll see the ayahs you know, the ones to revisit, and the habit you’re building."))
+                                        .foregroundStyle(Color.secondaryWarm)
+                                    Button { environment.enterQuranForCollecting() } label: {
+                                        Label(String(localized: "Choose your first passage"), systemImage: "arrow.right")
+                                            .frame(maxWidth: .infinity)
+                                    }
+                                    .buttonStyle(WarmButtonStyle())
+                                }
+                            }
+                            SectionHeading(title: String(localized: "A simple rhythm"))
+                            rhythmStep("1", title: String(localized: "Listen & repeat"), detail: String(localized: "Let each ayah become familiar at your own pace."))
+                            rhythmStep("2", title: String(localized: "Recall & recite"), detail: String(localized: "Hide the text and record yourself when you’re ready."))
+                            rhythmStep("3", title: String(localized: "Reflect & revisit"), detail: String(localized: "Rate your recall to know what needs another look."))
                         }
                     } else {
                         if insights.knownCount == 0 {
@@ -34,13 +50,26 @@ struct ProgressViewScreen: View {
                         habitFooter(insights)
                     }
                 }
-                .padding()
+                .padding(20)
+                .frame(maxWidth: 720)
+                .frame(maxWidth: .infinity)
             }
             .background(Color.parchment.ignoresSafeArea())
             .parchmentNavigationBar()
             .navigationTitle(String(localized: "Progress"))
             .fullScreenCover(item: $practiceSet) { set in
                 PracticeView(practiceSet: set)
+            }
+        }
+    }
+
+    private func rhythmStep(_ number: String, title: String, detail: String) -> some View {
+        HStack(alignment: .top, spacing: 16) {
+            Text(number).font(.subheadline.weight(.semibold)).foregroundStyle(Color.bronze)
+                .frame(width: 34, height: 34).background(Color.appCollectedFill, in: Circle())
+            VStack(alignment: .leading, spacing: 5) {
+                Text(title).font(.headline).foregroundStyle(Color.appBrownText)
+                Text(detail).font(.subheadline).foregroundStyle(Color.secondaryWarm)
             }
         }
     }

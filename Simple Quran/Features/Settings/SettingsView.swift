@@ -11,13 +11,19 @@ struct SettingsView: View {
     var body: some View {
         NavigationStack {
             List {
-                Section(String(localized: "Reading")) {
+                Section(String(localized: "Make it yours")) {
                     Picker(String(localized: "Appearance"), selection: Bindable(environment.settings).appearance) {
                         ForEach(AppAppearance.allCases) { appearance in
                             Text(appearance.title).tag(appearance)
                         }
                     }
                     .accessibilityIdentifier("settings.appearance")
+                    .warmListRow()
+                    Picker(String(localized: "Reading layout"), selection: Bindable(environment.settings).quranReadingLayout) {
+                        ForEach(QuranReadingLayout.allCases) { layout in
+                            Text(layout.title).tag(layout)
+                        }
+                    }
                     .warmListRow()
                 }
                 Section(String(localized: "Audio")) {

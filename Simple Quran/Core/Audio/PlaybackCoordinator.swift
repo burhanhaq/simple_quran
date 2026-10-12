@@ -31,6 +31,8 @@ final class PlaybackCoordinator {
     private var itemStatusObserver: NSKeyValueObservation?
     private var timeControlObserver: NSKeyValueObservation?
     private var cursor: PracticePlaybackCursor?
+    private var preparedPassages: [VerseRange] = []
+    private var preparedSettings: PracticeSettings = .listening
     private var queueCursor: PracticePlaybackCursor?
     private var queuedItems: [ObjectIdentifier: QueuedItemInfo] = [:]
     private var catalog: (any QuranCatalog)?
@@ -144,7 +146,7 @@ final class PlaybackCoordinator {
     }
 
     func isPrepared(for passages: [VerseRange]) -> Bool {
-        versesInSet.map(\.globalAyah) == passages.flatMap(\.globalAyahs)
+        !preparedPassages.isEmpty && preparedPassages == passages
     }
 
     func containsAyah(_ globalAyah: Int) -> Bool {
@@ -161,17 +163,24 @@ final class PlaybackCoordinator {
     }
 
     func resume() {
+        guard !preparedPassages.isEmpty else { return }
+        // A finished queue remains visible so Play can replay the passage.
+        if cursor?.current == nil {
+            cursor = PracticePlaybackCursor(passages: preparedPassages, settings: preparedSettings)
+        }
         guard cursor?.current != nil else { return }
+        userMessage = nil
         onWillStartAudio?()
         shouldAutoplay = true
+        guard let item = player.currentItem, item.status != .failed else {
+            // Rebuilding activates the session; do not activate it twice on first play.
+            rebuildQueue(autoplay: true)
+            return
+        }
         do {
             try AudioSessionController.shared.configure(.playback)
         } catch {
             failPlayback(error)
-            return
-        }
-        guard player.currentItem != nil else {
-            rebuildQueue(autoplay: true)
             return
         }
         if player.currentItem?.status == .readyToPlay {
@@ -186,6 +195,9 @@ final class PlaybackCoordinator {
         accumulateListeningTime()
         resetQueue()
         cursor = nil
+        preparedPassages = []
+        activeSet = nil
+        versesInSet = []
         snapshot.isPlaying = false
         snapshot.isLoading = false
         snapshot.currentGlobalAyah = nil
@@ -227,6 +239,7 @@ final class PlaybackCoordinator {
         accumulateListeningTime()
         resetQueue()
         activeSet.settings = settings
+        preparedSettings = settings
         snapshot.hideArabic = settings.hideArabic
         snapshot.advanceManually = settings.advanceManually
         snapshot.ayahRepeat = settings.ayahRepeatCount
@@ -276,6 +289,8 @@ final class PlaybackCoordinator {
         session = nil
         self.catalog = catalog
         self.allowStreaming = allowStreaming
+        preparedPassages = passages
+        preparedSettings = settings
         activeSet = set
         versesInSet = passages.flatMap { catalog.verses(in: $0) }
         cursor = PracticePlaybackCursor(
@@ -392,7 +407,7 @@ final class PlaybackCoordinator {
         shouldAutoplay = autoplay
         itemStatusObserver = item.observe(\.status, options: [.initial, .new]) { [weak self, weak item] _, _ in
             Task { @MainActor in
-                guard let self, let item else { return }
+                guard let self, let item, self.player.currentItem === item else { return }
                 switch item.status {
                 case .readyToPlay:
                     self.snapshot.isLoading = false
