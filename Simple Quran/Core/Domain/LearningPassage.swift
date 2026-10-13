@@ -42,6 +42,17 @@ nonisolated enum LearningPassage {
             : String(localized: "Ayahs \(first.ayahInSurah)–\(last.ayahInSurah)")
     }
 
+    static func referenceLabel(_ range: VerseRange, catalog: some QuranCatalog) -> String {
+        guard let first = catalog.verse(globalAyah: range.startGlobalAyah),
+              let last = catalog.verse(globalAyah: range.endGlobalAyah),
+              let firstSurah = catalog.surah(number: first.surahNumber),
+              let lastSurah = catalog.surah(number: last.surahNumber) else { return "" }
+        if first.surahNumber == last.surahNumber {
+            return "\(firstSurah.englishName) · \(ayahLabel(range, catalog: catalog))"
+        }
+        return "\(firstSurah.englishName) \(first.ayahInSurah) – \(lastSurah.englishName) \(last.ayahInSurah)"
+    }
+
     private static func wordCount(_ verse: QuranVerse) -> Int {
         verse.text.split(whereSeparator: { $0.isWhitespace }).count
     }
@@ -54,4 +65,5 @@ struct ReaderRoute: Identifiable {
     var savedPractice: PracticeSet? = nil
     var resumePlayback = false
     var isReview = false
+    var targetID: UUID? = nil
 }

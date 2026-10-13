@@ -5,8 +5,9 @@ final class Simple_QuranUITests: XCTestCase {
 
     @MainActor
     private func launch(appearance: String = "light", extra: [String] = []) -> XCUIApplication {
+        XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
-        app.launchArguments = ["-ui-testing", "-settings.appearance", appearance, "-settings.quranReadingLayout", "ayahByAyah",
+        app.launchArguments = ["-ui-testing", "-ui-testing-reset-focus", "-settings.appearance", appearance, "-settings.quranReadingLayout", "ayahByAyah",
                                "-learning.start", "0", "-learning.end", "0", "-reading.ayah", "0", "-learning.byPage", "NO"] + extra
         app.launch()
         return app
@@ -153,6 +154,136 @@ final class Simple_QuranUITests: XCTestCase {
         landscape.buttons["practice.next"].tap()
         XCTAssertTrue(landscape.staticTexts["Ayah 2 of 7"].exists)
         capture(landscape, name: "Practice-Landscape")
+    }
+
+    @MainActor
+    func testMultipleSurahsAndWholeJuzCanBeTrackedTogether() {
+        let app = launch()
+        let add = app.buttons["focus.add"]
+        for _ in 0..<5 where !add.isHittable { app.swipeUp() }
+        add.tap()
+        XCTAssertTrue(app.navigationBars["Add a focus"].waitForExistence(timeout: 3))
+        app.buttons["focus.select.ayah.1"].tap()
+        app.buttons["focus.select.ayah.8"].tap()
+        app.segmentedControls.buttons["Juz"].tap()
+        app.buttons["focus.select.juz.1"].tap()
+        XCTAssertTrue(app.staticTexts["3 selected"].exists)
+        capture(app, name: "Focus-Multiple-Selection")
+        app.buttons["focus.save"].tap()
+        let juz = app.buttons["focus.item.1.148"]
+        for _ in 0..<6 where !juz.isHittable { app.swipeUp() }
+        XCTAssertTrue(juz.exists)
+        juz.tap()
+        XCTAssertTrue(app.buttons["focus.practice"].waitForExistence(timeout: 3))
+        capture(app, name: "Focus-Juz-Detail")
+        app.buttons["focus.practice"].tap()
+        app.buttons["practice.finish"].tap()
+        app.buttons["practice.rate.solid"].tap()
+        app.buttons["practice.nextPassage"].tap()
+        XCTAssertTrue(app.navigationBars["Al-Baqara"].waitForExistence(timeout: 3))
+        app.buttons["reader.close"].tap()
+        XCTAssertTrue(app.staticTexts["7 of 148 ayahs practiced"].exists)
+    }
+
+    @MainActor
+    func testCustomRangeCanBeAddedEditedAndReopenedWithoutChangingIt() {
+        let app = launch()
+        let add = app.buttons["focus.add"]
+        for _ in 0..<5 where !add.isHittable { app.swipeUp() }
+        add.tap()
+        app.buttons["focus.custom"].tap()
+        XCTAssertTrue(app.pickerWheels.firstMatch.waitForExistence(timeout: 3))
+        app.pickerWheels.element(boundBy: 0).adjust(toPickerWheelValue: "2")
+        app.pickerWheels.element(boundBy: 1).adjust(toPickerWheelValue: "5")
+        capture(app, name: "Focus-Custom-Range")
+        app.buttons["focus.range.save"].tap()
+        app.buttons["focus.save"].tap()
+        let focus = app.buttons["focus.item.2.5"]
+        for _ in 0..<5 where !focus.isHittable { app.swipeUp() }
+        focus.tap()
+        app.buttons["focus.edit"].tap()
+        XCTAssertTrue(app.pickerWheels.firstMatch.waitForExistence(timeout: 3))
+        XCTAssertEqual(app.pickerWheels.element(boundBy: 0).value as? String, "2")
+        XCTAssertEqual(app.pickerWheels.element(boundBy: 1).value as? String, "5")
+        app.pickerWheels.element(boundBy: 1).adjust(toPickerWheelValue: "6")
+        app.buttons["focus.range.save"].tap()
+        app.buttons["focus.practice"].tap()
+        app.buttons["practice.change"].tap()
+        XCTAssertTrue(app.pickerWheels.firstMatch.waitForExistence(timeout: 3))
+        let end = app.pickerWheels.element(boundBy: 1).value as? String
+        app.buttons["passage.start"].tap()
+        app.buttons["practice.change"].tap()
+        XCTAssertEqual(app.pickerWheels.element(boundBy: 1).value as? String, end)
+        capture(app, name: "Passage-Exact-Range")
+    }
+
+    @MainActor
+    func testFocusRangeControlsInDarkModeWithLargeText() {
+        let app = launch(appearance: "night", extra: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"])
+        let add = app.buttons["focus.add"]
+        for _ in 0..<10 where !add.isHittable { app.swipeUp() }
+        add.tap()
+        let custom = app.buttons["focus.custom"]
+        for _ in 0..<8 where !custom.isHittable { app.swipeUp() }
+        custom.tap()
+        XCTAssertTrue(app.buttons["focus.range.save"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["focus.range.save"].isHittable)
+        let wheel = app.pickerWheels.element(boundBy: 0)
+        for _ in 0..<5 where !wheel.isHittable { app.collectionViews.firstMatch.swipeUp() }
+        XCTAssertTrue(wheel.isHittable)
+        wheel.adjust(toPickerWheelValue: "2")
+        capture(app, name: "Focus-Range-Night-LargeText")
+        app.buttons["focus.range.save"].tap()
+        XCTAssertTrue(app.buttons["focus.save"].isHittable)
+        app.buttons["focus.save"].tap()
+    }
+
+    @MainActor
+    func testChoosingAnotherSurahKeepsTheNewRange() {
+        let app = launch()
+        let add = app.buttons["focus.add"]
+        for _ in 0..<5 where !add.isHittable { app.swipeUp() }
+        add.tap()
+        app.buttons["focus.custom"].tap()
+        app.buttons["range.startSurah"].tap()
+        app.buttons["2. Al-Baqara"].tap()
+        XCTAssertTrue(app.pickerWheels.firstMatch.waitForExistence(timeout: 3))
+        app.pickerWheels.element(boundBy: 0).adjust(toPickerWheelValue: "4")
+        app.pickerWheels.element(boundBy: 1).adjust(toPickerWheelValue: "6")
+        app.buttons["focus.range.save"].tap()
+        app.buttons["focus.save"].tap()
+        let focus = app.buttons["focus.item.11.13"]
+        for _ in 0..<5 where !focus.isHittable { app.swipeUp() }
+        XCTAssertTrue(focus.exists)
+        focus.tap()
+        app.buttons["focus.edit"].tap()
+        XCTAssertTrue(app.pickerWheels.firstMatch.waitForExistence(timeout: 3))
+        XCTAssertEqual(app.pickerWheels.element(boundBy: 0).value as? String, "4")
+        XCTAssertEqual(app.pickerWheels.element(boundBy: 1).value as? String, "6")
+    }
+
+    @MainActor
+    func testRangeEditorKeepsSaveVisibleInLandscape() {
+        let app = launch()
+        let add = app.buttons["focus.add"]
+        for _ in 0..<5 where !add.isHittable { app.swipeUp() }
+        add.tap()
+        app.buttons["focus.custom"].tap()
+        XCTAssertTrue(app.pickerWheels.firstMatch.waitForExistence(timeout: 3))
+        XCUIDevice.shared.orientation = .landscapeLeft
+        defer { XCUIDevice.shared.orientation = .portrait }
+        let rotated = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
+            app.frame.width > app.frame.height
+        }, object: nil)
+        XCTAssertEqual(XCTWaiter.wait(for: [rotated], timeout: 5), .completed)
+        XCTAssertTrue(app.buttons["focus.range.save"].isHittable)
+        XCTAssertTrue(app.pickerWheels.element(boundBy: 0).isHittable)
+        app.pickerWheels.element(boundBy: 0).adjust(toPickerWheelValue: "2")
+        capture(app, name: "Focus-Range-Landscape")
+        app.buttons["focus.range.save"].tap()
+        XCTAssertTrue(app.buttons["focus.save"].isHittable)
+        capture(app, name: "Focus-Selection-Landscape")
+        app.buttons["focus.save"].tap()
     }
 
     @MainActor

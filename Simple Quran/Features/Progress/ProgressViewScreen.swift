@@ -19,6 +19,7 @@ struct ProgressViewScreen: View {
                     Text("Your progress grows each time you return.").font(.subheadline).foregroundStyle(Color.secondaryWarm)
                 }.padding(.vertical, 16)
             }.listRowBackground(Color.clear)
+            Section { LearningFocusSection() }.listRowBackground(Color.clear)
             if surahs.isEmpty {
                 Button("Choose a surah") { environment.selectedTab = .quran }.warmListRow()
             }

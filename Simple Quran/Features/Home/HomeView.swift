@@ -41,6 +41,7 @@ struct HomeView: View {
                         .font(.subheadline).foregroundStyle(Color.secondaryWarm)
                     if let error = environment.catalogLoadError { FriendlyErrorView(message: error) }
                     hero
+                    LearningFocusSection()
                     if let range = reviewRange {
                         Button { environment.openPractice(range, isReview: true) } label: {
                             WarmCard {
@@ -114,7 +115,7 @@ struct HomeView: View {
                 }
                 Text(hasStarted ? "Listen, repeat, and take your time." : "A few ayahs. A moment of focus.\nBegin at your own pace.")
                     .font(.subheadline).lineSpacing(4).foregroundStyle(.white.opacity(0.8))
-                Button { environment.openPractice(range) } label: {
+                Button { environment.openPractice(range, targetID: environment.settings.activeTargetID) } label: {
                     HStack {
                         Text(hasStarted ? "Continue practice" : "Start practicing")
                         Spacer()

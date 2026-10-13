@@ -12,6 +12,8 @@ struct QuranReaderView: View {
     var savedPractice: PracticeSet? = nil
     var resumesPlayback = false
     var isReview = false
+    var targetID: UUID? = nil
+    @State private var detachedFromTarget = false
     @State private var practice: PracticeSet?
     @State private var readingRanges: [VerseRange]?
     @State private var readingName: String?
@@ -64,8 +66,16 @@ struct QuranReaderView: View {
               first.page == last.page else { return "" }
         return "Page \(first.page) · "
     }
+    private var learningTarget: LearningTarget? {
+        guard !detachedFromTarget else { return nil }
+        return environment.settings.learningTargets.first { $0.id == targetID }
+    }
     private var nextRange: VerseRange? {
         guard ranges.count == 1, let range = ranges.first else { return nil }
+        if let learningTarget {
+            return learningTarget.passage(from: range.endGlobalAyah + 1, catalog: environment.quran,
+                                          byPage: environment.settings.practiceByPage)
+        }
         return LearningPassage.next(after: range, catalog: environment.quran, byPage: environment.settings.practiceByPage)
     }
 
@@ -115,7 +125,7 @@ struct QuranReaderView: View {
             }
             .sheet(isPresented: $showPassage) {
                 PassagePickerView(startAyah: currentAyah ?? verses.first?.globalAyah ?? 1,
-                                  currentRange: practice?.orderedPassages.first?.range) { range, byPage in
+                                  currentRange: practice?.orderedPassages.first?.range, allowedRange: learningTarget?.range) { range, byPage in
                     environment.settings.practiceByPage = byPage
                     beginPractice(range)
                 }
@@ -361,7 +371,8 @@ struct QuranReaderView: View {
                         } label: { Text("Done for today").frame(maxWidth: .infinity) }
                             .buttonStyle(WarmButtonStyle()).accessibilityIdentifier("practice.done")
                         if let range = ranges.first, ranges.count == 1,
-                           let first = verses.first, first.ayahInSurah > 1 {
+                           let first = verses.first, first.ayahInSurah > 1,
+                           range.startGlobalAyah > (learningTarget?.range.startGlobalAyah ?? 1) {
                             Button("Include the previous ayah") {
                                 showFinish = false
                                 beginPractice(.clamped(start: range.startGlobalAyah - 1, end: range.endGlobalAyah))
@@ -374,6 +385,9 @@ struct QuranReaderView: View {
                                 showFinish = false
                                 beginPractice(next)
                             }.frame(maxWidth: .infinity, minHeight: 44).accessibilityIdentifier("practice.nextPassage")
+                        } else if let learningTarget {
+                            Text("You’ve reached the end of \(learningTarget.title(catalog: environment.quran)). Return anytime to revisit these ayahs.")
+                                .font(.subheadline).foregroundStyle(Color.secondaryWarm)
                         } else if let first = verses.first, let surah = environment.quran.surah(number: first.surahNumber) {
                             Text("You’ve reached the end of \(surah.englishName). Return anytime to bring the ayahs together.")
                                 .font(.subheadline).foregroundStyle(Color.secondaryWarm)
@@ -441,7 +455,15 @@ struct QuranReaderView: View {
         }
     }
 
-    private func beginPractice(_ range: VerseRange) {
+    private func beginPractice(_ requestedRange: VerseRange) {
+        let range: VerseRange
+        if let learningTarget {
+            guard let bounded = try? VerseRange(
+                startGlobalAyah: max(requestedRange.startGlobalAyah, learningTarget.range.startGlobalAyah),
+                endGlobalAyah: min(requestedRange.endGlobalAyah, learningTarget.range.endGlobalAyah)
+            ) else { return }
+            range = bounded
+        } else { range = requestedRange }
         do { let set = try environment.practice(for: range); activate(set) }
         catch { errorMessage = .from(.persistenceFailure) }
     }
@@ -456,7 +478,8 @@ struct QuranReaderView: View {
         selectedAyah = environment.playback.snapshot.currentGlobalAyah
         environment.recorder.selectCollection(set.id)
         environment.activePracticeIsReview = isReview
-        if !isReview, let range = set.orderedPassages.first?.range { environment.settings.remember(range) }
+        environment.activePracticeTargetID = learningTarget?.id
+        if !isReview, let range = set.orderedPassages.first?.range { environment.settings.remember(range, targetID: learningTarget?.id) }
     }
 
     private func leavePractice() {
@@ -469,6 +492,8 @@ struct QuranReaderView: View {
         }
         environment.playback.stop()
         practice = nil
+        detachedFromTarget = true
+        environment.activePracticeTargetID = nil
         finished = false
     }
 
@@ -513,7 +538,7 @@ struct QuranReaderView: View {
                                                    rating: rating, lastAyah: currentAyah,
                                                    seconds: environment.playback.listeningSeconds,
                                                    repetitions: environment.playback.repetitionCount)
-            if !isReview, rating == .solid, let next = nextRange { environment.settings.remember(next) }
+            if !isReview, rating == .solid, let next = nextRange { environment.settings.remember(next, targetID: learningTarget?.id) }
             finished = true
         } catch { errorMessage = .from(.persistenceFailure) }
     }

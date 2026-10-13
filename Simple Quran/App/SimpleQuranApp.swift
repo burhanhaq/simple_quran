@@ -41,6 +41,10 @@ struct SimpleQuranApp: App {
         let source = AlQuranCloudAudioSource()
         let files = AudioFileStore(reciter: source.reciter)
         let settings = AppSettings()
+        if ProcessInfo.processInfo.arguments.contains("-ui-testing-reset-focus") {
+            settings.learningTargets = []
+            settings.activeTargetID = nil
+        }
         let downloads = AudioDownloadManager(
             source: source,
             fileStore: files,

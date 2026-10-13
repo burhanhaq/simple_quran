@@ -18,7 +18,7 @@ struct AppRootView: View {
             }
             .fullScreenCover(item: $environment.readerRoute) { route in
                 QuranReaderView(destination: route.destination, initialPracticeRange: route.practiceRange,
-                                savedPractice: route.savedPractice, resumesPlayback: route.resumePlayback, isReview: route.isReview)
+                                savedPractice: route.savedPractice, resumesPlayback: route.resumePlayback, isReview: route.isReview, targetID: route.targetID)
             }
         }
     }

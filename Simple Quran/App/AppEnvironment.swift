@@ -51,6 +51,33 @@ final class AppSettings {
         static let appearance = "settings.appearance"
     }
 
+    var learningTargets: [LearningTarget] {
+        didSet {
+            if let data = try? JSONEncoder().encode(learningTargets) {
+                defaults.set(data, forKey: "learning.targets")
+            }
+        }
+    }
+    var activeTargetID: UUID? {
+        didSet { defaults.set(activeTargetID?.uuidString, forKey: "learning.activeTarget") }
+    }
+
+    func addTargets(_ targets: [LearningTarget]) {
+        for target in targets where !learningTargets.contains(where: { $0.range == target.range }) {
+            learningTargets.append(target)
+        }
+    }
+
+    func remember(_ range: VerseRange, targetID: UUID?) {
+        remember(range)
+        activeTargetID = targetID
+        if let index = learningTargets.firstIndex(where: { $0.id == targetID }),
+           learningTargets[index].range.contains(range.startGlobalAyah),
+           learningTargets[index].range.contains(range.endGlobalAyah) {
+            learningTargets[index].resumeRange = range
+        }
+    }
+
     var learningStart: Int {
         didSet { defaults.set(learningStart, forKey: "learning.start") }
     }
@@ -94,6 +121,9 @@ final class AppSettings {
 
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
+        learningTargets = defaults.data(forKey: "learning.targets")
+            .flatMap { try? JSONDecoder().decode([LearningTarget].self, from: $0) } ?? []
+        activeTargetID = defaults.string(forKey: "learning.activeTarget").flatMap(UUID.init(uuidString:))
         learningStart = defaults.integer(forKey: "learning.start")
         learningEnd = defaults.integer(forKey: "learning.end")
         readingAyah = defaults.integer(forKey: "reading.ayah")
@@ -122,6 +152,7 @@ final class AppEnvironment {
     var selectedTab: AppTab = .home
     var readerRoute: ReaderRoute?
     var activePracticeIsReview = false
+    var activePracticeTargetID: UUID?
     var catalogLoadError: UserFacingMessage?
     var persistenceLoadError: UserFacingMessage?
 
@@ -159,16 +190,16 @@ final class AppEnvironment {
         readerRoute = ReaderRoute(destination: destination)
     }
 
-    func openPractice(_ range: VerseRange, isReview: Bool = false) {
+    func openPractice(_ range: VerseRange, isReview: Bool = false, targetID: UUID? = nil) {
         guard let verse = quran.verse(globalAyah: range.startGlobalAyah) else { return }
-        readerRoute = ReaderRoute(destination: .surah(number: verse.surahNumber, scrollToAyah: range.startGlobalAyah), practiceRange: range, isReview: isReview)
+        readerRoute = ReaderRoute(destination: .surah(number: verse.surahNumber, scrollToAyah: range.startGlobalAyah), practiceRange: range, isReview: isReview, targetID: targetID)
     }
 
     func reopenPlayer() {
         guard let ayah = playback.snapshot.currentGlobalAyah,
               let verse = quran.verse(globalAyah: ayah) else { return }
         readerRoute = ReaderRoute(destination: .surah(number: verse.surahNumber, scrollToAyah: ayah),
-                                  savedPractice: playback.activeSet, resumePlayback: true, isReview: activePracticeIsReview)
+                                  savedPractice: playback.activeSet, resumePlayback: true, isReview: activePracticeIsReview, targetID: activePracticeTargetID)
     }
 
     func practice(for range: VerseRange) throws -> PracticeSet {
