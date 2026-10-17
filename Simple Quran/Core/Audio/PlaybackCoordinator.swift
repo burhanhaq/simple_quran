@@ -37,6 +37,10 @@ final class PlaybackCoordinator {
     private var queuedItems: [ObjectIdentifier: QueuedItemInfo] = [:]
     private var catalog: (any QuranCatalog)?
     private var allowStreaming = true
+    /// Whether missing ayahs are being fetched, so playback can wait for them instead of failing.
+    private var downloadsMissingAudio = false
+    private var awaitedAyah: Int?
+    private var unavailableAyahs = Set<Int>()
     private var shouldAutoplay = false {
         didSet { updateIdleTimer() }
     }
@@ -67,6 +71,8 @@ final class PlaybackCoordinator {
     var versesInSet: [QuranVerse] = []
     var onWillStartAudio: (() -> Void)?
     var onPositionChanged: ((Int) -> Void)?
+    /// Asks for missing ayahs to be saved, nearest first; returns false when automatic downloads are off.
+    var downloadMissingAudio: (([Int]) -> Bool)?
     var passageRanges: [VerseRange] { preparedPassages }
     var hasPreparedQueue: Bool { player.currentItem != nil }
 
@@ -172,6 +178,8 @@ final class PlaybackCoordinator {
         }
         guard cursor?.current != nil else { return }
         userMessage = nil
+        // Pressing Play retries ayahs whose download failed.
+        unavailableAyahs = []
         onWillStartAudio?()
         shouldAutoplay = true
         guard let item = player.currentItem, item.status != .failed else {
@@ -227,6 +235,30 @@ final class PlaybackCoordinator {
         guard cursor?.move(to: globalAyah) == true else { return }
         if resume { onWillStartAudio?() }
         refreshAfterNavigation(autoplay: resume)
+    }
+
+    /// Continues playback that was waiting for this ayah to download.
+    func audioBecameAvailable(_ globalAyah: Int) {
+        guard awaitedAyah == globalAyah else { return }
+        awaitedAyah = nil
+        guard player.currentItem != nil else {
+            rebuildQueue(autoplay: shouldAutoplay)
+            return
+        }
+        do {
+            try fillQueue()
+        } catch {
+            failPlayback(error)
+        }
+    }
+
+    func audioDownloadFailed(_ globalAyah: Int) {
+        unavailableAyahs.insert(globalAyah)
+        guard awaitedAyah == globalAyah else { return }
+        awaitedAyah = nil
+        if player.currentItem == nil {
+            failPlayback(AppError.downloadFailed)
+        }
     }
 
     func toggleArabicHidden() {
@@ -306,6 +338,8 @@ final class PlaybackCoordinator {
         playbackBeganAt = nil
         userMessage = nil
         shouldAutoplay = false
+        downloadsMissingAudio = false
+        unavailableAyahs = []
         snapshot.setID = set?.id
         snapshot.setTitle = title
         snapshot.hideArabic = settings.hideArabic
@@ -342,13 +376,15 @@ final class PlaybackCoordinator {
                 try AudioSessionController.shared.configure(.playback)
             }
             updateSnapshot(for: step)
+            requestMissingAudio()
             countedCurrentItem = false
             queueCursor = cursor
             try fillQueue()
             observeQueue()
 
             guard let first = player.currentItem else {
-                finishPlayback()
+                // Playback resumes when the awaited ayah finishes downloading.
+                if awaitedAyah == nil { finishPlayback() }
                 return
             }
             observeReadiness(of: first, autoplay: autoplay)
@@ -368,9 +404,16 @@ final class PlaybackCoordinator {
                     resolved = (local, true)
                 } else if allowStreaming {
                     resolved = (try source.remoteURL(for: ayah), false)
+                } else if downloadsMissingAudio, !unavailableAyahs.contains(ayah) {
+                    awaitedAyah = ayah
+                    if player.items().isEmpty {
+                        snapshot.isPlaying = false
+                        snapshot.isLoading = shouldAutoplay
+                    }
+                    return
                 } else {
                     if player.items().isEmpty {
-                        throw AppError.offlineAudioMissing
+                        throw downloadsMissingAudio ? AppError.downloadFailed : AppError.offlineAudioMissing
                     }
                     return
                 }
@@ -399,6 +442,15 @@ final class PlaybackCoordinator {
             }
             queueCursor?.advanceAfterCompletion()
         }
+    }
+
+    private func requestMissingAudio() {
+        guard let downloadMissingAudio else { return }
+        let ayahs = versesInSet.map(\.globalAyah)
+        let start = snapshot.currentGlobalAyah.flatMap { ayahs.firstIndex(of: $0) } ?? 0
+        let missing = (ayahs[start...] + ayahs[..<start]).filter { !fileStore.isReady($0) }
+        guard !missing.isEmpty else { return }
+        downloadsMissingAudio = downloadMissingAudio(missing)
     }
 
     private func observeReadiness(of item: AVPlayerItem, autoplay: Bool) {
@@ -540,6 +592,7 @@ final class PlaybackCoordinator {
         player.removeAllItems()
         queueCursor = nil
         queuedItems.removeAll()
+        awaitedAyah = nil
     }
 
     private func replacePlayer() {

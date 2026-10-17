@@ -41,6 +41,9 @@ struct SettingsView: View {
                         .warmListRow()
                     Toggle(String(localized: "Stream if an ayah isn’t downloaded"), isOn: Bindable(environment.settings).streamWhenMissing)
                         .warmListRow()
+                    Toggle(String(localized: "Download audio as it plays"), isOn: Bindable(environment.settings).downloadWhilePlaying)
+                        .accessibilityIdentifier("settings.downloadWhilePlaying")
+                        .warmListRow()
                     LabeledContent(String(localized: "Downloaded audio")) {
                         Text(ByteCountFormatter.string(fromByteCount: environment.downloads.fileStore.totalByteCount(), countStyle: .file))
                     }

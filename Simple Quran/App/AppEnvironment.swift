@@ -45,6 +45,7 @@ final class AppSettings {
     private enum Key {
         static let wifiOnly = "settings.wifiOnly"
         static let streamWhenMissing = "settings.streamWhenMissing"
+        static let downloadWhilePlaying = "settings.downloadWhilePlaying"
         static let lastTab = "settings.lastTab"
         static let quranReadingLayout = "settings.quranReadingLayout"
         static let hasSeenQuranHint = "settings.hasSeenQuranHint"
@@ -127,6 +128,11 @@ final class AppSettings {
         didSet { defaults.set(streamWhenMissing, forKey: Key.streamWhenMissing) }
     }
 
+    /// Saves recitation that isn't on the device yet whenever it is played.
+    var downloadWhilePlaying: Bool {
+        didSet { defaults.set(downloadWhilePlaying, forKey: Key.downloadWhilePlaying) }
+    }
+
     var quranReadingLayout: QuranReadingLayout {
         didSet { defaults.set(quranReadingLayout.rawValue, forKey: Key.quranReadingLayout) }
     }
@@ -163,6 +169,7 @@ final class AppSettings {
         generatedPracticeIDs = defaults.stringArray(forKey: "learning.generatedIDs") ?? []
         self.wifiOnly = defaults.object(forKey: Key.wifiOnly) as? Bool ?? false
         self.streamWhenMissing = defaults.object(forKey: Key.streamWhenMissing) as? Bool ?? true
+        self.downloadWhilePlaying = defaults.object(forKey: Key.downloadWhilePlaying) as? Bool ?? true
         self.quranReadingLayout = defaults.string(forKey: Key.quranReadingLayout)
             .flatMap(QuranReadingLayout.init(rawValue:)) ?? .ayahByAyah
         self.hasSeenQuranHint = defaults.bool(forKey: Key.hasSeenQuranHint)
@@ -225,6 +232,13 @@ final class AppEnvironment {
                 catch { playback?.userMessage = .from(.persistenceFailure) }
             } else { settings?.readingAyah = ayah }
         }
+        playback.downloadMissingAudio = { [weak downloads, weak settings] ayahs in
+            guard settings?.downloadWhilePlaying == true, let downloads else { return false }
+            downloads.download(ayahs: ayahs, reportsFailures: false)
+            return true
+        }
+        downloads.onAudioReady = { [weak playback] ayah in playback?.audioBecameAvailable(ayah) }
+        downloads.onAudioFailed = { [weak playback] ayah in playback?.audioDownloadFailed(ayah) }
         downloads.updateCellular(!settings.wifiOnly)
     }
 

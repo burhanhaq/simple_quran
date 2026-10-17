@@ -48,10 +48,14 @@ final class AudioDownloadManager: NSObject, URLSessionDownloadDelegate {
     private let logger = Logger(subsystem: "com.simpleAzaan.Simple-Quran1", category: "downloads")
     private var session: URLSession!
     private var taskAyahs: [Int: Int] = [:]
+    /// Ayahs fetched automatically during playback; playback reports their failures itself.
+    private var quietAyahs = Set<Int>()
     private var context: ModelContext?
     var backgroundCompletionHandler: (() -> Void)?
     var jobs: [Int: DownloadJob] = [:]
     var userMessage: UserFacingMessage?
+    var onAudioReady: ((Int) -> Void)?
+    var onAudioFailed: ((Int) -> Void)?
     private(set) var allowCellular: Bool
 
     init(source: AudioSource, fileStore: AudioFileStore, allowCellular: Bool = true) {
@@ -89,9 +93,14 @@ final class AudioDownloadManager: NSObject, URLSessionDownloadDelegate {
         Set(ayahs).filter { fileStore.isReady($0) }.count
     }
 
-    func download(ayahs: [Int]) {
-        userMessage = nil
-        let unique = Set(ayahs).sorted()
+    /// Downloads in the order given, so playback can ask for the ayah it needs first.
+    func download(ayahs: [Int], reportsFailures: Bool = true) {
+        if reportsFailures { userMessage = nil }
+        var seen = Set<Int>()
+        let unique = ayahs.filter { seen.insert($0).inserted }
+        for ayah in unique {
+            if reportsFailures { quietAyahs.remove(ayah) } else if jobs[ayah]?.status != .downloading { quietAyahs.insert(ayah) }
+        }
         for ayah in unique where !fileStore.isReady(ayah) && jobs[ayah]?.status != .downloading {
             do {
                 let metadata = DownloadTaskMetadata(reciter: source.reciter, globalAyah: ayah)
@@ -205,6 +214,8 @@ final class AudioDownloadManager: NSObject, URLSessionDownloadDelegate {
                     bytes: bytes,
                     path: installed.lastPathComponent
                 )
+                self.quietAyahs.remove(metadata.globalAyah)
+                self.onAudioReady?(metadata.globalAyah)
             } catch {
                 try? FileManager.default.removeItem(at: temp)
                 self.markFailed(ayah: metadata.globalAyah, error: error)
@@ -336,7 +347,10 @@ final class AudioDownloadManager: NSObject, URLSessionDownloadDelegate {
         let appError = (error as? AppError) ?? .downloadFailed
         jobs[ayah] = DownloadJob(globalAyah: ayah, fraction: 0, status: .failed)
         upsertRecord(ayah: ayah, status: .failed, lastError: String(describing: appError))
-        userMessage = UserFacingMessage.from(appError)
+        if quietAyahs.remove(ayah) == nil {
+            userMessage = UserFacingMessage.from(appError)
+        }
+        onAudioFailed?(ayah)
         logger.error("Download failed for ayah \(ayah, privacy: .public): \(error.localizedDescription, privacy: .public)")
     }
 
