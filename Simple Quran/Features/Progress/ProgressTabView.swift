@@ -50,7 +50,6 @@ struct ProgressTabView: View {
                     .font(.subheadline).foregroundStyle(Color.secondaryWarm)
             }
         }
-        .accessibilityElement(children: .combine)
     }
 
     private func map(_ index: ProgressIndex) -> some View {

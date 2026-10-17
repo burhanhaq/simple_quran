@@ -89,6 +89,19 @@ struct LearningTargetTests {
         #expect(passages == [.clamped(start: 8, end: 8), .clamped(start: 7, end: 7), .clamped(start: 2, end: 3)])
     }
 
+    @Test func reviewingARangeOnlyIncludesItsMemorizedAyahs() throws {
+        let catalog = try BundledQuranCatalog.loadFromBundle()
+        func snapshot(_ ayah: Int, _ state: RecallState) -> VerseProgressSnapshot {
+            var item = VerseProgressSnapshot.fresh(globalAyah: ayah)
+            item.recallState = state
+            return item
+        }
+        let snapshots = [snapshot(1, .review), snapshot(2, .review), snapshot(3, .learning), snapshot(4, .review),
+                         snapshot(5, .review), snapshot(6, .review), snapshot(7, .review), snapshot(8, .review)]
+        let passages = ReviewPlanner.memorizedPassages(in: .clamped(start: 1, end: 7), snapshots: snapshots, catalog: catalog)
+        #expect(passages == [.clamped(start: 1, end: 2), .clamped(start: 4, end: 7)])
+    }
+
     @Test func existingCustomPassageResumesExactlyAndInvalidResumeIsIgnored() throws {
         let catalog = try BundledQuranCatalog.loadFromBundle()
         var target = LearningTarget(range: .clamped(start: 8, end: 30), resumeRange: .clamped(start: 10, end: 20))

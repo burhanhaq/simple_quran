@@ -253,14 +253,16 @@ struct PlanDetailView: View {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("NEXT").font(.caption.weight(.semibold)).tracking(1.4).foregroundStyle(Color.secondaryWarm)
                             Text(LearningPassage.referenceLabel(next, catalog: environment.quran)).font(.headline)
-                            Button { environment.openPractice(next, targetID: plan.id) } label: {
+                            Button { environment.openSession(next, planID: plan.id) } label: {
                                 Label("Memorize this passage", systemImage: "play.fill").frame(maxWidth: .infinity)
                             }.buttonStyle(WarmButtonStyle()).accessibilityIdentifier("plan.memorizeNext")
                         }
                     }
                     if memorized > 0 {
-                        Button { environment.openPractice(plan.range, isReview: true, targetID: plan.id) } label: {
-                            Label("Review the whole plan", systemImage: "arrow.counterclockwise").frame(maxWidth: .infinity)
+                        Button {
+                            environment.openReviews(ReviewPlanner.memorizedPassages(in: plan.range, snapshots: progress.map(\.snapshot), catalog: environment.quran))
+                        } label: {
+                            Label("Review what you’ve memorized", systemImage: "arrow.counterclockwise").frame(maxWidth: .infinity)
                         }.buttonStyle(WarmButtonStyle(emphasis: .secondary))
                     }
                     upNext(excluding: plan, index: index)

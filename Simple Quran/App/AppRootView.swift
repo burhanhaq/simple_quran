@@ -17,9 +17,11 @@ struct AppRootView: View {
             .tabViewBottomAccessory(isEnabled: environment.playback.snapshot.currentGlobalAyah != nil) {
                 GlobalMiniPlayer()
             }
-            .fullScreenCover(item: $environment.readerRoute) { route in
-                QuranReaderView(destination: route.destination, initialPracticeRange: route.practiceRange,
-                                savedPractice: route.savedPractice, resumesPlayback: route.resumePlayback, isReview: route.isReview, targetID: route.targetID)
+            .fullScreenCover(item: $environment.route) { route in
+                switch route {
+                case .reader(let reader): QuranReaderView(destination: reader.destination, resumesPlayback: reader.resumePlayback)
+                case .session(let session): MemorizeSessionView(route: session)
+                }
             }
         }
     }
@@ -44,7 +46,7 @@ private struct GlobalMiniPlayer: View {
                 }.contentShape(Rectangle())
             }
             .accessibilityIdentifier("playback.open")
-            .accessibilityLabel("Return to reader")
+            .accessibilityLabel(environment.playback.activeSet == nil ? "Return to reader" : "Return to session")
             Button {
                 if environment.playback.snapshot.isPlaying || environment.playback.snapshot.isLoading {
                     environment.playback.pause()

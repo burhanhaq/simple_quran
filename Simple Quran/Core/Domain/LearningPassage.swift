@@ -57,13 +57,3 @@ nonisolated enum LearningPassage {
         verse.text.split(whereSeparator: { $0.isWhitespace }).count
     }
 }
-
-struct ReaderRoute: Identifiable {
-    let id = UUID()
-    let destination: QuranDestination
-    var practiceRange: VerseRange? = nil
-    var savedPractice: PracticeSet? = nil
-    var resumePlayback = false
-    var isReview = false
-    var targetID: UUID? = nil
-}

@@ -116,7 +116,10 @@ struct QuranBrowserView: View {
         case .page(let number): environment.openReader(.page(number))
         case .verse(let ayah):
             if let verse = environment.quran.verse(globalAyah: ayah) { environment.openReader(.surah(number: verse.surahNumber, scrollToAyah: ayah)) }
-        case .range(let range): environment.openPractice(range)
+        case .range(let range):
+            if let verse = environment.quran.verse(globalAyah: range.startGlobalAyah) {
+                environment.openReader(.surah(number: verse.surahNumber, scrollToAyah: range.startGlobalAyah))
+            }
         }
     }
 }

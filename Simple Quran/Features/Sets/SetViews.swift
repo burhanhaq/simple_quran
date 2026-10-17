@@ -6,7 +6,8 @@ struct SetListView: View {
     @Environment(AppEnvironment.self) private var environment
     @Query(filter: #Predicate<PracticeSet> { $0.deletedAt == nil }, sort: \PracticeSet.updatedAt, order: .reverse)
     private var sets: [PracticeSet]
-    @State private var selected: PracticeSet?
+    /// Presented from here because this list lives inside the Settings sheet.
+    @State private var session: SessionRoute?
 
     private var savedPassages: [PracticeSet] {
         sets.filter { !environment.settings.generatedPracticeIDs.contains($0.id.uuidString) }
@@ -19,7 +20,7 @@ struct SetListView: View {
                     .font(.subheadline).foregroundStyle(Color.secondaryWarm).warmListRow()
             }
             ForEach(savedPassages) { set in
-                Button { selected = set } label: {
+                Button { session = environment.savedPracticeRoute(set) } label: {
                     VStack(alignment: .leading, spacing: 6) {
                         Text(set.title).font(.headline).foregroundStyle(Color.appBrownText)
                         Text(PassageLabel.collection(set.orderedPassages.map(\.range), catalog: environment.quran))
@@ -28,7 +29,7 @@ struct SetListView: View {
                 }.warmListRow()
             }
         }
-        .warmListChrome().navigationTitle("Saved passages")
-        .fullScreenCover(item: $selected) { set in PracticeView(practiceSet: set) }
+        .warmListChrome().navigationTitle("Older saved passages")
+        .fullScreenCover(item: $session) { MemorizeSessionView(route: $0) }
     }
 }

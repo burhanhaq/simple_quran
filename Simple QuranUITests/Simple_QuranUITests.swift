@@ -7,100 +7,116 @@ final class Simple_QuranUITests: XCTestCase {
     private func launch(appearance: String = "light", extra: [String] = []) -> XCUIApplication {
         XCUIDevice.shared.orientation = .portrait
         let app = XCUIApplication()
-        app.launchArguments = ["-ui-testing", "-ui-testing-reset-focus", "-settings.appearance", appearance, "-settings.quranReadingLayout", "ayahByAyah",
+        app.launchArguments = ["-ui-testing", "-ui-testing-reset-focus", "-ui-testing-skip-onboarding",
+                               "-settings.appearance", appearance, "-settings.quranReadingLayout", "ayahByAyah",
+                               "-settings.startTab", "memorize",
                                "-learning.start", "0", "-learning.end", "0", "-reading.ayah", "0", "-learning.byPage", "NO"] + extra
         app.launch()
         return app
     }
 
+    /// Picks a surah (by its first global ayah) or juz as the plan from the Memorize tab.
     @MainActor
-    func testHomeHasTwoTabsAndDirectPractice() {
-        let app = launch()
-        XCTAssertTrue(app.navigationBars["Today"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.tabBars.buttons.count, 2)
-        XCTAssertFalse(app.staticTexts["Collections"].exists)
-        capture(app, name: "Today-Light")
-        app.buttons["home.startPractice"].tap()
-        XCTAssertTrue(app.buttons["practice.play"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.buttons["practice.play"].label, "Play")
-        XCTAssertFalse(app.textFields["set.editor.title"].exists)
-        capture(app, name: "Practice-Light")
-        app.buttons["practice.next"].tap()
-        XCTAssertTrue(app.staticTexts["Ayah 2 of 7"].exists)
-        app.buttons["practice.previous"].tap()
-        XCTAssertTrue(app.staticTexts["Ayah 1 of 7"].exists)
-        app.buttons["practice.hideArabic"].tap()
-        XCTAssertTrue(app.buttons["practice.hideArabic"].label.contains("Show text"))
-        app.buttons["practice.hideArabic"].tap()
-        app.buttons["practice.options"].tap()
-        XCTAssertTrue(app.navigationBars["Practice tools"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.switches["Move to the next ayah myself"].exists)
-        capture(app, name: "Practice-Tools")
-        app.navigationBars["Practice tools"].buttons["Done"].tap()
-        app.buttons["practice.finish"].tap()
-        XCTAssertTrue(app.buttons["practice.rate.solid"].waitForExistence(timeout: 3))
-        capture(app, name: "Reflection")
-        app.buttons["practice.rate.solid"].tap()
-        XCTAssertTrue(app.buttons["practice.done"].waitForExistence(timeout: 3))
-        capture(app, name: "Finished")
-        app.buttons["practice.done"].tap()
-        XCTAssertTrue(app.navigationBars["Today"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["home.progress"].exists)
+    private func choosePlan(_ app: XCUIApplication, select identifier: String = "plan.select.ayah.1", juz: Bool = false) {
+        let choose = app.buttons["memorize.choosePlan"]
+        XCTAssertTrue(choose.waitForExistence(timeout: 5))
+        choose.tap()
+        XCTAssertTrue(app.navigationBars["Choose your plan"].waitForExistence(timeout: 3))
+        if juz { app.segmentedControls.buttons["Juz"].tap() }
+        let row = app.buttons[identifier]
+        for _ in 0..<6 where !row.isHittable { app.swipeUp() }
+        row.tap()
+        app.buttons["plan.save"].tap()
     }
 
     @MainActor
-    func testReadingBecomesPracticeInSameReaderAndMiniPlayerRestoresIt() {
+    private func memorizedCount(_ app: XCUIApplication) -> String {
+        app.tabBars.buttons["Progress"].tap()
+        let count = app.staticTexts["progress.memorizedCount"]
+        XCTAssertTrue(count.waitForExistence(timeout: 3))
+        return count.label
+    }
+
+    @MainActor
+    func testThreeTabsPlanAndMemorizingCountsOnlyWhatIsClaimed() {
+        let app = launch()
+        XCTAssertTrue(app.navigationBars["Memorize"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.tabBars.buttons.count, 3)
+        capture(app, name: "Memorize-Empty")
+        choosePlan(app)
+        XCTAssertTrue(app.buttons["memorize.start"].waitForExistence(timeout: 3))
+        capture(app, name: "Memorize-Plan")
+        app.buttons["memorize.start"].tap()
+        XCTAssertTrue(app.buttons["session.play"].waitForExistence(timeout: 5))
+        XCTAssertEqual(app.buttons["session.play"].label, "Play")
+        capture(app, name: "Session-Listen")
+        app.buttons["session.nextStep"].tap()
+        app.buttons["session.nextStep"].tap()
+        XCTAssertTrue(app.buttons["session.answer.memorized"].waitForExistence(timeout: 3))
+        capture(app, name: "Session-FromMemory")
+        app.buttons["session.answer.memorized"].tap()
+        app.buttons["session.done"].tap()
+        XCTAssertTrue(app.navigationBars["Memorize"].waitForExistence(timeout: 3))
+        XCTAssertEqual(memorizedCount(app), "7")
+        capture(app, name: "Progress-Light")
+    }
+
+    @MainActor
+    func testLeavingWithoutAnAnswerChangesNothing() {
+        let app = launch()
+        choosePlan(app)
+        app.buttons["memorize.start"].tap()
+        XCTAssertTrue(app.buttons["session.done"].waitForExistence(timeout: 5))
+        app.segmentedControls.buttons["From memory"].tap()
+        app.buttons["session.done"].tap()
+        XCTAssertEqual(memorizedCount(app), "0")
+    }
+
+    @MainActor
+    func testReaderIsForReadingAndListeningOnly() {
         let app = launch()
         app.tabBars.buttons["Quran"].tap()
         capture(app, name: "Quran-Light")
         app.buttons["quran.surah.2"].tap()
         XCTAssertTrue(app.buttons["quran.play"].waitForExistence(timeout: 3))
-        app.buttons["practice.next"].tap()
-        app.buttons["reader.practice"].tap()
-        XCTAssertTrue(app.buttons["practice.change"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["practice.play"].exists)
-        XCTAssertFalse(app.buttons["quran.play"].exists)
-        XCTAssertTrue(app.buttons["practice.play"].label == "Play")
-        app.buttons["reader.close"].tap()
-        app.buttons["playback.open"].tap()
-        XCTAssertTrue(app.buttons["practice.change"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["practice.play"].exists)
+        app.buttons["reader.next"].tap()
+        XCTAssertTrue(app.staticTexts["Ayah 2 of 286"].exists)
+        XCTAssertFalse(app.buttons["session.done"].exists)
+        XCTAssertFalse(app.buttons["session.answer.memorized"].exists)
+        capture(app, name: "Reader")
     }
 
     @MainActor
-    func testChangePassageAndAdvanceAfterReflectionWithoutAudio() {
+    func testMiniPlayerReturnsToTheSession() {
         let app = launch()
-        app.tabBars.buttons["Quran"].tap()
-        app.buttons["quran.surah.2"].tap()
-        app.buttons["reader.practice"].tap()
-        app.buttons["practice.change"].tap()
+        choosePlan(app, select: "plan.select.ayah.8")
+        app.buttons["memorize.start"].tap()
+        XCTAssertTrue(app.buttons["session.change"].waitForExistence(timeout: 5))
+        app.buttons["session.close"].tap()
+        XCTAssertTrue(app.buttons["playback.open"].waitForExistence(timeout: 3))
+        app.buttons["playback.open"].tap()
+        XCTAssertTrue(app.buttons["session.change"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["session.play"].exists)
+    }
+
+    @MainActor
+    func testChangePassageAndMoveToTheNextOne() {
+        let app = launch()
+        choosePlan(app, select: "plan.select.ayah.8")
+        app.buttons["memorize.start"].tap()
+        app.buttons["session.change"].tap()
         XCTAssertTrue(app.navigationBars["Your passage"].waitForExistence(timeout: 3))
         app.buttons["One page"].tap()
         capture(app, name: "Passage-Picker")
         app.buttons["passage.start"].tap()
-        XCTAssertTrue(app.buttons["practice.finish"].waitForExistence(timeout: 3))
-        app.buttons["practice.finish"].tap()
-        app.buttons["practice.rate.solid"].tap()
-        XCTAssertTrue(app.buttons["practice.nextPassage"].waitForExistence(timeout: 3))
-        app.buttons["practice.nextPassage"].tap()
-        XCTAssertTrue(app.buttons["practice.play"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Ayahs 6–16")).firstMatch.exists)
-        app.buttons["reader.close"].tap()
-        app.tabBars.buttons["Today"].tap()
-        XCTAssertTrue(app.buttons["home.continue"].waitForExistence(timeout: 3))
-        capture(app, name: "Today-Progress")
-    }
-
-    @MainActor
-    func testFinishWithoutRatingAndReturnToPractice() {
-        let app = launch()
-        app.buttons["home.startPractice"].tap()
-        app.buttons["practice.finish"].tap()
-        app.buttons["Finish without rating"].tap()
-        app.buttons["practice.done"].tap()
-        XCTAssertTrue(app.navigationBars["Today"].waitForExistence(timeout: 3))
-        app.buttons["home.continue"].tap()
-        XCTAssertTrue(app.buttons["practice.play"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["session.play"].waitForExistence(timeout: 3))
+        app.segmentedControls.buttons["From memory"].tap()
+        app.buttons["session.answer.memorized"].tap()
+        app.buttons["session.nextPassage"].tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Ayahs 6–16")).firstMatch.waitForExistence(timeout: 3))
+        app.buttons["session.done"].tap()
+        XCTAssertTrue(app.buttons["memorize.start"].waitForExistence(timeout: 3))
+        capture(app, name: "Memorize-Continue")
     }
 
     @MainActor
@@ -115,148 +131,126 @@ final class Simple_QuranUITests: XCTestCase {
         app.segmentedControls.buttons["Juz"].tap()
         app.buttons["quran.juz.1"].tap()
         XCTAssertTrue(app.navigationBars["Juz 1"].waitForExistence(timeout: 5))
-        XCTAssertTrue(app.buttons["reader.practice"].exists)
+        XCTAssertTrue(app.buttons["quran.play"].exists)
         capture(app, name: "Juz-Reader")
     }
 
     @MainActor
     func testNightAppearanceAndContinuousText() {
         let app = launch(appearance: "night", extra: ["-settings.quranReadingLayout", "mushaf"])
-        capture(app, name: "Today-Night")
-        app.buttons["home.startPractice"].tap()
-        XCTAssertTrue(app.buttons["practice.play"].waitForExistence(timeout: 3))
-        capture(app, name: "Practice-Night-Continuous")
-        app.buttons["practice.hideArabic"].tap()
-        XCTAssertTrue(app.buttons["practice.hideArabic"].label.contains("Show text"))
-        capture(app, name: "Practice-Recall")
+        capture(app, name: "Memorize-Night")
+        app.buttons["memorize.other"].tap()
+        app.buttons["plan.select.ayah.1"].tap()
+        app.buttons["plan.start"].tap()
+        XCTAssertTrue(app.buttons["session.play"].waitForExistence(timeout: 5))
+        capture(app, name: "Session-Night-Continuous")
+        app.segmentedControls.buttons["From memory"].tap()
+        XCTAssertTrue(app.buttons["session.answer.memorized"].waitForExistence(timeout: 3))
+        capture(app, name: "Session-Night-Recall")
     }
 
     @MainActor
     func testLargeTextAndLandscape() {
         let app = launch(extra: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"])
-        let start = app.buttons["home.startPractice"]
+        choosePlan(app)
+        let start = app.buttons["memorize.start"]
         for _ in 0..<6 where !start.isHittable { app.swipeUp() }
         start.tap()
-        XCTAssertTrue(app.buttons["practice.play"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["practice.finish"].isHittable)
-        capture(app, name: "Practice-LargeText")
+        XCTAssertTrue(app.buttons["session.play"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["session.nextStep"].isHittable)
+        XCTAssertTrue(app.buttons["session.done"].isHittable)
+        capture(app, name: "Session-LargeText")
         app.terminate()
         let landscape = launch()
-        landscape.buttons["home.startPractice"].tap()
+        choosePlan(landscape)
+        landscape.buttons["memorize.start"].tap()
         XCUIDevice.shared.orientation = .landscapeLeft
         defer { XCUIDevice.shared.orientation = .portrait }
         let rotated = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
             landscape.frame.width > landscape.frame.height
         }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [rotated], timeout: 5), .completed)
-        XCTAssertTrue(landscape.buttons["practice.next"].waitForExistence(timeout: 3))
-        XCTAssertTrue(landscape.buttons["practice.finish"].isHittable)
-        landscape.buttons["practice.next"].tap()
-        XCTAssertTrue(landscape.staticTexts["Ayah 2 of 7"].exists)
-        capture(landscape, name: "Practice-Landscape")
+        XCTAssertTrue(landscape.buttons["session.next"].waitForExistence(timeout: 3))
+        XCTAssertTrue(landscape.buttons["session.nextStep"].isHittable)
+        capture(landscape, name: "Session-Landscape")
     }
 
     @MainActor
-    func testMultipleSurahsAndWholeJuzCanBeTrackedTogether() {
+    func testSwitchingPlansKeepsTheOtherWaiting() {
         let app = launch()
-        let add = app.buttons["focus.add"]
-        for _ in 0..<5 where !add.isHittable { app.swipeUp() }
-        add.tap()
-        XCTAssertTrue(app.navigationBars["Add a focus"].waitForExistence(timeout: 3))
-        app.buttons["focus.select.ayah.1"].tap()
-        app.buttons["focus.select.ayah.8"].tap()
+        choosePlan(app)
+        app.buttons["memorize.plan"].tap()
+        XCTAssertTrue(app.buttons["plan.memorizeNext"].waitForExistence(timeout: 3))
+        app.buttons["plan.change"].tap()
         app.segmentedControls.buttons["Juz"].tap()
-        app.buttons["focus.select.juz.1"].tap()
-        XCTAssertTrue(app.staticTexts["3 selected"].exists)
-        capture(app, name: "Focus-Multiple-Selection")
-        app.buttons["focus.save"].tap()
-        let juz = app.buttons["focus.item.1.148"]
-        for _ in 0..<6 where !juz.isHittable { app.swipeUp() }
-        XCTAssertTrue(juz.exists)
-        juz.tap()
-        XCTAssertTrue(app.buttons["focus.practice"].waitForExistence(timeout: 3))
-        capture(app, name: "Focus-Juz-Detail")
-        app.buttons["focus.practice"].tap()
-        app.buttons["practice.finish"].tap()
-        app.buttons["practice.rate.solid"].tap()
-        app.buttons["practice.nextPassage"].tap()
-        XCTAssertTrue(app.navigationBars["Al-Baqara"].waitForExistence(timeout: 3))
-        app.buttons["reader.close"].tap()
-        XCTAssertTrue(app.staticTexts["7 of 148 ayahs practiced"].exists)
+        app.buttons["plan.select.juz.1"].tap()
+        app.buttons["plan.save"].tap()
+        XCTAssertTrue(app.staticTexts["Juz 1"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Switch"].exists)
+        capture(app, name: "Plan-UpNext")
     }
 
     @MainActor
-    func testCustomRangeCanBeAddedEditedAndReopenedWithoutChangingIt() {
+    func testCustomRangeCanBeChosenEditedAndReopenedWithoutChangingIt() {
         let app = launch()
-        let add = app.buttons["focus.add"]
-        for _ in 0..<5 where !add.isHittable { app.swipeUp() }
-        add.tap()
-        app.buttons["focus.custom"].tap()
+        app.buttons["memorize.choosePlan"].tap()
+        app.buttons["plan.custom"].tap()
         XCTAssertTrue(app.pickerWheels.firstMatch.waitForExistence(timeout: 3))
         app.pickerWheels.element(boundBy: 0).adjust(toPickerWheelValue: "2")
         app.pickerWheels.element(boundBy: 1).adjust(toPickerWheelValue: "5")
-        capture(app, name: "Focus-Custom-Range")
-        app.buttons["focus.range.save"].tap()
-        app.buttons["focus.save"].tap()
-        let focus = app.buttons["focus.item.2.5"]
-        for _ in 0..<5 where !focus.isHittable { app.swipeUp() }
-        focus.tap()
-        app.buttons["focus.edit"].tap()
+        capture(app, name: "Plan-Custom-Range")
+        app.buttons["plan.range.save"].tap()
+        app.buttons["plan.save"].tap()
+        app.buttons["memorize.plan"].tap()
+        app.buttons["plan.edit"].tap()
         XCTAssertTrue(app.pickerWheels.firstMatch.waitForExistence(timeout: 3))
         XCTAssertEqual(app.pickerWheels.element(boundBy: 0).value as? String, "2")
         XCTAssertEqual(app.pickerWheels.element(boundBy: 1).value as? String, "5")
         app.pickerWheels.element(boundBy: 1).adjust(toPickerWheelValue: "6")
-        app.buttons["focus.range.save"].tap()
-        app.buttons["focus.practice"].tap()
-        app.buttons["practice.change"].tap()
+        app.buttons["plan.range.save"].tap()
+        app.buttons["plan.memorizeNext"].tap()
+        app.buttons["session.change"].tap()
         XCTAssertTrue(app.pickerWheels.firstMatch.waitForExistence(timeout: 3))
         let end = app.pickerWheels.element(boundBy: 1).value as? String
         app.buttons["passage.start"].tap()
-        app.buttons["practice.change"].tap()
+        app.buttons["session.change"].tap()
         XCTAssertEqual(app.pickerWheels.element(boundBy: 1).value as? String, end)
         capture(app, name: "Passage-Exact-Range")
     }
 
     @MainActor
-    func testFocusRangeControlsInDarkModeWithLargeText() {
+    func testRangeControlsInDarkModeWithLargeText() {
         let app = launch(appearance: "night", extra: ["-UIPreferredContentSizeCategoryName", "UICTContentSizeCategoryAccessibilityXL"])
-        let add = app.buttons["focus.add"]
-        for _ in 0..<10 where !add.isHittable { app.swipeUp() }
-        add.tap()
-        let custom = app.buttons["focus.custom"]
-        for _ in 0..<8 where !custom.isHittable { app.swipeUp() }
-        custom.tap()
-        XCTAssertTrue(app.buttons["focus.range.save"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["focus.range.save"].isHittable)
+        let choose = app.buttons["memorize.choosePlan"]
+        for _ in 0..<10 where !choose.isHittable { app.swipeUp() }
+        choose.tap()
+        app.buttons["plan.custom"].tap()
+        XCTAssertTrue(app.buttons["plan.range.save"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["plan.range.save"].isHittable)
         let wheel = app.pickerWheels.element(boundBy: 0)
         for _ in 0..<5 where !wheel.isHittable { app.collectionViews.firstMatch.swipeUp() }
         XCTAssertTrue(wheel.isHittable)
         wheel.adjust(toPickerWheelValue: "2")
-        capture(app, name: "Focus-Range-Night-LargeText")
-        app.buttons["focus.range.save"].tap()
-        XCTAssertTrue(app.buttons["focus.save"].isHittable)
-        app.buttons["focus.save"].tap()
+        capture(app, name: "Range-Night-LargeText")
+        app.buttons["plan.range.save"].tap()
+        XCTAssertTrue(app.buttons["plan.save"].isHittable)
+        app.buttons["plan.save"].tap()
     }
 
     @MainActor
     func testChoosingAnotherSurahKeepsTheNewRange() {
         let app = launch()
-        let add = app.buttons["focus.add"]
-        for _ in 0..<5 where !add.isHittable { app.swipeUp() }
-        add.tap()
-        app.buttons["focus.custom"].tap()
+        app.buttons["memorize.choosePlan"].tap()
+        app.buttons["plan.custom"].tap()
         app.buttons["range.startSurah"].tap()
         app.buttons["2. Al-Baqara"].tap()
         XCTAssertTrue(app.pickerWheels.firstMatch.waitForExistence(timeout: 3))
         app.pickerWheels.element(boundBy: 0).adjust(toPickerWheelValue: "4")
         app.pickerWheels.element(boundBy: 1).adjust(toPickerWheelValue: "6")
-        app.buttons["focus.range.save"].tap()
-        app.buttons["focus.save"].tap()
-        let focus = app.buttons["focus.item.11.13"]
-        for _ in 0..<5 where !focus.isHittable { app.swipeUp() }
-        XCTAssertTrue(focus.exists)
-        focus.tap()
-        app.buttons["focus.edit"].tap()
+        app.buttons["plan.range.save"].tap()
+        app.buttons["plan.save"].tap()
+        app.buttons["memorize.plan"].tap()
+        app.buttons["plan.edit"].tap()
         XCTAssertTrue(app.pickerWheels.firstMatch.waitForExistence(timeout: 3))
         XCTAssertEqual(app.pickerWheels.element(boundBy: 0).value as? String, "4")
         XCTAssertEqual(app.pickerWheels.element(boundBy: 1).value as? String, "6")
@@ -265,10 +259,8 @@ final class Simple_QuranUITests: XCTestCase {
     @MainActor
     func testRangeEditorKeepsSaveVisibleInLandscape() {
         let app = launch()
-        let add = app.buttons["focus.add"]
-        for _ in 0..<5 where !add.isHittable { app.swipeUp() }
-        add.tap()
-        app.buttons["focus.custom"].tap()
+        app.buttons["memorize.choosePlan"].tap()
+        app.buttons["plan.custom"].tap()
         XCTAssertTrue(app.pickerWheels.firstMatch.waitForExistence(timeout: 3))
         XCUIDevice.shared.orientation = .landscapeLeft
         defer { XCUIDevice.shared.orientation = .portrait }
@@ -276,14 +268,13 @@ final class Simple_QuranUITests: XCTestCase {
             app.frame.width > app.frame.height
         }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [rotated], timeout: 5), .completed)
-        XCTAssertTrue(app.buttons["focus.range.save"].isHittable)
+        XCTAssertTrue(app.buttons["plan.range.save"].isHittable)
         XCTAssertTrue(app.pickerWheels.element(boundBy: 0).isHittable)
         app.pickerWheels.element(boundBy: 0).adjust(toPickerWheelValue: "2")
-        capture(app, name: "Focus-Range-Landscape")
-        app.buttons["focus.range.save"].tap()
-        XCTAssertTrue(app.buttons["focus.save"].isHittable)
-        capture(app, name: "Focus-Selection-Landscape")
-        app.buttons["focus.save"].tap()
+        capture(app, name: "Range-Landscape")
+        app.buttons["plan.range.save"].tap()
+        XCTAssertTrue(app.buttons["plan.save"].isHittable)
+        app.buttons["plan.save"].tap()
     }
 
     @MainActor

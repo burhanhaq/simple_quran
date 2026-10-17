@@ -40,6 +40,15 @@ nonisolated struct PracticeSettings: Equatable, Sendable, Codable {
         advanceManually: false
     )
 
+    /// New memorize sessions hear each ayah a few times before reciting along.
+    static let memorize = PracticeSettings(
+        ayahRepeatCount: .three,
+        setRepeatCount: .one,
+        pauseSeconds: 0,
+        hideArabic: false,
+        advanceManually: false
+    )
+
     static let listening = PracticeSettings(
         ayahRepeatCount: .one,
         setRepeatCount: .one,

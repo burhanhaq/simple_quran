@@ -37,7 +37,7 @@ struct PassageProgressView: View {
                 ForEach(passages, id: \.self) { passage in
                     let status = index.status(of: passage)
                     let due = index.isDue(passage)
-                    Button { environment.openPractice(passage, isReview: status == .memorized) } label: {
+                    Button { open(passage, status: status) } label: {
                         HStack(spacing: 14) {
                             Image(systemName: due ? "arrow.counterclockwise" : status.systemImage)
                                 .foregroundStyle(status == .notStarted ? Color.secondaryWarm : Color.olive).frame(width: 24)
@@ -55,7 +55,9 @@ struct PassageProgressView: View {
             }
             Section {
                 if memorized > 0 {
-                    Button("Review everything memorized here") { environment.openPractice(range, isReview: true) }.warmListRow()
+                    Button("Review everything memorized here") {
+                        environment.openReviews(ReviewPlanner.memorizedPassages(in: range, snapshots: progress.map(\.snapshot), catalog: environment.quran))
+                    }.warmListRow()
                 }
                 if memorized < range.count {
                     Button("I already know all of this") { pendingMark = PendingMark(range: range, kind: .memorized) }.warmListRow()
@@ -93,6 +95,11 @@ struct PassageProgressView: View {
         if status == .memorized { return status.title }
         let memorized = index.count(.memorized, in: passage)
         return memorized > 0 ? String(localized: "\(memorized) of \(passage.count) memorized") : status.title
+    }
+
+    /// Memorized passages open as a review of just those ayahs; anything else opens to learn.
+    private func open(_ passage: VerseRange, status: MemorizationStatus) {
+        if status == .memorized { environment.openReviews([passage]) } else { environment.openSession(passage) }
     }
 
     private func apply(_ mark: PendingMark) {

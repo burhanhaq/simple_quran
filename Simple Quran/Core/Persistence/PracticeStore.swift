@@ -150,8 +150,18 @@ final class PracticeStore: PracticeStoring {
         try save()
     }
 
+    /// An explicit "I know these" claim. It schedules review but isn't practice, so activity stays untouched.
     func markMemorized(ayahs: [Int], now: Date = .now) throws {
-        try applyRating(.solid, ayahs: ayahs, now: now)
+        for ayah in Set(ayahs) {
+            let model = try progressModel(for: ayah)
+            let decision = scheduler.apply(rating: .solid, to: model.snapshot, now: now)
+            model.recallStateRaw = decision.state.rawValue
+            model.lastRatingRaw = decision.rating.rawValue
+            model.streak = decision.streak
+            model.isWeak = decision.isWeak
+            model.nextReviewAt = decision.nextReviewAt
+        }
+        try save()
     }
 
     /// Memorized ayahs keep their status and come back for review now; others become learning.

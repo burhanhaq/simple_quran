@@ -84,6 +84,7 @@ struct MemorizationStatusTests {
         try store.markMemorized(ayahs: [1], now: now)
         try store.beginLearning(ayahs: [1, 2])
         #expect(try store.progress(for: 1).status == .memorized)
+        #expect(try store.progress(for: 1).lastPractisedAt == nil)
         #expect(try store.progress(for: 2).status == .learning)
     }
 

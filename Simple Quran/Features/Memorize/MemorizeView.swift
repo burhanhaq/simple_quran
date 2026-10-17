@@ -29,7 +29,7 @@ struct MemorizeView: View {
                             .buttonStyle(.plain).accessibilityIdentifier("memorize.plan")
                     }
                     if let resume = resumeRange(index: index, next: next) {
-                        Button { environment.openPractice(resume) } label: {
+                        Button { environment.openSession(resume) } label: {
                             WarmCard {
                                 HStack(spacing: 14) {
                                     WarmSymbol(systemName: "arrow.uturn.forward")
@@ -65,7 +65,7 @@ struct MemorizeView: View {
             .sheet(item: $picker, onDismiss: {
                 if let pendingRange {
                     self.pendingRange = nil
-                    environment.openPractice(pendingRange)
+                    environment.openSession(pendingRange)
                 }
             }) { purpose in
                 PlanPickerView(purpose: purpose) { pendingRange = $0 }
@@ -88,7 +88,7 @@ struct MemorizeView: View {
                 Text("Listen, recite along, then try it from memory.")
                     .font(.subheadline).foregroundStyle(.white.opacity(0.8))
                 heroButton(started ? "Continue memorizing" : "Start memorizing", identifier: "memorize.start") {
-                    environment.openPractice(next, targetID: plan.id)
+                    environment.openSession(next, planID: plan.id)
                 }
             } else if let plan {
                 Text("You’ve memorized all of \(plan.title(catalog: environment.quran)).")
@@ -128,7 +128,7 @@ struct MemorizeView: View {
     }
 
     private func reviewCard(_ reviews: [VerseRange]) -> some View {
-        Button { environment.openPractice(reviews[0], isReview: true) } label: {
+        Button { environment.openReviews(reviews) } label: {
             WarmCard {
                 HStack(spacing: 14) {
                     WarmSymbol(systemName: "arrow.counterclockwise")

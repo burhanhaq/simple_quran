@@ -179,9 +179,9 @@ final class AppEnvironment {
     let recorder: RecitationRecordingController
     let settings: AppSettings
     var selectedTab: AppTab
-    var readerRoute: ReaderRoute?
-    var activePracticeIsReview = false
-    var activePracticeTargetID: UUID?
+    var route: AppRoute?
+    /// The session behind the current practice playback, so the mini player can return to it.
+    var lastSession: SessionRoute?
     var catalogLoadError: UserFacingMessage?
     var persistenceLoadError: UserFacingMessage?
 
@@ -218,19 +218,35 @@ final class AppEnvironment {
     }
 
     func openReader(_ destination: QuranDestination) {
-        readerRoute = ReaderRoute(destination: destination)
+        route = .reader(ReaderRoute(destination: destination))
     }
 
-    func openPractice(_ range: VerseRange, isReview: Bool = false, targetID: UUID? = nil) {
-        guard let verse = quran.verse(globalAyah: range.startGlobalAyah) else { return }
-        readerRoute = ReaderRoute(destination: .surah(number: verse.surahNumber, scrollToAyah: range.startGlobalAyah), practiceRange: range, isReview: isReview, targetID: targetID)
+    func openSession(_ range: VerseRange, kind: SessionKind = .learn, planID: UUID? = nil) {
+        route = .session(SessionRoute(range: range, kind: kind, planID: planID))
+    }
+
+    func openReviews(_ passages: [VerseRange]) {
+        guard let first = passages.first else { return }
+        route = .session(SessionRoute(range: first, kind: .review, reviewQueue: Array(passages.dropFirst())))
+    }
+
+    /// A session for a passage saved by an earlier version of the app.
+    func savedPracticeRoute(_ set: PracticeSet) -> SessionRoute? {
+        let ranges = set.orderedPassages.map(\.range)
+        guard let first = ranges.first, let last = ranges.last else { return nil }
+        return SessionRoute(range: .clamped(start: first.startGlobalAyah, end: last.endGlobalAyah), savedPractice: set,
+                            resumePlayback: playback.activeSet?.id == set.id)
     }
 
     func reopenPlayer() {
         guard let ayah = playback.snapshot.currentGlobalAyah,
               let verse = quran.verse(globalAyah: ayah) else { return }
-        readerRoute = ReaderRoute(destination: .surah(number: verse.surahNumber, scrollToAyah: ayah),
-                                  savedPractice: playback.activeSet, resumePlayback: true, isReview: activePracticeIsReview, targetID: activePracticeTargetID)
+        if let active = playback.activeSet, let session = lastSession {
+            route = .session(SessionRoute(range: session.range, kind: session.kind, planID: session.planID,
+                                          reviewQueue: session.reviewQueue, savedPractice: active, resumePlayback: true))
+        } else {
+            route = .reader(ReaderRoute(destination: .surah(number: verse.surahNumber, scrollToAyah: ayah), resumePlayback: true))
+        }
     }
 
     func practice(for range: VerseRange) throws -> PracticeSet {
@@ -238,7 +254,7 @@ final class AppEnvironment {
             return existing
         }
         let title = PassageLabel.passage(range, catalog: quran)
-        let created = try store.createSet(title: title, passages: [range], settings: .default)
+        let created = try store.createSet(title: title, passages: [range], settings: .memorize)
         settings.generatedPracticeIDs.append(created.id.uuidString)
         return created
     }
