@@ -11,26 +11,32 @@ private enum Appearance {
     case tinted
 }
 
-struct ArchMetrics {
-    var left: CGFloat
-    var right: CGFloat
-    var footY: CGFloat
-    var springY: CGFloat
-    var peakY: CGFloat
-    var lobeOutset: CGFloat
+/// Colors mirror the home hero gradient and the dark-mode GoldAccent mint.
+private enum Palette {
+    static let emeraldTop = color(0.15, 0.33, 0.26)
+    static let emeraldBottom = color(0.07, 0.23, 0.18)
+    static let nightTop = color(0.086, 0.141, 0.122)
+    static let nightBottom = color(0.043, 0.075, 0.067)
+    static let mintHighlight = color(0.71, 0.91, 0.81)
+    static let mint = color(0.60, 0.86, 0.73)
+    static let mintShadow = color(0.50, 0.79, 0.65)
+    static let tintedMark = CGColor(gray: 1, alpha: 1)
 
-    var midX: CGFloat { (left + right) / 2 }
-
-    func inset(_ distance: CGFloat) -> ArchMetrics {
-        ArchMetrics(
-            left: left + distance,
-            right: right - distance,
-            footY: footY - distance * 0.15,
-            springY: springY,
-            peakY: peakY + distance,
-            lobeOutset: max(lobeOutset - distance * 0.25, 0)
-        )
+    private static func color(_ red: CGFloat, _ green: CGFloat, _ blue: CGFloat, _ alpha: CGFloat = 1) -> CGColor {
+        CGColor(colorSpace: p3, components: [red, green, blue, alpha])!
     }
+}
+
+private enum Geometry {
+    static let center = CGPoint(x: canvasSize / 2, y: canvasSize / 2)
+    static let starSquareSide: CGFloat = 472
+    static let starCornerRadius: CGFloat = 30
+    static let ringRadius: CGFloat = 176
+    static let ringWidth: CGFloat = 10
+    static let bookHalfWidth: CGFloat = 136
+    static let bookTopY: CGFloat = 446
+    static let bookPageHeight: CGFloat = 126
+    static let bookGutter: CGFloat = 9
 }
 
 @discardableResult
@@ -87,264 +93,122 @@ private func renderPNG(appearance: Appearance) -> Data? {
 
 private func drawIcon(in ctx: CGContext, appearance: Appearance) {
     let canvas = CGRect(x: 0, y: 0, width: canvasSize, height: canvasSize)
-    if appearance != .tinted {
-        fillBackground(in: ctx, canvas: canvas, appearance: appearance)
-    }
+    fillStar(in: ctx, appearance: appearance)
 
-    let outer = ArchMetrics(
-        left: 278,
-        right: 746,
-        footY: 808,
-        springY: 530,
-        peakY: 188,
-        lobeOutset: 36
-    )
-    let inner = outer.inset(42)
-    let vault = inner.inset(34)
+    // The book and ring are cut out of the star so the background shows through,
+    // which keeps them legible in every appearance, including the system tint.
+    ctx.saveGState()
+    ctx.setBlendMode(.clear)
+    ctx.addPath(bookPath())
+    ctx.fillPath()
+    ctx.restoreGState()
 
-    let strokes: [(CGPath, CGFloat)] = [
-        (archPath(outer), 14),
-        (archPath(inner, includeFeet: false), 8),
-        (archPath(vault, includeFeet: false), 6),
-        (lozengePath(center: CGPoint(x: vault.midX, y: vault.peakY + 52), radiusX: 18, radiusY: 28), 5.5),
-        (bookPath(center: CGPoint(x: outer.midX, y: 612), width: 268), 8)
-    ]
+    ctx.saveGState()
+    ctx.setBlendMode(.destinationOut)
+    ctx.setAlpha(0.22)
+    ctx.setLineWidth(Geometry.ringWidth)
+    ctx.strokeEllipse(in: CGRect(
+        x: Geometry.center.x - Geometry.ringRadius,
+        y: Geometry.center.y - Geometry.ringRadius,
+        width: Geometry.ringRadius * 2,
+        height: Geometry.ringRadius * 2
+    ))
+    ctx.restoreGState()
 
-    for (path, width) in strokes {
-        strokePath(path, width: width, appearance: appearance, in: ctx, canvas: canvas)
-    }
+    fillBackground(in: ctx, canvas: canvas, appearance: appearance, blendMode: .destinationOver)
 }
 
-private func fillBackground(in ctx: CGContext, canvas: CGRect, appearance: Appearance) {
-    let center: CGColor
-    let edge: CGColor
+private func fillBackground(
+    in ctx: CGContext,
+    canvas: CGRect,
+    appearance: Appearance,
+    blendMode: CGBlendMode = .normal
+) {
+    let top: CGColor
+    let bottom: CGColor
     switch appearance {
     case .fullColor:
-        center = CGColor(colorSpace: p3, components: [1.0, 0.98, 0.92, 1])!
-        edge = CGColor(colorSpace: p3, components: [0.89, 0.83, 0.71, 1])!
+        top = Palette.emeraldTop
+        bottom = Palette.emeraldBottom
     case .dark:
-        center = CGColor(colorSpace: p3, components: [0.20, 0.16, 0.12, 1])!
-        edge = CGColor(colorSpace: p3, components: [0.10, 0.075, 0.06, 1])!
+        top = Palette.nightTop
+        bottom = Palette.nightBottom
     case .tinted:
         return
     }
-    let gradient = CGGradient(colorsSpace: p3, colors: [center, edge] as CFArray, locations: [0, 1])!
-    ctx.drawRadialGradient(
-        gradient,
-        startCenter: CGPoint(x: canvas.midX, y: canvas.midY - 80),
-        startRadius: 0,
-        endCenter: CGPoint(x: canvas.midX, y: canvas.midY),
-        endRadius: canvas.width * 0.78,
-        options: [.drawsAfterEndLocation]
-    )
-
-    let glowColor = appearance == .dark
-        ? CGColor(colorSpace: p3, components: [0.78, 0.52, 0.17, 0.13])!
-        : CGColor(colorSpace: p3, components: [0.99, 0.74, 0.28, 0.15])!
-    let clear = CGColor(colorSpace: p3, components: [0.99, 0.74, 0.28, 0])!
-    let halo = CGGradient(colorsSpace: p3, colors: [glowColor, clear] as CFArray, locations: [0, 1])!
-    ctx.drawRadialGradient(
-        halo,
-        startCenter: CGPoint(x: canvas.midX, y: canvas.midY - 30),
-        startRadius: 0,
-        endCenter: CGPoint(x: canvas.midX, y: canvas.midY),
-        endRadius: canvas.width * 0.48,
-        options: []
-    )
-}
-
-private func archPath(_ metrics: ArchMetrics, includeFeet: Bool = true) -> CGPath {
-    let path = CGMutablePath()
-    let midX = metrics.midX
-    let lobeY = metrics.springY - (metrics.springY - metrics.peakY) * 0.28
-    let leftLobe = CGPoint(x: metrics.left - metrics.lobeOutset, y: lobeY)
-    let rightLobe = CGPoint(x: metrics.right + metrics.lobeOutset, y: lobeY)
-    let peak = CGPoint(x: midX, y: metrics.peakY)
-
-    if includeFeet {
-        path.move(to: CGPoint(x: metrics.left, y: metrics.footY))
-        path.addLine(to: CGPoint(x: metrics.left, y: metrics.springY))
-    } else {
-        path.move(to: CGPoint(x: metrics.left, y: metrics.springY))
-    }
-
-    path.addCurve(
-        to: leftLobe,
-        control1: CGPoint(x: metrics.left, y: metrics.springY - 70),
-        control2: CGPoint(x: leftLobe.x, y: metrics.springY - 36)
-    )
-    path.addCurve(
-        to: peak,
-        control1: CGPoint(x: leftLobe.x + 12, y: metrics.peakY + 96),
-        control2: CGPoint(x: midX - 92, y: metrics.peakY + 8)
-    )
-    path.addCurve(
-        to: rightLobe,
-        control1: CGPoint(x: midX + 92, y: metrics.peakY + 8),
-        control2: CGPoint(x: rightLobe.x - 12, y: metrics.peakY + 96)
-    )
-    path.addCurve(
-        to: CGPoint(x: metrics.right, y: metrics.springY),
-        control1: CGPoint(x: rightLobe.x, y: metrics.springY - 36),
-        control2: CGPoint(x: metrics.right, y: metrics.springY - 70)
-    )
-
-    if includeFeet {
-        path.addLine(to: CGPoint(x: metrics.right, y: metrics.footY))
-    }
-    return path
-}
-
-private func lozengePath(center: CGPoint, radiusX: CGFloat, radiusY: CGFloat) -> CGPath {
-    let path = CGMutablePath()
-    path.move(to: CGPoint(x: center.x, y: center.y - radiusY))
-    path.addLine(to: CGPoint(x: center.x + radiusX, y: center.y))
-    path.addLine(to: CGPoint(x: center.x, y: center.y + radiusY))
-    path.addLine(to: CGPoint(x: center.x - radiusX, y: center.y))
-    path.closeSubpath()
-    return path
-}
-
-private func bookPath(center: CGPoint, width: CGFloat) -> CGPath {
-    let path = CGMutablePath()
-    let height = width * 0.46
-    let gutter: CGFloat = 7
-    let pageLift: CGFloat = 22
-    let drop: CGFloat = 14
-
-    let spineTop = CGPoint(x: center.x, y: center.y - height / 2)
-    let spineBottom = CGPoint(x: center.x, y: center.y + height / 2 - 6)
-    let leftTop = CGPoint(x: center.x - width / 2, y: spineTop.y + pageLift)
-    let leftBottom = CGPoint(x: center.x - width / 2 + 6, y: spineBottom.y + drop)
-    let rightTop = CGPoint(x: center.x + width / 2, y: spineTop.y + pageLift)
-    let rightBottom = CGPoint(x: center.x + width / 2 - 6, y: spineBottom.y + drop)
-
-    path.move(to: CGPoint(x: spineTop.x - gutter, y: spineTop.y + 4))
-    path.addLine(to: leftTop)
-    path.addLine(to: leftBottom)
-    path.addLine(to: CGPoint(x: spineBottom.x - gutter, y: spineBottom.y))
-    path.closeSubpath()
-
-    path.move(to: CGPoint(x: spineTop.x + gutter, y: spineTop.y + 4))
-    path.addLine(to: rightTop)
-    path.addLine(to: rightBottom)
-    path.addLine(to: CGPoint(x: spineBottom.x + gutter, y: spineBottom.y))
-    path.closeSubpath()
-
-    path.move(to: spineTop)
-    path.addLine(to: spineBottom)
-
-    addPageLines(path, topInner: CGPoint(x: spineTop.x - gutter, y: spineTop.y + 28), topOuter: leftTop, bottomInner: CGPoint(x: spineBottom.x - gutter, y: spineBottom.y - 18), bottomOuter: leftBottom)
-    addPageLines(path, topInner: CGPoint(x: spineTop.x + gutter, y: spineTop.y + 28), topOuter: rightTop, bottomInner: CGPoint(x: spineBottom.x + gutter, y: spineBottom.y - 18), bottomOuter: rightBottom)
-
-    let standTop = spineBottom.y + 18
-    let standWidth = width * 0.42
-    path.move(to: CGPoint(x: center.x - standWidth / 2, y: standTop))
-    path.addLine(to: CGPoint(x: center.x + standWidth / 2, y: standTop))
-    path.addLine(to: CGPoint(x: center.x + standWidth / 2 + 16, y: standTop + 22))
-    path.addLine(to: CGPoint(x: center.x - standWidth / 2 - 16, y: standTop + 22))
-    path.closeSubpath()
-    path.move(to: CGPoint(x: center.x - standWidth / 2 - 28, y: standTop + 34))
-    path.addLine(to: CGPoint(x: center.x + standWidth / 2 + 28, y: standTop + 34))
-    return path
-}
-
-private func addPageLines(
-    _ path: CGMutablePath,
-    topInner: CGPoint,
-    topOuter: CGPoint,
-    bottomInner: CGPoint,
-    bottomOuter: CGPoint
-) {
-    for index in 1...3 {
-        let t = CGFloat(index) / 4
-        let inner = lerp(topInner, bottomInner, t)
-        let outer = lerp(topOuter, bottomOuter, t)
-        let shortened = lerp(inner, outer, 0.78)
-        path.move(to: lerp(inner, outer, 0.12))
-        path.addLine(to: shortened)
-    }
-}
-
-private func lerp(_ a: CGPoint, _ b: CGPoint, _ t: CGFloat) -> CGPoint {
-    CGPoint(x: a.x + (b.x - a.x) * t, y: a.y + (b.y - a.y) * t)
-}
-
-private func strokePath(
-    _ path: CGPath,
-    width: CGFloat,
-    appearance: Appearance,
-    in ctx: CGContext,
-    canvas: CGRect
-) {
+    let gradient = CGGradient(colorsSpace: p3, colors: [top, bottom] as CFArray, locations: [0, 1])!
     ctx.saveGState()
-    ctx.setLineCap(.round)
-    ctx.setLineJoin(.round)
-    ctx.setMiterLimit(2)
-
-    switch appearance {
-    case .tinted:
-        ctx.setStrokeColor(CGColor(gray: 0, alpha: 1))
-        ctx.setLineWidth(width)
-        ctx.addPath(path)
-        ctx.strokePath()
-    case .fullColor, .dark:
-        strokeGold(path, width: width, appearance: appearance, in: ctx, canvas: canvas)
-    }
-    ctx.restoreGState()
-}
-
-private func strokeGold(_ path: CGPath, width: CGFloat, appearance: Appearance, in ctx: CGContext, canvas: CGRect) {
-    let highlight: CGColor
-    let mid: CGColor
-    let edge: CGColor
-    if appearance == .dark {
-        highlight = CGColor(colorSpace: p3, components: [1.00, 0.92, 0.67, 1])!
-        mid = CGColor(colorSpace: p3, components: [0.87, 0.69, 0.38, 1])!
-        edge = CGColor(colorSpace: p3, components: [0.65, 0.43, 0.16, 1])!
-    } else {
-        highlight = CGColor(colorSpace: p3, components: [0.72, 0.49, 0.22, 1])!
-        mid = CGColor(colorSpace: p3, components: [0.56, 0.36, 0.13, 1])!
-        edge = CGColor(colorSpace: p3, components: [0.37, 0.22, 0.08, 1])!
-    }
-    let gold = CGGradient(
-        colorsSpace: p3,
-        colors: [highlight, mid, edge] as CFArray,
-        locations: [0, 0.45, 1]
-    )!
-
-    ctx.saveGState()
-    ctx.addPath(path)
-    ctx.setLineWidth(width)
-    ctx.setLineCap(.round)
-    ctx.setLineJoin(.round)
-    ctx.replacePathWithStrokedPath()
-    ctx.clip()
+    ctx.setBlendMode(blendMode)
     ctx.drawLinearGradient(
-        gold,
-        start: CGPoint(x: canvas.minX + 180, y: canvas.minY + 140),
-        end: CGPoint(x: canvas.maxX - 140, y: canvas.maxY - 120),
+        gradient,
+        start: CGPoint(x: canvas.minX, y: canvas.minY),
+        end: CGPoint(x: canvas.maxX, y: canvas.maxY),
         options: [.drawsBeforeStartLocation, .drawsAfterEndLocation]
     )
-
-    let sheenStart = appearance == .dark
-        ? CGColor(colorSpace: p3, components: [1, 0.98, 0.86, 0.85])!
-        : CGColor(colorSpace: p3, components: [1, 0.91, 0.68, 0.28])!
-    let sheen = CGGradient(
-        colorsSpace: p3,
-        colors: [
-            sheenStart,
-            CGColor(colorSpace: p3, components: [1, 0.94, 0.72, 0])!
-        ] as CFArray,
-        locations: [0, 1]
-    )!
-    ctx.drawLinearGradient(
-        sheen,
-        start: CGPoint(x: canvas.minX + 160, y: canvas.minY + 120),
-        end: CGPoint(x: canvas.midX + 40, y: canvas.midY - 40),
-        options: []
-    )
     ctx.restoreGState()
+}
+
+private func fillStar(in ctx: CGContext, appearance: Appearance) {
+    ctx.saveGState()
+    ctx.addPath(starPath())
+    ctx.clip()
+    switch appearance {
+    case .tinted:
+        ctx.setFillColor(Palette.tintedMark)
+        ctx.fill(CGRect(x: 0, y: 0, width: canvasSize, height: canvasSize))
+    case .fullColor, .dark:
+        let mint = CGGradient(
+            colorsSpace: p3,
+            colors: [Palette.mintHighlight, Palette.mint, Palette.mintShadow] as CFArray,
+            locations: [0, 0.5, 1]
+        )!
+        let reach = Geometry.starSquareSide * 0.71
+        ctx.drawLinearGradient(
+            mint,
+            start: CGPoint(x: Geometry.center.x - reach, y: Geometry.center.y - reach),
+            end: CGPoint(x: Geometry.center.x + reach, y: Geometry.center.y + reach),
+            options: []
+        )
+    }
+    ctx.restoreGState()
+}
+
+/// Rub el hizb: two rounded squares, one turned 45°.
+private func starPath() -> CGPath {
+    let side = Geometry.starSquareSide
+    let square = CGRect(
+        x: Geometry.center.x - side / 2,
+        y: Geometry.center.y - side / 2,
+        width: side,
+        height: side
+    )
+    let radius = Geometry.starCornerRadius
+    let path = CGMutablePath()
+    path.addRoundedRect(in: square, cornerWidth: radius, cornerHeight: radius)
+    let rotation = CGAffineTransform(translationX: Geometry.center.x, y: Geometry.center.y)
+        .rotated(by: .pi / 4)
+        .translatedBy(x: -Geometry.center.x, y: -Geometry.center.y)
+    path.addRoundedRect(in: square, cornerWidth: radius, cornerHeight: radius, transform: rotation)
+    return path
+}
+
+/// An open book seen from the front: two gently curved pages meeting at the spine.
+private func bookPath() -> CGPath {
+    let path = CGMutablePath()
+    for side in [-1.0, 1.0] as [CGFloat] {
+        let spineX = Geometry.center.x + side * Geometry.bookGutter
+        let outerX = Geometry.center.x + side * Geometry.bookHalfWidth
+        let controlX = Geometry.center.x + side * Geometry.bookHalfWidth * 0.55
+        let top = Geometry.bookTopY
+        let height = Geometry.bookPageHeight
+
+        path.move(to: CGPoint(x: spineX, y: top))
+        path.addQuadCurve(to: CGPoint(x: outerX, y: top - 20), control: CGPoint(x: controlX, y: top - 30))
+        path.addLine(to: CGPoint(x: outerX, y: top + height))
+        path.addQuadCurve(to: CGPoint(x: spineX, y: top + height + 30), control: CGPoint(x: controlX, y: top + height - 10))
+        path.closeSubpath()
+    }
+    return path
 }
 
 exit(try main())
