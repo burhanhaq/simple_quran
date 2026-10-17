@@ -43,17 +43,12 @@ nonisolated struct BundledQuranCatalog: QuranCatalog, Sendable {
         for fileSurah in decoded.surahs {
             let start = globalCursor
             for ayah in fileSurah.ayahs {
-                let presentation = Self.presentedText(
-                    ayah.t,
-                    surahNumber: fileSurah.number,
-                    ayahInSurah: ayah.n
-                )
                 let verse = QuranVerse(
                     globalAyah: ayah.g,
                     surahNumber: fileSurah.number,
                     ayahInSurah: ayah.n,
-                    text: presentation.text,
-                    showsBasmalaBefore: presentation.showsBasmala,
+                    text: ayah.t,
+                    showsBasmalaBefore: Self.showsBasmala(surahNumber: fileSurah.number, ayahInSurah: ayah.n),
                     juz: ayah.j,
                     page: ayah.p,
                     sajdah: SajdahKind(rawValue: ayah.s ?? 0) ?? .none
@@ -88,36 +83,22 @@ nonisolated struct BundledQuranCatalog: QuranCatalog, Sendable {
         }
     }
 
-    private static func presentedText(
-        _ source: String,
-        surahNumber: Int,
-        ayahInSurah: Int
-    ) -> (text: String, showsBasmala: Bool) {
-        guard ayahInSurah == 1, surahNumber != 1, surahNumber != 9 else {
-            return (source, false)
-        }
-
-        // Tanzil includes the unnumbered basmala at the start of each surah's
-        // first ayah. Two surahs use a joined initial baa glyph, so remove the
-        // text through Ar-Raheem rather than matching one complete spelling.
-        let ending = "ٱلرَّحِيمِ"
-        guard let range = source.range(of: ending), range.lowerBound != source.startIndex else {
-            return (source, false)
-        }
-        let leading = source[..<range.upperBound]
-        guard leading.contains("سْمِ"), leading.contains("ٱللَّهِ") else {
-            return (source, false)
-        }
-        let remainder = source[range.upperBound...]
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-        return (remainder, true)
+    /// The basmala is shown above every surah except Al-Fatiha, where it is the first ayah,
+    /// and At-Tawbah, which has none. The King Fahd text never repeats it inside an ayah.
+    private static func showsBasmala(surahNumber: Int, ayahInSurah: Int) -> Bool {
+        ayahInSurah == 1 && !surahsWithoutBasmalaHeader.contains(surahNumber)
     }
+
+    private static let surahsWithoutBasmalaHeader: Set<Int> = [1, 9]
+
+    /// Al-Fatiha 1:1, the same spelling the bundled text uses.
+    var basmala: String { verses.first?.text ?? "" }
 
     static func loadFromBundle(_ bundle: Bundle = .main) throws -> BundledQuranCatalog {
         let candidates = [
-            bundle.url(forResource: "quran-uthmani", withExtension: "json", subdirectory: "Resources/Quran"),
-            bundle.url(forResource: "quran-uthmani", withExtension: "json", subdirectory: "Quran"),
-            bundle.url(forResource: "quran-uthmani", withExtension: "json")
+            bundle.url(forResource: BundledTextFile.name, withExtension: BundledTextFile.fileExtension, subdirectory: "Resources/Quran"),
+            bundle.url(forResource: BundledTextFile.name, withExtension: BundledTextFile.fileExtension, subdirectory: "Quran"),
+            bundle.url(forResource: BundledTextFile.name, withExtension: BundledTextFile.fileExtension)
         ]
         guard let url = candidates.compactMap({ $0 }).first else {
             throw AppError.missingQuranData
@@ -239,6 +220,12 @@ nonisolated struct BundledQuranCatalog: QuranCatalog, Sendable {
     }
 }
 
+/// Built by Scripts/BuildQuranText.swift. Pairs with the font in `QuranScript`.
+nonisolated private enum BundledTextFile {
+    static let name = "quran-hafs"
+    static let fileExtension = "json"
+}
+
 nonisolated private struct File: Decodable, Sendable {
     var surahs: [FileSurah]
 }
@@ -263,4 +250,6 @@ nonisolated private struct FileAyah: Decodable, Sendable {
 
 enum QuranLog {
     static let catalog = Logger(subsystem: "com.simpleAzaan.Simple-Quran1", category: "quran")
+    /// Intervals for Instruments' os_signpost track, to see what opening a long surah costs.
+    static let rendering = OSSignposter(subsystem: "com.simpleAzaan.Simple-Quran1", category: "rendering")
 }

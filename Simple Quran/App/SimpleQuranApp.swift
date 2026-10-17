@@ -21,7 +21,8 @@ struct SimpleQuranApp: App {
     private let environment: AppEnvironment
 
     init() {
-        AppTheme.registerFonts()
+        QuranScript.registerFont()
+        Task.detached(priority: .utility) { QuranScript.warmUp() }
         let container: ModelContainer
         var persistenceLoadError: UserFacingMessage?
         do {

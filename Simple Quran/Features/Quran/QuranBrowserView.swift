@@ -32,7 +32,7 @@ struct QuranBrowserView: View {
                                 Text(hit.title).font(.headline).foregroundStyle(Color.appBrownText)
                                 Text(hit.subtitle).font(.caption).foregroundStyle(Color.secondaryWarm)
                             }.padding(.vertical, 6)
-                        }.warmListRow()
+                        }.warmListRow().accessibilityIdentifier("quran.search.\(hit.id)")
                     }
                 } else if browseJuz {
                     ForEach(environment.quran.juzs) { juz in
@@ -65,7 +65,7 @@ struct QuranBrowserView: View {
                                     }
                                 }
                                 Spacer(minLength: 8)
-                                Text(surah.arabicName).font(.quran(size: 23)).multilineTextAlignment(.trailing)
+                                Text(surah.arabicName).font(.quran(.listName)).multilineTextAlignment(.trailing)
                             }.padding(.vertical, 10).foregroundStyle(Color.appBrownText)
                         }.warmListRow().accessibilityIdentifier("quran.surah.\(surah.number)")
                     }

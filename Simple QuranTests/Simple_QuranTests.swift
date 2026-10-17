@@ -34,6 +34,17 @@ struct QuranIntegrityTests {
         #expect(kahf.count == 10)
         #expect(catalog.verses(in: kahf).first?.text.isEmpty == false)
     }
+
+    @Test func bundledTextIsTheKingFahdHafsTextWithoutAyahNumbers() throws {
+        let catalog = try BundledQuranCatalog.loadFromBundle()
+        let arabicIndicDigits = Set("٠١٢٣٤٥٦٧٨٩")
+        #expect(catalog.verses.allSatisfy { verse in verse.text.last.map { !arabicIndicDigits.contains($0) } ?? false })
+        #expect(catalog.basmala == catalog.verse(globalAyah: 1)?.text)
+        // U+06E1 is the King Fahd sukun. Tanzil's text used U+0652 instead.
+        #expect(catalog.basmala.unicodeScalars.contains("\u{06E1}"))
+        #expect(catalog.verses.allSatisfy { !$0.text.hasPrefix(catalog.basmala) || $0.globalAyah == 1 })
+        #expect(catalog.verses.filter { $0.text.contains("۩") }.count == QuranCatalogMetrics.sajdahCount)
+    }
 }
 
 struct PracticePlaybackCursorTests {

@@ -59,19 +59,20 @@ Simple Quran/
     Recording/         on-device recitation recordings
   Features/            Today, Quran, Collections, Practice, Progress, Settings
   Resources/
-    Fonts/             Amiri Quran
-    Quran/             quran-uthmani.json
+    Fonts/             KFGQPC HAFS Uthmanic Script
+    Quran/             quran-hafs.json (built by Scripts/BuildQuranText.swift)
 Simple QuranTests/
 Simple QuranUITests/
 Scripts/RenderAppIcon.swift
+Scripts/BuildQuranText.swift
 ```
 
 ## Sources and licenses
 
-- **Quran text.** Tanzil Uthmani text, via the Al Quran Cloud `quran-uthmani` edition. Copyright (C) 2007–2021 Tanzil Project, [Creative Commons Attribution 3.0](https://creativecommons.org/licenses/by/3.0/). The text is bundled verbatim aside from stripping a leading BOM when present. Source and updates: [tanzil.net](https://tanzil.net). Do not modify the verse text. See `Simple Quran/Resources/Quran/ATTRIBUTION.txt`.
-- **Page, juz, and sajdah metadata.** Standard 604-page Madani Hafs layout, used for navigation. Verse display is flowing Uthmani text, not a pixel-identical Mushaf page.
+- **Quran text.** Uthmani Hafs text (QPC Hafs) from the King Fahd Glorious Quran Printing Complex, distributed by the [Quranic Universal Library](https://qul.tarteel.ai). To rebuild it, download "QPC Hafs script, Ayah by Ayah" (JSON) from QUL into `Scripts/QuranSources/` and run `swift Scripts/BuildQuranText.swift <qul.json> "Simple Quran/Resources/Quran/quran-hafs.json" "Simple Quran/Resources/Fonts/UthmanicHafs_V22.ttf" "Simple Quran/Resources/Quran/quran-hafs.json"`. The only change to the text is moving each ayah's number out of it. Do not modify the verse text. See `Simple Quran/Resources/Quran/ATTRIBUTION.txt`.
+- **Page, juz, and sajdah metadata.** Standard 604-page Madani Hafs layout, used for navigation. Verse display is flowing text, not a pixel-identical Mushaf page.
 - **Audio.** Abdul Rahman Al-Sudais recitations are streamed or downloaded from the Al Quran Cloud / islamic.network CDN for personal and educational use. Copyright remains with the reciter.
-- **Font.** Amiri Quran is licensed under the SIL Open Font License 1.1. See `Simple Quran/Resources/Fonts/OFL.txt`.
+- **Font.** KFGQPC HAFS Uthmanic Script (V22) © King Fahd Glorious Quran Printing Complex, free to use and distribute but not to sell or modify. Ship `UthmanicHafs_V22.ttf` byte-for-byte. See `Simple Quran/Resources/Fonts/KFGQPC-LICENSE.txt`.
 
 ## Privacy
 

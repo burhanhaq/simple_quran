@@ -128,10 +128,10 @@ struct AcknowledgementsView: View {
                 VStack(alignment: .leading, spacing: 16) {
                     Text(String(localized: "Quran text"))
                         .font(.headline)
-                    Text("Tanzil Quran Text, Tanzil Project, Creative Commons Attribution 3.0. The Uthmani text is bundled verbatim except for stripping a leading BOM when present. Updates: https://tanzil.net")
+                    Text("Uthmani Hafs text published by the King Fahd Glorious Quran Printing Complex (qurancomplex.gov.sa), distributed by the Quranic Universal Library (qul.tarteel.ai). It is bundled unchanged, except that ayah numbers are drawn separately.")
                     Text(String(localized: "Typography"))
                         .font(.headline)
-                    Text("Amiri Quran is licensed under the SIL Open Font License 1.1.")
+                    Text("KFGQPC HAFS Uthmanic Script font © King Fahd Glorious Quran Printing Complex, used free of charge under its license and bundled unmodified.")
                     Text(String(localized: "Audio"))
                         .font(.headline)
                     Text("Abdul Rahman Al-Sudais recitations are streamed or downloaded from Al Quran Cloud / islamic.network for personal and educational use. Copyright remains with the reciter.")

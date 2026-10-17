@@ -1,18 +1,9 @@
-import CoreText
 import SwiftUI
 
 enum AppTheme {
     static let cornerRadius: CGFloat = 24
     static let tightRadius: CGFloat = 16
     static let controlHeight: CGFloat = 50
-
-    static func registerFonts() {
-        guard let url = Bundle.main.url(forResource: "AmiriQuran", withExtension: "ttf", subdirectory: "Resources/Fonts")
-            ?? Bundle.main.url(forResource: "AmiriQuran", withExtension: "ttf", subdirectory: "Fonts")
-            ?? Bundle.main.url(forResource: "AmiriQuran", withExtension: "ttf")
-        else { return }
-        CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
-    }
 }
 
 extension Color {
@@ -32,8 +23,8 @@ extension Color {
 }
 
 extension Font {
-    static func quran(size: CGFloat = 28) -> Font {
-        .custom("AmiriQuran", size: size, relativeTo: .title)
+    static func quran(_ size: QuranScript.Size = .body) -> Font {
+        QuranScript.font(size)
     }
 }
 
@@ -183,7 +174,7 @@ struct QuranAyahText: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(hidden ? "••••••" : verse.text)
+            Text(displayedText)
                 .font(.quran())
                 .lineSpacing(12)
                 .foregroundStyle(Color.appBrownText)
@@ -208,6 +199,14 @@ struct QuranAyahText: View {
                 .fill(fillColor)
         )
         .accessibilityAddTraits(isCurrent || isInPassage ? .isSelected : [])
+    }
+
+    /// The ayah followed by its number, which the font draws inside the end-of-ayah ornament.
+    private var displayedText: AttributedString {
+        guard !hidden else { return AttributedString(QuranScript.hiddenPlaceholder) }
+        var number = AttributedString(QuranScript.ayahNumber(verse.ayahInSurah))
+        number.foregroundColor = Color.bronze
+        return AttributedString(verse.text) + number
     }
 
     private var fillColor: Color {
@@ -243,9 +242,11 @@ struct ReadingLayoutMenu: View {
 }
 
 struct BasmalaHeader: View {
+    @Environment(AppEnvironment.self) private var environment
+
     var body: some View {
-        Text("بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ")
-            .font(.quran(size: 25))
+        Text(environment.quran.basmala)
+            .font(.quran(.basmala))
             .foregroundStyle(Color.appBrownText)
             .multilineTextAlignment(.center)
             .frame(maxWidth: .infinity)
@@ -293,7 +294,7 @@ struct ReadingBanner: View {
         VStack(spacing: 10) {
             rule
             Text(title)
-                .font(isArabic ? .quran(size: 28) : .title3.weight(.semibold))
+                .font(isArabic ? .quran(.title) : .title3.weight(.semibold))
                 .foregroundStyle(Color.appBrownText)
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)

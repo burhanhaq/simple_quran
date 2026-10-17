@@ -1,3 +1,4 @@
+import OSLog
 import SwiftUI
 import UIKit
 
@@ -31,6 +32,14 @@ enum MushafPageBlocks {
         }
         return blocks
     }
+    /// Which block each ayah sits in, keyed by global ayah.
+    static func blockIDs(for blocks: [MushafPageBlock]) -> [Int: Int] {
+        var ids: [Int: Int] = [:]
+        for block in blocks {
+            for verse in block.verses { ids[verse.globalAyah] = block.id }
+        }
+        return ids
+    }
 }
 
 struct MushafHighlightState: Equatable {
@@ -46,33 +55,44 @@ struct MushafAttributedPage {
 }
 
 enum MushafTextBuilder {
-    static let hiddenPlaceholder = "••••••"
     static let highlightColor = UIColor(named: "HighlightFill") ?? .systemYellow
     static let collectedColor = UIColor(named: "CollectedFill") ?? .secondarySystemBackground
+    private static let bodyColor = UIColor(named: "BrownText") ?? .label
+    private static let numberColor = UIColor(named: "Bronze") ?? bodyColor
+
+    private static let bodyParagraph: NSParagraphStyle = {
+        let style = NSMutableParagraphStyle()
+        style.alignment = .justified
+        style.baseWritingDirection = .rightToLeft
+        style.lineSpacing = 12
+        style.paragraphSpacing = 14
+        return style
+    }()
+
+    private static let basmalaParagraph: NSParagraphStyle = {
+        let style = NSMutableParagraphStyle()
+        style.alignment = .center
+        style.baseWritingDirection = .rightToLeft
+        style.paragraphSpacingBefore = 8
+        style.paragraphSpacing = 12
+        return style
+    }()
 
     static func make(
         verses: [QuranVerse],
-        hiddenAyah: Int?,
+        hiddenAyahs: Set<Int>,
+        basmala: String,
         contentSizeCategory: UIContentSizeCategory
     ) -> MushafAttributedPage {
         let result = NSMutableAttributedString()
         var ayahRanges: [Int: NSRange] = [:]
-        let bodyFont = scaledFont(name: "AmiriQuran", size: 28, textStyle: .title2, category: contentSizeCategory)
-        let basmalaFont = scaledFont(name: "AmiriQuran", size: 25, textStyle: .title3, category: contentSizeCategory)
-        let bodyColor = UIColor(named: "BrownText") ?? .label
-        let bronzeColor = UIColor(named: "Bronze") ?? bodyColor
-
-        let bodyParagraph = NSMutableParagraphStyle()
-        bodyParagraph.alignment = .justified
-        bodyParagraph.baseWritingDirection = .rightToLeft
-        bodyParagraph.lineSpacing = 12
-        bodyParagraph.paragraphSpacing = 14
-
-        let basmalaParagraph = NSMutableParagraphStyle()
-        basmalaParagraph.alignment = .center
-        basmalaParagraph.baseWritingDirection = .rightToLeft
-        basmalaParagraph.paragraphSpacingBefore = 8
-        basmalaParagraph.paragraphSpacing = 12
+        let bodyFont = QuranScript.uiFont(.body, category: contentSizeCategory)
+        let basmalaFont = QuranScript.uiFont(.basmala, category: contentSizeCategory)
+        let numberAttributes: [NSAttributedString.Key: Any] = [
+            .font: bodyFont,
+            .foregroundColor: numberColor,
+            .paragraphStyle: bodyParagraph
+        ]
 
         for (index, verse) in verses.enumerated() {
             let previous = index > 0 ? verses[index - 1] : nil
@@ -88,7 +108,7 @@ enum MushafTextBuilder {
                     result.append(NSAttributedString(string: "\n", attributes: [.paragraphStyle: bodyParagraph]))
                 }
                 result.append(NSAttributedString(
-                    string: "بِسْمِ ٱللَّهِ ٱلرَّحْمَٰنِ ٱلرَّحِيمِ\n",
+                    string: basmala + "\n",
                     attributes: [
                         .font: basmalaFont,
                         .foregroundColor: bodyColor,
@@ -97,10 +117,9 @@ enum MushafTextBuilder {
                 ))
             }
 
-            let visibleText = verse.globalAyah == hiddenAyah ? hiddenPlaceholder : verse.text
-            let sajdahMarker = verse.sajdah == .none ? "" : " ۩"
-            let bodyText = "\(visibleText)\(sajdahMarker) "
-            let markerText = "﴿\(arabicIndicNumber(verse.ayahInSurah))﴾ "
+            // The text already carries the sajdah sign where one belongs.
+            let bodyText = hiddenAyahs.contains(verse.globalAyah) ? QuranScript.hiddenPlaceholder : verse.text
+            let numberText = QuranScript.ayahNumber(verse.ayahInSurah) + " "
             let location = result.length
             var bodyAttributes: [NSAttributedString.Key: Any] = [
                 .font: bodyFont,
@@ -110,14 +129,9 @@ enum MushafTextBuilder {
             if let link = URL(string: "simplequran://ayah/\(verse.globalAyah)") {
                 bodyAttributes[.link] = link
             }
-            let markerAttributes: [NSAttributedString.Key: Any] = [
-                .font: bodyFont,
-                .foregroundColor: bronzeColor,
-                .paragraphStyle: bodyParagraph
-            ]
             result.append(NSAttributedString(string: bodyText, attributes: bodyAttributes))
-            result.append(NSAttributedString(string: markerText, attributes: markerAttributes))
-            let segmentLength = (bodyText as NSString).length + (markerText as NSString).length
+            result.append(NSAttributedString(string: numberText, attributes: numberAttributes))
+            let segmentLength = (bodyText as NSString).length + (numberText as NSString).length
             ayahRanges[verse.globalAyah] = NSRange(location: location, length: segmentLength)
         }
 
@@ -154,24 +168,6 @@ enum MushafTextBuilder {
         }
         storage?.endEditing()
     }
-
-    private static func scaledFont(
-        name: String,
-        size: CGFloat,
-        textStyle: UIFont.TextStyle,
-        category: UIContentSizeCategory
-    ) -> UIFont {
-        let base = UIFont(name: name, size: size) ?? .systemFont(ofSize: size)
-        let traits = UITraitCollection(preferredContentSizeCategory: category)
-        return UIFontMetrics(forTextStyle: textStyle).scaledFont(for: base, compatibleWith: traits)
-    }
-
-    private static func arabicIndicNumber(_ value: Int) -> String {
-        let digits = Array("٠١٢٣٤٥٦٧٨٩")
-        return String(String(value).compactMap { character in
-            character.wholeNumberValue.map { digits[$0] }
-        })
-    }
 }
 
 private enum MushafScrollTarget: Hashable {
@@ -197,7 +193,8 @@ private struct MushafPlacedAnchorKey: PreferenceKey {
 struct MushafFlowView: View {
     var verses: [QuranVerse]
     var currentGlobalAyah: Int?
-    var hidesCurrentAyah: Bool
+    var hiddenAyahs: Set<Int> = []
+    var basmala: String
     var selectionEnabled: Bool
     var collectedAyahs: Set<Int> = []
     var focusedAyah: Int? = nil
@@ -207,8 +204,32 @@ struct MushafFlowView: View {
     @State private var followedPlacement: MushafAnchorPlacement?
     @State private var placedAnchor: MushafAnchorPlacement?
 
-    private var blocks: [MushafPageBlock] {
-        MushafPageBlocks.make(from: verses)
+    /// Built once per value so the per-block helpers below are dictionary lookups,
+    /// not a regrouping of the whole passage for every page on every render.
+    private let blocks: [MushafPageBlock]
+    private let blockIDByAyah: [Int: Int]
+
+    init(
+        verses: [QuranVerse],
+        currentGlobalAyah: Int?,
+        hiddenAyahs: Set<Int> = [],
+        basmala: String,
+        selectionEnabled: Bool,
+        collectedAyahs: Set<Int> = [],
+        focusedAyah: Int? = nil,
+        onSelect: @escaping (Int) -> Void
+    ) {
+        self.verses = verses
+        self.currentGlobalAyah = currentGlobalAyah
+        self.hiddenAyahs = hiddenAyahs
+        self.basmala = basmala
+        self.selectionEnabled = selectionEnabled
+        self.collectedAyahs = collectedAyahs
+        self.focusedAyah = focusedAyah
+        self.onSelect = onSelect
+        let blocks = MushafPageBlocks.make(from: verses)
+        self.blocks = blocks
+        self.blockIDByAyah = MushafPageBlocks.blockIDs(for: blocks)
     }
 
     private var passageID: String {
@@ -218,26 +239,28 @@ struct MushafFlowView: View {
 
     /// Playback wins over the ayah that opened the page, matching the previous text view.
     private var scrollTarget: Int? {
-        if let currentGlobalAyah, blocks.contains(where: { $0.contains(currentGlobalAyah) }) {
+        if let currentGlobalAyah, blockIDByAyah[currentGlobalAyah] != nil {
             return currentGlobalAyah
         }
-        if let focusedAyah, blocks.contains(where: { $0.contains(focusedAyah) }) {
+        if let focusedAyah, blockIDByAyah[focusedAyah] != nil {
             return focusedAyah
         }
         return nil
     }
 
     var body: some View {
+        let target = scrollTarget
         ScrollViewReader { proxy in
             ScrollView {
                 LazyVStack(spacing: 0) {
                     ForEach(blocks) { block in
                         MushafPageContainer(
                             verses: block.verses,
-                            highlightedAyah: highlightedAyah(in: block),
-                            hiddenAyah: hiddenAyah(in: block),
-                            collectedAyahs: collectedAyahs(in: block),
-                            anchorAyah: anchorAyah(in: block),
+                            highlightedAyah: ayah(currentGlobalAyah, in: block),
+                            hiddenAyahs: ayahs(hiddenAyahs, in: block),
+                            collectedAyahs: ayahs(collectedAyahs, in: block),
+                            anchorAyah: ayah(target, in: block),
+                            basmala: basmala,
                             passageID: passageID,
                             selectionEnabled: selectionEnabled,
                             onSelect: onSelect
@@ -255,7 +278,7 @@ struct MushafFlowView: View {
                 glyphScrolledAyah = nil
                 followedPlacement = nil
             }
-            .onChange(of: scrollTarget, initial: true) { _, target in
+            .onChange(of: target, initial: true) { _, target in
                 scrollToPageIfNeeded(target, proxy: proxy)
             }
             .onChange(of: placedAnchor) { _, placement in
@@ -264,29 +287,21 @@ struct MushafFlowView: View {
         }
     }
 
-    private func highlightedAyah(in block: MushafPageBlock) -> Int? {
-        guard let currentGlobalAyah, block.contains(currentGlobalAyah) else { return nil }
-        return currentGlobalAyah
+    private func ayah(_ ayah: Int?, in block: MushafPageBlock) -> Int? {
+        guard let ayah, blockIDByAyah[ayah] == block.id else { return nil }
+        return ayah
     }
 
-    private func hiddenAyah(in block: MushafPageBlock) -> Int? {
-        guard hidesCurrentAyah, let currentGlobalAyah, block.contains(currentGlobalAyah) else { return nil }
-        return currentGlobalAyah
-    }
-
-    private func collectedAyahs(in block: MushafPageBlock) -> Set<Int> {
-        Set(block.verses.lazy.map(\.globalAyah).filter { collectedAyahs.contains($0) })
-    }
-
-    private func anchorAyah(in block: MushafPageBlock) -> Int? {
-        guard let scrollTarget, block.contains(scrollTarget) else { return nil }
-        return scrollTarget
+    /// Only the members on this page, so a change elsewhere leaves this page's inputs equal.
+    private func ayahs(_ ayahs: Set<Int>, in block: MushafPageBlock) -> Set<Int> {
+        guard !ayahs.isEmpty else { return [] }
+        return ayahs.filter { blockIDByAyah[$0] == block.id }
     }
 
     private func scrollToPageIfNeeded(_ target: Int?, proxy: ScrollViewProxy) {
         guard let target, glyphScrolledAyah != target else { return }
-        let targetBlock = blocks.first { $0.contains(target) }?.id
-        let followedBlock = glyphScrolledAyah.flatMap { ayah in blocks.first { $0.contains(ayah) }?.id }
+        let targetBlock = blockIDByAyah[target]
+        let followedBlock = glyphScrolledAyah.flatMap { blockIDByAyah[$0] }
         guard targetBlock != followedBlock, let targetBlock else { return }
         proxy.scrollTo(MushafScrollTarget.page(targetBlock), anchor: .center)
     }
@@ -306,9 +321,10 @@ struct MushafFlowView: View {
 private struct MushafPageContainer: View {
     var verses: [QuranVerse]
     var highlightedAyah: Int?
-    var hiddenAyah: Int?
+    var hiddenAyahs: Set<Int>
     var collectedAyahs: Set<Int>
     var anchorAyah: Int?
+    var basmala: String
     var passageID: String
     var selectionEnabled: Bool
     var onSelect: (Int) -> Void
@@ -320,9 +336,10 @@ private struct MushafPageContainer: View {
         MushafPageView(
             verses: verses,
             highlightedAyah: highlightedAyah,
-            hiddenAyah: hiddenAyah,
+            hiddenAyahs: hiddenAyahs,
             collectedAyahs: collectedAyahs,
             anchorAyah: anchorAyah,
+            basmala: basmala,
             selectionEnabled: selectionEnabled,
             onSelect: onSelect,
             onAnchorRect: { rect in
@@ -362,9 +379,10 @@ private struct MushafPageContainer: View {
 private struct MushafPageView: UIViewRepresentable {
     var verses: [QuranVerse]
     var highlightedAyah: Int?
-    var hiddenAyah: Int?
+    var hiddenAyahs: Set<Int>
     var collectedAyahs: Set<Int>
     var anchorAyah: Int?
+    var basmala: String
     var selectionEnabled: Bool
     var onSelect: (Int) -> Void
     var onAnchorRect: @MainActor (CGRect) -> Void
@@ -406,7 +424,8 @@ private struct MushafPageView: UIViewRepresentable {
         textView.anchorAyah = anchorAyah
         textView.configure(
             verses: verses,
-            hiddenAyah: hiddenAyah,
+            hiddenAyahs: hiddenAyahs,
+            basmala: basmala,
             highlight: MushafHighlightState(
                 highlightedAyah: highlightedAyah,
                 collectedAyahs: collectedAyahs
@@ -487,7 +506,8 @@ private final class MushafPageTextView: UITextView {
     }
 
     private var pendingVerses: [QuranVerse] = []
-    private var pendingHiddenAyah: Int?
+    private var pendingHiddenAyahs: Set<Int> = []
+    private var pendingBasmala = ""
     private var pendingHighlight = MushafHighlightState.empty
     private var pendingCategory: UIContentSizeCategory = .large
     private var renderKey: RenderKey?
@@ -498,12 +518,14 @@ private final class MushafPageTextView: UITextView {
 
     func configure(
         verses: [QuranVerse],
-        hiddenAyah: Int?,
+        hiddenAyahs: Set<Int>,
+        basmala: String,
         highlight: MushafHighlightState,
         contentSizeCategory: UIContentSizeCategory
     ) {
         pendingVerses = verses
-        pendingHiddenAyah = hiddenAyah
+        pendingHiddenAyahs = hiddenAyahs
+        pendingBasmala = basmala
         pendingHighlight = highlight
         pendingCategory = contentSizeCategory
         if bounds.width > 0 {
@@ -538,7 +560,7 @@ private final class MushafPageTextView: UITextView {
         guard width > 0, !pendingVerses.isEmpty else { return }
         let key = RenderKey(
             verseIDs: pendingVerses.map(\.globalAyah),
-            hiddenAyah: pendingHiddenAyah,
+            hiddenAyahs: pendingHiddenAyahs,
             category: pendingCategory
         )
         guard !isApplying else { return }
@@ -546,9 +568,13 @@ private final class MushafPageTextView: UITextView {
         defer { isApplying = false }
 
         if renderKey != key {
+            let ayahCount = pendingVerses.count
+            let signpost = QuranLog.rendering.beginInterval("Page build", "\(ayahCount) ayahs")
+            defer { QuranLog.rendering.endInterval("Page build", signpost) }
             let document = MushafTextBuilder.make(
                 verses: pendingVerses,
-                hiddenAyah: pendingHiddenAyah,
+                hiddenAyahs: pendingHiddenAyahs,
+                basmala: pendingBasmala,
                 contentSizeCategory: pendingCategory
             )
             let mutable = NSMutableAttributedString(attributedString: document.text)
@@ -612,7 +638,7 @@ private final class MushafPageTextView: UITextView {
 
     private struct RenderKey: Equatable {
         var verseIDs: [Int]
-        var hiddenAyah: Int?
+        var hiddenAyahs: Set<Int>
         var category: UIContentSizeCategory
     }
 }

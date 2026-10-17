@@ -14,3 +14,6 @@ timeline.xctimeline
 playground.xcworkspace
 *.xccheckout
 *.xcscmblueprint
+
+# Raw Quran sources for Scripts/BuildQuranText.swift (not bundled)
+Scripts/QuranSources/
