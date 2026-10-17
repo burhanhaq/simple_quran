@@ -86,6 +86,32 @@ final class Simple_QuranUITests: XCTestCase {
         capture(app, name: "Reader")
     }
 
+    /// Opening a long surah deep down lands on the ayah in both layouts.
+    @MainActor
+    func testSearchOpensAlBaqarahAtAyah282() {
+        for layout in ["ayahByAyah", "mushaf"] {
+            let app = launch(extra: ["-settings.quranReadingLayout", layout])
+            app.tabBars.buttons["Quran"].tap()
+            let search = app.searchFields.firstMatch
+            // In portrait the search bar stays tucked under the title until the list is pulled down.
+            if !search.waitForExistence(timeout: 2) { app.swipeDown() }
+            XCTAssertTrue(search.waitForExistence(timeout: 5))
+            search.tap()
+            search.typeText("2:282")
+            let hit = app.buttons["quran.search.verse-289"]
+            XCTAssertTrue(hit.waitForExistence(timeout: 3))
+            hit.tap()
+            XCTAssertTrue(app.buttons["quran.play"].waitForExistence(timeout: 5))
+            XCTAssertTrue(app.staticTexts["Ayah 282 of 286"].exists)
+            if layout == "ayahByAyah" {
+                XCTAssertTrue(app.buttons["ayah.289"].waitForExistence(timeout: 3))
+                XCTAssertTrue(app.buttons["ayah.289"].isHittable)
+            }
+            capture(app, name: "Reader-2-282-\(layout)")
+            app.terminate()
+        }
+    }
+
     @MainActor
     func testMiniPlayerReturnsToTheSession() {
         let app = launch()
