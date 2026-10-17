@@ -30,25 +30,63 @@ struct LearningTargetTests {
         }
     }
 
-    @Test @MainActor func targetsPersistIndependentPlacesAndDeduplicateSelections() throws {
-        let suite = "FocusTests.\(UUID().uuidString)"
+    @Test @MainActor func onePlanIsActiveAndOthersKeepTheirPlaces() throws {
+        let suite = "PlanTests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
         let settings = AppSettings(defaults: defaults)
         let first = LearningTarget(range: .clamped(start: 8, end: 293))
         let second = LearningTarget(range: .clamped(start: 1, end: 148), juzNumber: 1)
-        settings.addTargets([first, second, first])
+        settings.setActivePlan(first)
+        settings.setActivePlan(second)
+        settings.setActivePlan(LearningTarget(range: first.range))
+        #expect(settings.learningTargets.count == 2)
+        #expect(settings.activePlan?.id == first.id)
+
         let firstPlace = VerseRange.clamped(start: 25, end: 27)
         let secondPlace = VerseRange.clamped(start: 30, end: 35)
         settings.remember(firstPlace, targetID: first.id)
         settings.remember(secondPlace, targetID: second.id)
+        settings.remember(.clamped(start: 4000, end: 4002), targetID: nil)
         let reopened = AppSettings(defaults: defaults)
-        #expect(reopened.learningTargets.count == 2)
         #expect(reopened.learningTargets[0].resumeRange == firstPlace)
         #expect(reopened.learningTargets[1].resumeRange == secondPlace)
-        #expect(reopened.activeTargetID == second.id)
-        reopened.learningTargets.removeFirst()
-        #expect(AppSettings(defaults: defaults).learningTargets == [reopened.learningTargets[0]])
+        #expect(reopened.activePlan?.id == first.id)
+
+        reopened.removePlan(id: first.id)
+        #expect(AppSettings(defaults: defaults).activePlan?.id == second.id)
+    }
+
+    @Test func nextPassageSkipsMemorizedPassagesAndWraps() throws {
+        let catalog = try BundledQuranCatalog.loadFromBundle()
+        let mulk = try #require(catalog.surah(number: 67))
+        var plan = LearningTarget(range: mulk.range)
+        let first = try #require(plan.passage(catalog: catalog))
+        let second = try #require(plan.passage(from: first.endGlobalAyah + 1, catalog: catalog))
+
+        #expect(plan.nextPassage(catalog: catalog) { _ in false } == first)
+        #expect(plan.nextPassage(catalog: catalog) { $0 == first } == second)
+        plan.resumeRange = second
+        #expect(plan.nextPassage(catalog: catalog) { $0 != first } == first)
+        #expect(plan.nextPassage(catalog: catalog) { _ in true } == nil)
+    }
+
+    @Test func reviewPassagesGroupNeighboursAndPutRefreshFirst() throws {
+        let catalog = try BundledQuranCatalog.loadFromBundle()
+        let now = Date(timeIntervalSince1970: 1_700_000_000)
+        func due(_ ayah: Int, daysAgo: Int, refresh: Bool = false) -> VerseProgressSnapshot {
+            var item = VerseProgressSnapshot.fresh(globalAyah: ayah)
+            item.recallState = .review
+            item.isWeak = refresh
+            item.nextReviewAt = now.addingTimeInterval(TimeInterval(-daysAgo * 86_400))
+            return item
+        }
+        var notDue = due(20, daysAgo: -3)
+        notDue.nextReviewAt = now.addingTimeInterval(86_400)
+        // 7 is the last ayah of Al-Fatiha and 8 starts Al-Baqarah, so they never share a passage.
+        let snapshots = [due(2, daysAgo: 5), due(3, daysAgo: 4), due(7, daysAgo: 9), due(8, daysAgo: 1, refresh: true), notDue]
+        let passages = ReviewPlanner.duePassages(snapshots: snapshots, catalog: catalog, now: now)
+        #expect(passages == [.clamped(start: 8, end: 8), .clamped(start: 7, end: 7), .clamped(start: 2, end: 3)])
     }
 
     @Test func existingCustomPassageResumesExactlyAndInvalidResumeIsIgnored() throws {

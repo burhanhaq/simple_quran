@@ -1,6 +1,6 @@
 import Foundation
 
-/// A focus keeps its own practice passage while sharing ayah progress with other focuses.
+/// A plan (surah, juz, or ayah range) keeps its own place while sharing ayah progress with every other plan.
 nonisolated struct LearningTarget: Codable, Identifiable, Equatable {
     var id = UUID()
     var range: VerseRange
@@ -23,5 +23,20 @@ nonisolated struct LearningTarget: Codable, Identifiable, Equatable {
             suggestion = .clamped(start: start, end: page.endGlobalAyah)
         } else { suggestion = LearningPassage.suggested(from: start, catalog: catalog) }
         return suggestion.map { .clamped(start: start, end: min($0.endGlobalAyah, range.endGlobalAyah)) }
+    }
+
+    /// The next passage in this plan that isn't fully memorized, starting where the user left off
+    /// and wrapping to the beginning; nil once the whole plan is memorized.
+    func nextPassage(catalog: some QuranCatalog, byPage: Bool = false, isMemorized: (VerseRange) -> Bool) -> VerseRange? {
+        let resume = resumeRange?.startGlobalAyah ?? range.startGlobalAyah
+        func scan(from start: Int, through end: Int) -> VerseRange? {
+            var cursor = start
+            while cursor <= end, let candidate = passage(from: cursor, catalog: catalog, byPage: byPage) {
+                if !isMemorized(candidate) { return candidate }
+                cursor = candidate.endGlobalAyah + 1
+            }
+            return nil
+        }
+        return scan(from: resume, through: range.endGlobalAyah) ?? scan(from: range.startGlobalAyah, through: resume - 1)
     }
 }

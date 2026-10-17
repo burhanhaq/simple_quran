@@ -65,18 +65,23 @@ struct LearningPassageTests {
         #expect(sessions.allSatisfy { $0.completed })
     }
 
-    @Test @MainActor func learningPlacePersistsIndependentlyOfReadingPlace() {
+    @Test @MainActor func legacyLearningPlaceBecomesASurahPlanOnce() throws {
+        let catalog = try BundledQuranCatalog.loadFromBundle()
         let suite = "LearningTests.\(UUID().uuidString)"
-        let defaults = UserDefaults(suiteName: suite)!
+        let defaults = try #require(UserDefaults(suiteName: suite))
         defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(25, forKey: "learning.start")
+        defaults.set(27, forKey: "learning.end")
         let settings = AppSettings(defaults: defaults)
-        settings.remember(.clamped(start: 25, end: 27))
         settings.readingAyah = 100
-        settings.practiceByPage = true
+        settings.adoptLegacyLearningPlace(catalog: catalog)
+        let baqarah = try #require(catalog.surah(number: 2))
+        #expect(settings.activePlan?.range == baqarah.range)
+        #expect(settings.activePlan?.resumeRange == .clamped(start: 25, end: 27))
+
+        settings.adoptLegacyLearningPlace(catalog: catalog)
         let reopened = AppSettings(defaults: defaults)
-        #expect(reopened.learningStart == 25)
-        #expect(reopened.learningEnd == 27)
+        #expect(reopened.learningTargets.count == 1)
         #expect(reopened.readingAyah == 100)
-        #expect(reopened.practiceByPage)
     }
 }

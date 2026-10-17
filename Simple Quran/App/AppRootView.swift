@@ -9,8 +9,9 @@ struct AppRootView: View {
             FriendlyErrorView(message: error).padding()
         } else {
             TabView(selection: $environment.selectedTab) {
-                Tab("Today", systemImage: "sun.max", value: AppTab.home) { HomeView() }
-                Tab("Quran", systemImage: "book", value: AppTab.quran) { QuranBrowserView() }
+                Tab(AppTab.memorize.title, systemImage: AppTab.memorize.systemImage, value: AppTab.memorize) { MemorizeView() }
+                Tab(AppTab.progress.title, systemImage: AppTab.progress.systemImage, value: AppTab.progress) { ProgressTabView() }
+                Tab(AppTab.quran.title, systemImage: AppTab.quran.systemImage, value: AppTab.quran) { QuranBrowserView() }
             }
             .tint(Color.bronze)
             .tabViewBottomAccessory(isEnabled: environment.playback.snapshot.currentGlobalAyah != nil) {

@@ -50,6 +50,9 @@ final class AppSettings {
         static let hasSeenQuranHint = "settings.hasSeenQuranHint"
         static let appearance = "settings.appearance"
         static let showsStatusChangeNote = "settings.showsStatusChangeNote"
+        static let startTab = "settings.startTab"
+        static let legacyLearningStart = "learning.start"
+        static let legacyLearningEnd = "learning.end"
     }
 
     var learningTargets: [LearningTarget] {
@@ -63,28 +66,48 @@ final class AppSettings {
         didSet { defaults.set(activeTargetID?.uuidString, forKey: "learning.activeTarget") }
     }
 
-    func addTargets(_ targets: [LearningTarget]) {
-        for target in targets where !learningTargets.contains(where: { $0.range == target.range }) {
+    /// The one plan that drives "New" each day; other targets wait as "Up next".
+    var activePlan: LearningTarget? {
+        learningTargets.first { $0.id == activeTargetID } ?? learningTargets.first
+    }
+
+    func setActivePlan(_ target: LearningTarget) {
+        if let existing = learningTargets.first(where: { $0.range == target.range }) {
+            activeTargetID = existing.id
+        } else {
             learningTargets.append(target)
+            activeTargetID = target.id
         }
     }
 
+    func removePlan(id: UUID) {
+        learningTargets.removeAll { $0.id == id }
+        if activeTargetID == id { activeTargetID = learningTargets.first?.id }
+    }
+
+    /// Saves where the user is in a plan. Never changes which plan is active.
     func remember(_ range: VerseRange, targetID: UUID?) {
-        remember(range)
-        activeTargetID = targetID
-        if let index = learningTargets.firstIndex(where: { $0.id == targetID }),
-           learningTargets[index].range.contains(range.startGlobalAyah),
-           learningTargets[index].range.contains(range.endGlobalAyah) {
-            learningTargets[index].resumeRange = range
-        }
+        guard let index = learningTargets.firstIndex(where: { $0.id == targetID }),
+              learningTargets[index].range.contains(range.startGlobalAyah),
+              learningTargets[index].range.contains(range.endGlobalAyah) else { return }
+        learningTargets[index].resumeRange = range
     }
 
-    var learningStart: Int {
-        didSet { defaults.set(learningStart, forKey: "learning.start") }
+    /// Earlier versions kept a single learning place outside any plan; turn it into the
+    /// surah plan it belonged to so the user keeps their place.
+    func adoptLegacyLearningPlace(catalog: some QuranCatalog) {
+        let start = defaults.integer(forKey: Key.legacyLearningStart)
+        let end = defaults.integer(forKey: Key.legacyLearningEnd)
+        defaults.removeObject(forKey: Key.legacyLearningStart)
+        defaults.removeObject(forKey: Key.legacyLearningEnd)
+        guard learningTargets.isEmpty, start > 0, end >= start,
+              let verse = catalog.verse(globalAyah: start),
+              let surah = catalog.surah(number: verse.surahNumber) else { return }
+        var plan = LearningTarget(range: surah.range)
+        if surah.range.contains(end) { plan.resumeRange = .clamped(start: start, end: end) }
+        setActivePlan(plan)
     }
-    var learningEnd: Int {
-        didSet { defaults.set(learningEnd, forKey: "learning.end") }
-    }
+
     var readingAyah: Int {
         didSet { defaults.set(readingAyah, forKey: "reading.ayah") }
     }
@@ -93,11 +116,6 @@ final class AppSettings {
     }
     var generatedPracticeIDs: [String] {
         didSet { defaults.set(generatedPracticeIDs, forKey: "learning.generatedIDs") }
-    }
-
-    func remember(_ range: VerseRange) {
-        learningStart = range.startGlobalAyah
-        learningEnd = range.endGlobalAyah
     }
 
     var wifiOnly: Bool {
@@ -120,6 +138,11 @@ final class AppSettings {
         didSet { defaults.set(appearance.rawValue, forKey: Key.appearance) }
     }
 
+    /// The tab the app opens on: memorizers start on Memorize, readers on Quran.
+    var startTab: AppTab {
+        didSet { defaults.set(startTab.rawValue, forKey: Key.startTab) }
+    }
+
     /// Shown once to people whose earlier progress was recounted under explicit memorization.
     var showsStatusChangeNote: Bool {
         didSet { defaults.set(showsStatusChangeNote, forKey: Key.showsStatusChangeNote) }
@@ -130,8 +153,6 @@ final class AppSettings {
         learningTargets = defaults.data(forKey: "learning.targets")
             .flatMap { try? JSONDecoder().decode([LearningTarget].self, from: $0) } ?? []
         activeTargetID = defaults.string(forKey: "learning.activeTarget").flatMap(UUID.init(uuidString:))
-        learningStart = defaults.integer(forKey: "learning.start")
-        learningEnd = defaults.integer(forKey: "learning.end")
         readingAyah = defaults.integer(forKey: "reading.ayah")
         practiceByPage = defaults.bool(forKey: "learning.byPage")
         generatedPracticeIDs = defaults.stringArray(forKey: "learning.generatedIDs") ?? []
@@ -143,6 +164,7 @@ final class AppSettings {
         self.appearance = defaults.string(forKey: Key.appearance)
             .flatMap(AppAppearance.init(rawValue:)) ?? .system
         self.showsStatusChangeNote = defaults.bool(forKey: Key.showsStatusChangeNote)
+        self.startTab = defaults.string(forKey: Key.startTab).flatMap(AppTab.init(rawValue:)) ?? .memorize
     }
 }
 
@@ -156,7 +178,7 @@ final class AppEnvironment {
     let playback: PlaybackCoordinator
     let recorder: RecitationRecordingController
     let settings: AppSettings
-    var selectedTab: AppTab = .home
+    var selectedTab: AppTab
     var readerRoute: ReaderRoute?
     var activePracticeIsReview = false
     var activePracticeTargetID: UUID?
@@ -179,6 +201,8 @@ final class AppEnvironment {
         self.playback = playback
         self.recorder = recorder
         self.settings = settings
+        selectedTab = settings.startTab
+        settings.adoptLegacyLearningPlace(catalog: quran)
         playback.configure(catalog: quran, allowStreaming: settings.streamWhenMissing)
         playback.onWillStartAudio = { [weak recorder] in
             recorder?.cancelComparisonPlayback()
@@ -222,7 +246,24 @@ final class AppEnvironment {
 
 }
 
-enum AppTab: Hashable {
-    case home
+enum AppTab: String, Hashable, CaseIterable {
+    case memorize
+    case progress
     case quran
+
+    var title: String {
+        switch self {
+        case .memorize: String(localized: "Memorize")
+        case .progress: String(localized: "Progress")
+        case .quran: String(localized: "Quran")
+        }
+    }
+
+    var systemImage: String {
+        switch self {
+        case .memorize: "leaf"
+        case .progress: "square.grid.3x3.fill"
+        case .quran: "book"
+        }
+    }
 }
