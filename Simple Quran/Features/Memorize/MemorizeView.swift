@@ -10,6 +10,7 @@ struct MemorizeView: View {
     @State private var showSettings = false
     @State private var picker: PlanPickerPurpose?
     @State private var pendingRange: VerseRange?
+    @State private var showKnown = false
 
     private var snapshots: [VerseProgressSnapshot] { verseProgress.map(\.snapshot) }
     private var plan: LearningTarget? { environment.settings.activePlan }
@@ -22,6 +23,7 @@ struct MemorizeView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     if let error = environment.catalogLoadError { FriendlyErrorView(message: error) }
+                    if environment.settings.showsStatusChangeNote { statusChangeNote }
                     todayCard(next: next, index: index)
                     if !reviews.isEmpty { reviewCard(reviews) }
                     if let plan {
@@ -62,6 +64,15 @@ struct MemorizeView: View {
                 }
             }
             .sheet(isPresented: $showSettings) { SettingsView() }
+            .sheet(isPresented: $showKnown) {
+                NavigationStack {
+                    KnownSurahsView(continueTitle: String(localized: "Save")) {
+                        environment.settings.showsStatusChangeNote = false
+                        showKnown = false
+                    }
+                    .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { showKnown = false } } }
+                }.tint(Color.bronze)
+            }
             .sheet(item: $picker, onDismiss: {
                 if let pendingRange {
                     self.pendingRange = nil
@@ -69,6 +80,23 @@ struct MemorizeView: View {
                 }
             }) { purpose in
                 PlanPickerView(purpose: purpose) { pendingRange = $0 }
+            }
+        }
+    }
+
+    /// Shown once after the update that made memorization an explicit claim.
+    private var statusChangeNote: some View {
+        WarmCard(emphasized: true) {
+            VStack(alignment: .leading, spacing: 12) {
+                Text("Your progress now counts only what you mark as memorized").font(.headline)
+                Text("Listening and practice still show as activity. If you already know some surahs, mark them so your progress is right.")
+                    .font(.subheadline).foregroundStyle(Color.secondaryWarm)
+                HStack(spacing: 12) {
+                    Button("Mark what I know") { showKnown = true }
+                        .buttonStyle(WarmButtonStyle()).accessibilityIdentifier("note.markKnown")
+                    Button("Got it") { environment.settings.showsStatusChangeNote = false }
+                        .font(.subheadline.weight(.semibold)).frame(minHeight: 44).accessibilityIdentifier("note.dismiss")
+                }
             }
         }
     }

@@ -45,6 +45,13 @@ struct SimpleQuranApp: App {
             settings.learningTargets = []
             settings.activeTargetID = nil
         }
+        if ProcessInfo.processInfo.arguments.contains("-ui-testing-skip-onboarding") {
+            settings.hasCompletedOnboarding = true
+            settings.showsStatusChangeNote = false
+        } else if ProcessInfo.processInfo.arguments.contains("-ui-testing-reset-onboarding") {
+            settings.hasCompletedOnboarding = false
+            settings.showsStatusChangeNote = false
+        }
         let downloads = AudioDownloadManager(
             source: source,
             fileStore: files,

@@ -4,24 +4,31 @@ struct AppRootView: View {
     @Environment(AppEnvironment.self) private var environment
 
     var body: some View {
-        @Bindable var environment = environment
         if let error = environment.persistenceLoadError {
             FriendlyErrorView(message: error).padding()
         } else {
-            TabView(selection: $environment.selectedTab) {
-                Tab(AppTab.memorize.title, systemImage: AppTab.memorize.systemImage, value: AppTab.memorize) { MemorizeView() }
-                Tab(AppTab.progress.title, systemImage: AppTab.progress.systemImage, value: AppTab.progress) { ProgressTabView() }
-                Tab(AppTab.quran.title, systemImage: AppTab.quran.systemImage, value: AppTab.quran) { QuranBrowserView() }
-            }
-            .tint(Color.bronze)
-            .tabViewBottomAccessory(isEnabled: environment.playback.snapshot.currentGlobalAyah != nil) {
-                GlobalMiniPlayer()
-            }
-            .fullScreenCover(item: $environment.route) { route in
-                switch route {
-                case .reader(let reader): QuranReaderView(destination: reader.destination, resumesPlayback: reader.resumePlayback)
-                case .session(let session): MemorizeSessionView(route: session)
+            ZStack { tabs }
+                .fullScreenCover(isPresented: Binding(get: { !environment.settings.hasCompletedOnboarding }, set: { _ in })) {
+                    OnboardingView()
                 }
+        }
+    }
+
+    private var tabs: some View {
+        @Bindable var environment = environment
+        return TabView(selection: $environment.selectedTab) {
+            Tab(AppTab.memorize.title, systemImage: AppTab.memorize.systemImage, value: AppTab.memorize) { MemorizeView() }
+            Tab(AppTab.progress.title, systemImage: AppTab.progress.systemImage, value: AppTab.progress) { ProgressTabView() }
+            Tab(AppTab.quran.title, systemImage: AppTab.quran.systemImage, value: AppTab.quran) { QuranBrowserView() }
+        }
+        .tint(Color.bronze)
+        .tabViewBottomAccessory(isEnabled: environment.playback.snapshot.currentGlobalAyah != nil) {
+            GlobalMiniPlayer()
+        }
+        .fullScreenCover(item: $environment.route) { route in
+            switch route {
+            case .reader(let reader): QuranReaderView(destination: reader.destination, resumesPlayback: reader.resumePlayback)
+            case .session(let session): MemorizeSessionView(route: session)
             }
         }
     }

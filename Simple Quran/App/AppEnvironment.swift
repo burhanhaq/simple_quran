@@ -51,6 +51,7 @@ final class AppSettings {
         static let appearance = "settings.appearance"
         static let showsStatusChangeNote = "settings.showsStatusChangeNote"
         static let startTab = "settings.startTab"
+        static let hasCompletedOnboarding = "settings.hasCompletedOnboarding"
         static let legacyLearningStart = "learning.start"
         static let legacyLearningEnd = "learning.end"
     }
@@ -143,6 +144,10 @@ final class AppSettings {
         didSet { defaults.set(startTab.rawValue, forKey: Key.startTab) }
     }
 
+    var hasCompletedOnboarding: Bool {
+        didSet { defaults.set(hasCompletedOnboarding, forKey: Key.hasCompletedOnboarding) }
+    }
+
     /// Shown once to people whose earlier progress was recounted under explicit memorization.
     var showsStatusChangeNote: Bool {
         didSet { defaults.set(showsStatusChangeNote, forKey: Key.showsStatusChangeNote) }
@@ -165,6 +170,7 @@ final class AppSettings {
             .flatMap(AppAppearance.init(rawValue:)) ?? .system
         self.showsStatusChangeNote = defaults.bool(forKey: Key.showsStatusChangeNote)
         self.startTab = defaults.string(forKey: Key.startTab).flatMap(AppTab.init(rawValue:)) ?? .memorize
+        self.hasCompletedOnboarding = defaults.bool(forKey: Key.hasCompletedOnboarding)
     }
 }
 
@@ -203,6 +209,11 @@ final class AppEnvironment {
         self.settings = settings
         selectedTab = settings.startTab
         settings.adoptLegacyLearningPlace(catalog: quran)
+        // People updating from an earlier version get the one-time note instead of onboarding.
+        if !settings.hasCompletedOnboarding,
+           settings.showsStatusChangeNote || !settings.learningTargets.isEmpty || settings.readingAyah > 0 {
+            settings.hasCompletedOnboarding = true
+        }
         playback.configure(catalog: quran, allowStreaming: settings.streamWhenMissing)
         playback.onWillStartAudio = { [weak recorder] in
             recorder?.cancelComparisonPlayback()

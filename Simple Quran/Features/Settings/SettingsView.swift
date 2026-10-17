@@ -12,6 +12,13 @@ struct SettingsView: View {
         NavigationStack {
             List {
                 Section(String(localized: "Make it yours")) {
+                    Picker(String(localized: "Open the app to"), selection: Bindable(environment.settings).startTab) {
+                        ForEach([AppTab.memorize, AppTab.quran], id: \.self) { tab in
+                            Text(tab.title).tag(tab)
+                        }
+                    }
+                    .accessibilityIdentifier("settings.startTab")
+                    .warmListRow()
                     Picker(String(localized: "Appearance"), selection: Bindable(environment.settings).appearance) {
                         ForEach(AppAppearance.allCases) { appearance in
                             Text(appearance.title).tag(appearance)
@@ -43,8 +50,8 @@ struct SettingsView: View {
                     }
                     .warmListRow()
                 }
-                Section("Your practice") {
-                    NavigationLink("Saved passages") { SetListView() }.warmListRow()
+                Section(String(localized: "Memorize")) {
+                    NavigationLink(String(localized: "Older saved passages")) { SetListView() }.warmListRow()
                 }
                 Section(String(localized: "Recordings")) {
                     Button(String(localized: "Delete all recordings"), role: .destructive) {

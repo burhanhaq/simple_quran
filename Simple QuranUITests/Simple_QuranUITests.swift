@@ -278,6 +278,42 @@ final class Simple_QuranUITests: XCTestCase {
     }
 
     @MainActor
+    private func launchFresh() -> XCUIApplication {
+        XCUIDevice.shared.orientation = .portrait
+        let app = XCUIApplication()
+        app.launchArguments = ["-ui-testing", "-ui-testing-reset-focus", "-ui-testing-reset-onboarding",
+                               "-settings.appearance", "light", "-settings.quranReadingLayout", "ayahByAyah",
+                               "-learning.start", "0", "-learning.end", "0", "-reading.ayah", "0", "-learning.byPage", "NO"]
+        app.launch()
+        return app
+    }
+
+    @MainActor
+    func testOnboardingForReadersOpensTheQuran() {
+        let app = launchFresh()
+        XCTAssertTrue(app.buttons["onboarding.intent.readAndListen"].waitForExistence(timeout: 5))
+        capture(app, name: "Onboarding-Intent")
+        app.buttons["onboarding.intent.readAndListen"].tap()
+        XCTAssertTrue(app.navigationBars["Quran"].waitForExistence(timeout: 3))
+    }
+
+    @MainActor
+    func testOnboardingForMemorizersSeedsWhatTheyKnowAndAPlan() {
+        let app = launchFresh()
+        app.buttons["onboarding.intent.memorize"].tap()
+        XCTAssertTrue(app.buttons["known.1"].waitForExistence(timeout: 3))
+        app.buttons["known.1"].tap()
+        capture(app, name: "Onboarding-Known")
+        app.buttons["known.continue"].tap()
+        XCTAssertTrue(app.buttons["onboarding.plan.juz30"].waitForExistence(timeout: 3))
+        capture(app, name: "Onboarding-Plan")
+        app.buttons["onboarding.plan.juz30"].tap()
+        XCTAssertTrue(app.buttons["memorize.start"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["memorize.plan"].label.contains("Juz 30"))
+        XCTAssertEqual(memorizedCount(app), "7")
+    }
+
+    @MainActor
     private func capture(_ app: XCUIApplication, name: String) {
         let attachment = XCTAttachment(screenshot: XCUIScreen.main.screenshot())
         attachment.name = name
