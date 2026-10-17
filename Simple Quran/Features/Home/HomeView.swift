@@ -65,9 +65,9 @@ struct HomeView: View {
                                     Spacer()
                                     Image(systemName: "arrow.up.right").font(.subheadline)
                                 }
-                                let count = verseProgress.filter { $0.globalAyah >= surah.startGlobalAyah && $0.globalAyah <= surah.endGlobalAyah && ($0.exposureCount > 0 || $0.recallAttempts > 0) }.count
+                                let count = ProgressIndex(verseProgress.map(\.snapshot)).count(.memorized, in: surah.range)
                                 ProgressView(value: Double(count), total: Double(surah.ayahCount)).tint(Color.olive)
-                                Text(count == 0 ? "A place to begin. A little more each time." : "\(count) ayahs practiced · View progress")
+                                Text(count == 0 ? "A place to begin. A little more each time." : "\(count) ayahs memorized · View progress")
                                     .font(.caption).foregroundStyle(Color.secondaryWarm)
                             }
                         }.buttonStyle(.plain).accessibilityIdentifier("home.progress")

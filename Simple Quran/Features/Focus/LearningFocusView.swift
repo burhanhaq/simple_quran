@@ -6,9 +6,7 @@ struct LearningFocusSection: View {
     @Query private var progress: [VerseProgress]
     @State private var showAdd = false
 
-    private var practiced: Set<Int> {
-        Set(progress.filter { $0.exposureCount > 0 || $0.recallAttempts > 0 }.map(\.globalAyah))
-    }
+    private var index: ProgressIndex { ProgressIndex(progress.map(\.snapshot)) }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -33,21 +31,22 @@ struct LearningFocusSection: View {
                     }
                 }.buttonStyle(.plain)
             } else {
+                let index = index
                 ForEach(environment.settings.learningTargets) { target in
+                    let memorized = index.count(.memorized, in: target.range)
                     NavigationLink { LearningFocusDetail(targetID: target.id) } label: {
                         WarmCard {
                             VStack(alignment: .leading, spacing: 12) {
                                 HStack(spacing: 12) {
                                     VStack(alignment: .leading, spacing: 5) {
                                         Text(target.title(catalog: environment.quran)).font(.headline)
-                                        let count = practiced.filter { target.range.contains($0) }.count
-                                        Text("\(count) of \(target.range.count) ayahs practiced")
+                                        Text("\(memorized) of \(target.range.count) ayahs memorized")
                                             .font(.caption).foregroundStyle(Color.secondaryWarm)
                                     }
                                     Spacer(minLength: 0)
                                     Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(Color.bronze)
                                 }
-                                ProgressView(value: Double(practiced.filter { target.range.contains($0) }.count), total: Double(target.range.count))
+                                ProgressView(value: Double(memorized), total: Double(target.range.count))
                                     .tint(Color.olive)
                             }
                         }
@@ -236,7 +235,7 @@ struct LearningFocusDetail: View {
     var body: some View {
         ScrollView {
             if let target {
-                let practiced = progress.filter { target.range.contains($0.globalAyah) && ($0.exposureCount > 0 || $0.recallAttempts > 0) }.count
+                let practiced = ProgressIndex(progress.map(\.snapshot)).count(.memorized, in: target.range)
                 VStack(alignment: .leading, spacing: 24) {
                     VStack(alignment: .leading, spacing: 12) {
                         Label(target.juzNumber == nil ? "YOUR FOCUS" : "WHOLE JUZ", systemImage: "bookmark")
@@ -246,9 +245,9 @@ struct LearningFocusDetail: View {
                     }
                     WarmCard {
                         VStack(alignment: .leading, spacing: 12) {
-                            Text("\(practiced) of \(target.range.count) ayahs practiced").font(.headline)
+                            Text("\(practiced) of \(target.range.count) ayahs memorized").font(.headline)
                             ProgressView(value: Double(practiced), total: Double(target.range.count)).tint(Color.olive)
-                            Text(practiced == target.range.count ? "You’ve spent time with every ayah. Return whenever you’d like to review." : "A little at a time. Your place is saved as you go.")
+                            Text(practiced == target.range.count ? "Every ayah is memorized. Return whenever you’d like to review." : "A little at a time. Your place is saved as you go.")
                                 .font(.subheadline).foregroundStyle(Color.secondaryWarm)
                         }
                     }

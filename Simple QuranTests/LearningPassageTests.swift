@@ -41,7 +41,7 @@ struct LearningPassageTests {
         #expect(page.endGlobalAyah == catalog.pages.first(where: { $0.number == verse.page })?.endGlobalAyah)
     }
 
-    @Test @MainActor func silentPracticeCountsWithoutClaimingRecallAndSharesProgressAcrossRanges() throws {
+    @Test @MainActor func finishingWithoutAnAnswerRecordsActivityButNotMemorization() throws {
         let container = try PersistenceController.makeContainer(inMemory: true)
         let store = PracticeStore(context: container.mainContext)
         let first = VerseRange.clamped(start: 8, end: 10)
@@ -51,11 +51,13 @@ struct LearningPassageTests {
         #expect(try store.progress(for: 8).exposureCount == 1)
         #expect(try store.progress(for: 8).lastRating == nil)
         #expect(try store.progress(for: 8).recallAttempts == 0)
+        #expect(try store.progress(for: 8).status == .notStarted)
         let overlap = VerseRange.clamped(start: 10, end: 12)
         let other = try store.createSet(title: "Another passage", passages: [overlap], settings: .default)
         try store.completePractice(other, ayahs: overlap.globalAyahs, rating: .solid, lastAyah: 12, seconds: 0, repetitions: 0)
         #expect(try store.progress(for: 10).exposureCount == 2)
         #expect(try store.progress(for: 10).lastRating == .solid)
+        #expect(try store.progress(for: 10).status == .memorized)
         #expect(try store.progress(for: 9).lastRating == nil)
         #expect(try store.progress(for: 12).nextReviewAt != nil)
         let sessions = try container.mainContext.fetch(FetchDescriptor<PracticeSession>())

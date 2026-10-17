@@ -49,6 +49,7 @@ final class AppSettings {
         static let quranReadingLayout = "settings.quranReadingLayout"
         static let hasSeenQuranHint = "settings.hasSeenQuranHint"
         static let appearance = "settings.appearance"
+        static let showsStatusChangeNote = "settings.showsStatusChangeNote"
     }
 
     var learningTargets: [LearningTarget] {
@@ -119,6 +120,11 @@ final class AppSettings {
         didSet { defaults.set(appearance.rawValue, forKey: Key.appearance) }
     }
 
+    /// Shown once to people whose earlier progress was recounted under explicit memorization.
+    var showsStatusChangeNote: Bool {
+        didSet { defaults.set(showsStatusChangeNote, forKey: Key.showsStatusChangeNote) }
+    }
+
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         learningTargets = defaults.data(forKey: "learning.targets")
@@ -136,6 +142,7 @@ final class AppSettings {
         self.hasSeenQuranHint = defaults.bool(forKey: Key.hasSeenQuranHint)
         self.appearance = defaults.string(forKey: Key.appearance)
             .flatMap(AppAppearance.init(rawValue:)) ?? .system
+        self.showsStatusChangeNote = defaults.bool(forKey: Key.showsStatusChangeNote)
     }
 }
 

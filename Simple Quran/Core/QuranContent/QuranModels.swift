@@ -35,6 +35,7 @@ nonisolated struct Surah: Equatable, Hashable, Sendable, Identifiable {
     var id: Int { number }
 
     var displayName: String { "\(number). \(englishName)" }
+    var range: VerseRange { .clamped(start: startGlobalAyah, end: endGlobalAyah) }
 }
 
 nonisolated struct JuzSection: Equatable, Hashable, Sendable, Identifiable {
@@ -42,6 +43,7 @@ nonisolated struct JuzSection: Equatable, Hashable, Sendable, Identifiable {
     var startGlobalAyah: Int
     var endGlobalAyah: Int
     var id: Int { number }
+    var range: VerseRange { .clamped(start: startGlobalAyah, end: endGlobalAyah) }
 }
 
 nonisolated struct PageSection: Equatable, Hashable, Sendable, Identifiable {

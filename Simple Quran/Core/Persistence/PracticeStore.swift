@@ -29,6 +29,9 @@ protocol PracticeStoring: AnyObject {
     func markWeak(globalAyah: Int, weak: Bool) throws
     func isMarkedWeak(globalAyah: Int) throws -> Bool
     func applyRating(_ rating: RecallRating, ayahs: [Int], now: Date) throws
+    func beginLearning(ayahs: [Int]) throws
+    func markMemorized(ayahs: [Int], now: Date) throws
+    func markNeedsRefresh(ayahs: [Int], now: Date) throws
     func startSession(for set: PracticeSet) throws -> PracticeSession
     func finishSession(_ session: PracticeSession, coveredAyahs: Int, repetitions: Int, lastAyah: Int?, completed: Bool, rating: RecallRating?) throws
     func continueSet() throws -> PracticeSet?
@@ -136,6 +139,49 @@ final class PracticeStore: PracticeStoring {
             model.apply(snapshot)
         }
         try context.save()
+    }
+
+    /// Starting a memorize session is an explicit intent to learn; it never claims the ayahs are known.
+    func beginLearning(ayahs: [Int]) throws {
+        for ayah in Set(ayahs) {
+            let model = try progressModel(for: ayah)
+            if model.recallStateRaw == RecallState.new.rawValue { model.recallStateRaw = RecallState.learning.rawValue }
+        }
+        try save()
+    }
+
+    func markMemorized(ayahs: [Int], now: Date = .now) throws {
+        try applyRating(.solid, ayahs: ayahs, now: now)
+    }
+
+    /// Memorized ayahs keep their status and come back for review now; others become learning.
+    func markNeedsRefresh(ayahs: [Int], now: Date = .now) throws {
+        for ayah in Set(ayahs) {
+            let model = try progressModel(for: ayah)
+            model.isWeak = true
+            model.nextReviewAt = now
+            if model.recallStateRaw == RecallState.new.rawValue { model.recallStateRaw = RecallState.learning.rawValue }
+        }
+        try save()
+    }
+
+    /// One-time cleanup for progress recorded before memorization became an explicit claim.
+    /// Returns whether the user had any earlier progress, so the app can explain the change.
+    @discardableResult
+    func migrateToExplicitMemorization() throws -> Bool {
+        let models = try context.fetch(FetchDescriptor<VerseProgress>())
+        for model in models {
+            let state = RecallState(rawValue: model.recallStateRaw) ?? .new
+            if state == .review, model.lastRatingRaw != RecallRating.solid.rawValue {
+                // Reached by repeated "comfortable" answers, never an explicit "memorized".
+                model.recallStateRaw = RecallState.strengthening.rawValue
+            } else if state == .new, model.exposureCount > 0 {
+                // Practiced in a session the user started, so they were learning it.
+                model.recallStateRaw = RecallState.learning.rawValue
+            }
+        }
+        try save()
+        return models.contains { $0.exposureCount > 0 || $0.recallAttempts > 0 }
     }
 
     func startSession(for set: PracticeSet) throws -> PracticeSession {

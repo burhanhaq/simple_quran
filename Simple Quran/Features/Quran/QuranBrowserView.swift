@@ -58,9 +58,9 @@ struct QuranBrowserView: View {
                                 VStack(alignment: .leading, spacing: 5) {
                                     Text(surah.englishName).font(.headline)
                                     Text("\(surah.translation) · \(surah.ayahCount) ayahs").font(.caption).foregroundStyle(Color.secondaryWarm)
-                                    let count = practicedCount(surah)
+                                    let count = memorizedCount(surah)
                                     if count > 0 {
-                                        Text(count == surah.ayahCount ? "Whole surah practiced" : "\(count) ayahs practiced")
+                                        Text(count == surah.ayahCount ? "Memorized" : "\(count) ayahs memorized")
                                             .font(.caption.weight(.medium)).foregroundStyle(Color.olive)
                                     }
                                 }
@@ -106,8 +106,8 @@ struct QuranBrowserView: View {
             .foregroundStyle(Color.bronze).frame(width: 38, height: 38)
             .background(Color.appCollectedFill, in: RoundedRectangle(cornerRadius: 12))
     }
-    private func practicedCount(_ surah: Surah) -> Int {
-        progress.filter { $0.globalAyah >= surah.startGlobalAyah && $0.globalAyah <= surah.endGlobalAyah && ($0.exposureCount > 0 || $0.recallAttempts > 0) }.count
+    private func memorizedCount(_ surah: Surah) -> Int {
+        progress.filter { surah.range.contains($0.globalAyah) && $0.snapshot.status == .memorized }.count
     }
     private func open(_ hit: QuranSearchHit) {
         switch hit.kind {

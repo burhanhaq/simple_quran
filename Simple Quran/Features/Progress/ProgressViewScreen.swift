@@ -5,16 +5,18 @@ struct ProgressViewScreen: View {
     @Environment(AppEnvironment.self) private var environment
     @Query private var progress: [VerseProgress]
 
-    private var practiced: Set<Int> { Set(progress.filter { $0.exposureCount > 0 || $0.recallAttempts > 0 }.map(\.globalAyah)) }
+    private var index: ProgressIndex { ProgressIndex(progress.map(\.snapshot)) }
+    private var memorizedCount: Int { progress.filter { $0.snapshot.status == .memorized }.count }
     private var surahs: [Surah] {
-        environment.quran.surahs.filter { surah in practiced.contains { $0 >= surah.startGlobalAyah && $0 <= surah.endGlobalAyah } }
+        let index = index
+        return environment.quran.surahs.filter { index.status(of: $0.range) != .notStarted }
     }
 
     var body: some View {
         List {
             Section {
                 VStack(alignment: .leading, spacing: 12) {
-                    Text(practiced.isEmpty ? "Every ayah is a beginning." : "\(practiced.count) ayahs practiced.")
+                    Text(memorizedCount == 0 ? "Every ayah is a beginning." : "\(memorizedCount) ayahs memorized.")
                         .font(.system(.title, design: .serif))
                     Text("Your progress grows each time you return.").font(.subheadline).foregroundStyle(Color.secondaryWarm)
                 }.padding(.vertical, 16)
@@ -23,12 +25,12 @@ struct ProgressViewScreen: View {
             if surahs.isEmpty {
                 Button("Choose a surah") { environment.selectedTab = .quran }.warmListRow()
             }
+            let index = index
             ForEach(surahs) { surah in
                 NavigationLink { SurahProgressView(surah: surah) } label: {
                     VStack(alignment: .leading, spacing: 7) {
                         Text(surah.englishName).font(.headline)
-                        let count = practiced.filter { $0 >= surah.startGlobalAyah && $0 <= surah.endGlobalAyah }.count
-                        Text(count == surah.ayahCount ? "Whole surah practiced · Keep it close with review" : "\(count) ayahs practiced")
+                        Text(SurahProgressSummary(surah: surah, index: index).text)
                             .font(.caption).foregroundStyle(Color.secondaryWarm)
                     }.padding(.vertical, 6)
                 }.warmListRow()
@@ -99,7 +101,7 @@ struct SurahProgressView: View {
         .confirmationDialog("Can you recite these ayahs from memory?", isPresented: $showKnown, titleVisibility: .visible) {
             Button("Yes, I know them") {
                 guard let knownRange else { return }
-                do { try environment.store.applyRating(.solid, ayahs: knownRange.globalAyahs, now: .now) }
+                do { try environment.store.markMemorized(ayahs: knownRange.globalAyahs) }
                 catch { errorMessage = .from(.persistenceFailure) }
             }
             Button("Cancel", role: .cancel) {}
@@ -110,18 +112,33 @@ struct SurahProgressView: View {
     }
 
     private func status(_ range: VerseRange) -> String {
-        let items = range.globalAyahs.compactMap { snapshots[$0] }
-        if items.contains(where: { $0.isDue }) { return "Ready to revisit" }
-        if items.count == range.count && items.allSatisfy({ $0.lastRating == .solid }) { return "Recalled from memory" }
-        if items.count == range.count && items.allSatisfy({ $0.exposureCount > 0 || $0.recallAttempts > 0 }) { return "Practiced · Revisit anytime" }
-        if range.contains(environment.settings.learningStart) { return "Continue here" }
-        if items.contains(where: { $0.exposureCount > 0 || $0.recallAttempts > 0 }) { return "In progress" }
-        return "Ready when you are"
+        let index = ProgressIndex(snapshots.values)
+        if index.isDue(range) { return String(localized: "Ready to review") }
+        switch index.status(of: range) {
+        case .memorized: return String(localized: "Memorized · Review anytime")
+        case .learning: return String(localized: "Learning")
+        case .notStarted:
+            return range.contains(environment.settings.learningStart) ? String(localized: "Continue here") : String(localized: "Not started")
+        }
     }
     private func statusSymbol(_ range: VerseRange) -> String {
-        let items = range.globalAyahs.compactMap { snapshots[$0] }
-        if items.contains(where: { $0.isDue }) { return "arrow.counterclockwise" }
-        if items.count == range.count && items.allSatisfy({ $0.exposureCount > 0 || $0.recallAttempts > 0 }) { return "checkmark.circle" }
-        return range.contains(environment.settings.learningStart) ? "leaf" : "circle"
+        let index = ProgressIndex(snapshots.values)
+        if index.isDue(range) { return "arrow.counterclockwise" }
+        return index.status(of: range).systemImage
+    }
+}
+
+/// One line describing a surah's memorization, shared by progress lists.
+struct SurahProgressSummary {
+    let surah: Surah
+    let index: ProgressIndex
+
+    var memorized: Int { index.count(.memorized, in: surah.range) }
+    var learning: Int { index.count(.learning, in: surah.range) }
+
+    var text: String {
+        if memorized == surah.ayahCount { return String(localized: "Memorized · Keep it fresh with review") }
+        if learning == 0 { return String(localized: "\(memorized) of \(surah.ayahCount) memorized") }
+        return String(localized: "\(memorized) of \(surah.ayahCount) memorized · \(learning) learning")
     }
 }

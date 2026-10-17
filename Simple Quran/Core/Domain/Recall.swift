@@ -88,22 +88,25 @@ nonisolated struct ReviewScheduler: Sendable {
         let days: Int
         let state: RecallState
 
+        // Memorized is sticky: only an explicit `.solid` gets an ayah there, and a weaker
+        // answer afterwards flags it for a sooner refresh instead of taking it away.
+        let memorized = current.recallState == .review
         switch rating {
         case .again:
             weak = true
             streak = 0
             days = 0
-            state = .learning
+            state = memorized ? .review : .learning
         case .needsWork:
             weak = true
             streak = 0
             days = 1
-            state = .learning
+            state = memorized ? .review : .learning
         case .comfortable:
             weak = false
             streak = current.streak + 1
             days = Self.comfortableInterval(streak: streak)
-            state = streak >= 3 ? .review : .strengthening
+            state = memorized ? .review : .strengthening
         case .solid:
             weak = false
             streak = current.streak + 1

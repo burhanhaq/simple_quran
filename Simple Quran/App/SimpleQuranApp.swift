@@ -57,6 +57,7 @@ struct SimpleQuranApp: App {
         let store = PracticeStore(context: container.mainContext)
         if persistenceLoadError == nil {
             migrateLegacyPauseDefault(in: container.mainContext)
+            migrateToExplicitMemorization(store: store, settings: settings)
         }
 
         let catalog: BundledQuranCatalog
@@ -123,6 +124,18 @@ private func migrateLegacyPauseDefault(in context: ModelContext) {
             collection.pauseSeconds = 0
         }
         try context.save()
+        UserDefaults.standard.set(true, forKey: key)
+    } catch {
+        // Leave the migration pending so a later launch can retry safely.
+    }
+}
+
+@MainActor
+private func migrateToExplicitMemorization(store: PracticeStore, settings: AppSettings) {
+    let key = "migration.explicitMemorization.v1"
+    guard !UserDefaults.standard.bool(forKey: key) else { return }
+    do {
+        if try store.migrateToExplicitMemorization() { settings.showsStatusChangeNote = true }
         UserDefaults.standard.set(true, forKey: key)
     } catch {
         // Leave the migration pending so a later launch can retry safely.
