@@ -12,6 +12,8 @@ struct QuranTextView<AyahMenu: View>: View {
     var scrollToAyah: Int? = nil
     /// The piece being memorized; everything else fades back.
     var focusRange: VerseRange? = nil
+    /// Ayahs marked as slipped while testing.
+    var markedAyahs: Set<Int> = []
     /// Shown under the surah banner in ayah-by-ayah layout.
     var caption: String? = nil
     let onSelect: (Int) -> Void
@@ -36,6 +38,7 @@ struct QuranTextView<AyahMenu: View>: View {
                 selectionEnabled: selectionEnabled,
                 focusedAyah: focusedAyah,
                 focusRange: focusRange,
+                markedAyahs: markedAyahs,
                 onSelect: onSelect
             )
         } else { ayahList }
@@ -56,7 +59,8 @@ struct QuranTextView<AyahMenu: View>: View {
                         VStack(spacing: 0) {
                             if verse.showsBasmalaBefore { BasmalaHeader() }
                             QuranAyahText(verse: verse, isCurrent: verse.globalAyah == currentAyah,
-                                          hidden: hiddenAyahs.contains(verse.globalAyah))
+                                          hidden: hiddenAyahs.contains(verse.globalAyah),
+                                          marked: markedAyahs.contains(verse.globalAyah))
                         }
                         .opacity(focusRange.map { $0.contains(verse.globalAyah) ? 1 : MushafTextBuilder.dimmedAlpha } ?? 1)
                     }

@@ -26,7 +26,65 @@ enum SurahSheetStart: Hashable {
 struct SurahPieceGroup: Identifiable {
     let surah: Surah
     let pieces: [VerseRange]
+    let pages: [SurahPageRow]
     var id: Int { surah.number }
+}
+
+/// The pieces that start on one mushaf page, named the way memorizers know a page:
+/// its place in the surah and its opening words.
+struct SurahPageRow: Identifiable, Equatable {
+    /// How many words of the page's opening the row shows.
+    static let openingWordCount = 4
+
+    let mushafPage: Int
+    /// 1 for the page the surah starts on.
+    let pageInSurah: Int
+    let pieces: [VerseRange]
+    let openingWords: String
+
+    var id: Int { mushafPage }
+    var range: VerseRange { .clamped(start: pieces[0].startGlobalAyah, end: pieces[pieces.count - 1].endGlobalAyah) }
+
+    /// Groups a surah's pieces by the page their first ayah is on.
+    static func rows(for pieces: [VerseRange], in surah: Surah, catalog: some QuranCatalog) -> [SurahPageRow] {
+        guard let firstPage = catalog.verse(globalAyah: surah.startGlobalAyah)?.page else { return [] }
+        var rows: [SurahPageRow] = []
+        var current: (page: Int, pieces: [VerseRange])?
+        func close() {
+            guard let current else { return }
+            let range = VerseRange.clamped(start: current.pieces[0].startGlobalAyah, end: current.pieces[current.pieces.count - 1].endGlobalAyah)
+            rows.append(SurahPageRow(mushafPage: current.page, pageInSurah: current.page - firstPage + 1,
+                                     pieces: current.pieces, openingWords: openingWords(of: range, catalog: catalog)))
+        }
+        for piece in pieces {
+            guard let page = catalog.verse(globalAyah: piece.startGlobalAyah)?.page else { continue }
+            if current?.page == page {
+                current?.pieces.append(piece)
+            } else {
+                close()
+                current = (page, [piece])
+            }
+        }
+        close()
+        return rows
+    }
+
+    /// The first few words, reading on into the next ayah when the first is shorter.
+    static func openingWords(of range: VerseRange, catalog: some QuranCatalog) -> String {
+        var words: [Substring] = []
+        var hasMore = false
+        for ayah in range.globalAyahs {
+            guard let verse = catalog.verse(globalAyah: ayah) else { break }
+            let ayahWords = verse.text.split(whereSeparator: \.isWhitespace)
+            let room = openingWordCount - words.count
+            words += ayahWords.prefix(room)
+            if ayahWords.count > room || (words.count == openingWordCount && ayah != range.endGlobalAyah) {
+                hasMore = true
+                break
+            }
+        }
+        return words.joined(separator: " ") + (hasMore ? "…" : "")
+    }
 }
 
 /// What the overview's main button does for the pieces in view.
@@ -36,11 +94,7 @@ enum SurahAction: Equatable {
     case revise([VerseRange])
 
     /// Revise once every ayah is memorized, continue once any is started, otherwise start.
-    /// A piece the user picked on the strip takes over.
-    static func make(pieces: [VerseRange], chosen: VerseRange?, index: ProgressIndex) -> SurahAction? {
-        if let chosen {
-            return index.status(of: chosen) == .memorized ? .revise([chosen]) : .continue(chosen)
-        }
+    static func make(pieces: [VerseRange], index: ProgressIndex) -> SurahAction? {
         guard !pieces.isEmpty else { return nil }
         guard let next = pieces.first(where: { index.status(of: $0) != .memorized }) else { return .revise(pieces) }
         let started = pieces.contains { index.status(of: $0) != .notStarted }
@@ -82,7 +136,7 @@ final class SurahPieceCache {
                 pieces.append(piece)
                 cursor = piece.endGlobalAyah + 1
             }
-            return SurahPieceGroup(surah: surah, pieces: pieces)
+            return SurahPieceGroup(surah: surah, pieces: pieces, pages: SurahPageRow.rows(for: pieces, in: surah, catalog: catalog))
         }
         self.key = key
         return cached
@@ -107,11 +161,9 @@ final class SurahScreenModel {
     var selectedAyah: Int?
     var detent: PresentationDetent
     var focus: MemorizeFocus?
-    var chosenPiece: VerseRange?
     var undo: MarkUndo?
     var errorMessage: UserFacingMessage?
     var showsOptions = false
-    var showsAdjust = false
     var showsPassagePicker = false
     /// Large text and landscape need the whole coach, so memorizing uses the full sheet there.
     var prefersFullCoach = false {
@@ -182,7 +234,7 @@ final class SurahScreenModel {
 
     var recordingBusy: Bool {
         switch environment.recorder.phase {
-        case .countdown, .recording, .finishing: true
+        case .starting, .recording, .finishing: true
         default: false
         }
     }
@@ -238,8 +290,8 @@ final class SurahScreenModel {
         if let focus {
             // Only the piece answers taps while memorizing; the rest is context.
             guard focus.range.contains(ayah) else { return }
-            if focus.step == .fromMemory {
-                if focus.peeked.contains(ayah) { self.focus?.peeked.remove(ayah) } else { self.focus?.peeked.insert(ayah) }
+            if focus.mode == .test {
+                self.focus?.tap(ayah)
                 return
             }
             selectedAyah = ayah
@@ -265,12 +317,6 @@ final class SurahScreenModel {
         environment.settings.readingAyah = ayah
     }
 
-    /// Shows a piece in the text and makes it the overview's main action.
-    func choose(_ piece: VerseRange) {
-        chosenPiece = chosenPiece == piece ? nil : piece
-        selectedAyah = piece.startGlobalAyah
-    }
-
     func playbackMoved(to ayah: Int?) {
         guard ownsPlayback, let ayah else { return }
         selectedAyah = ayah
@@ -288,7 +334,6 @@ final class SurahScreenModel {
         catch { errorMessage = .from(.persistenceFailure); return }
         let mark = MarkUndo(ayahs: ayahs, previous: previous)
         undo = mark
-        chosenPiece = nil
         Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(8))
             if self?.undo?.id == mark.id { self?.undo = nil }
@@ -327,6 +372,11 @@ final class SurahScreenModel {
         if index.status(of: piece) == .memorized { revise([piece]) } else { memorize(piece) }
     }
 
+    /// Opens a page: its first unfinished piece, or a review of the whole page once it's all memorized.
+    func open(_ page: SurahPageRow, index: ProgressIndex) {
+        if let next = page.pieces.first(where: { index.status(of: $0) != .memorized }) { memorize(next) } else { revise(page.pieces) }
+    }
+
     func memorize(_ piece: VerseRange) {
         beginFocus(SessionRoute(range: piece, kind: .learn, scope: span))
     }
@@ -339,7 +389,6 @@ final class SurahScreenModel {
     private func beginFocus(_ route: SessionRoute) {
         savePosition()
         playback.pause()
-        chosenPiece = nil
         undo = nil
         focus = MemorizeFocus(route: route)
         withAnimation(.snappy) { detent = coachDetent }
@@ -348,26 +397,33 @@ final class SurahScreenModel {
 
     private var coachDetent: PresentationDetent {
         if prefersFullCoach { return SurahSheetDetent.full }
-        return focus?.step == .fromMemory ? SurahSheetDetent.check : SurahSheetDetent.coach
+        return focus?.mode == .test ? SurahSheetDetent.check : SurahSheetDetent.coach
     }
 
-    func setStep(_ step: SessionStep) {
-        guard focus != nil else { return }
-        focus?.step = step
+    /// The text in view hides while testing, except while the user hears their recording back,
+    /// so they can follow it and mark where they slipped.
+    var hiddenAyahs: Set<Int> {
+        guard let focus, !environment.recorder.isPlayingComparison else { return [] }
+        return focus.hiddenAyahs
+    }
+
+    /// Switching modes keeps the marks; only moving to another piece clears them.
+    func setMode(_ mode: CoachMode) {
+        guard focus != nil, focus?.mode != mode else { return }
+        focus?.mode = mode
         focus?.engaged = true
-        focus?.peeked = []
-        if step == .fromMemory { playback.pause() }
+        if mode == .test { playback.pause() } else { environment.recorder.cancelComparisonPlayback() }
         if detent != SurahSheetDetent.full { withAnimation(.snappy) { detent = coachDetent } }
+    }
+
+    func showAllText() {
+        focus?.showsAllText = true
+        focus?.engaged = true
     }
 
     func answer(_ choice: CheckAnswer) {
         let current = focus?.answer
         focus?.answer = current == choice ? nil : choice
-        focus?.engaged = true
-    }
-
-    func adjust(_ ayah: Int, to choice: CheckAnswer?) {
-        focus?.adjusted[ayah] = choice
         focus?.engaged = true
     }
 
@@ -478,14 +534,9 @@ final class SurahScreenModel {
             try environment.store.completePractice(practice, ayahs: ayahs, rating: nil, lastAyah: currentAyah,
                                                    seconds: playback.listeningSeconds,
                                                    repetitions: playback.repetitionCount)
-            var byAnswer: [CheckAnswer: [Int]] = [:]
-            for ayah in ayahs {
-                guard let given = focus.adjusted[ayah] ?? focus.answer else { continue }
-                // A review only speaks for ayahs that were memorized going in.
-                if focus.kind == .review && index.status(of: ayah) != .memorized { continue }
-                byAnswer[given, default: []].append(ayah)
+            for (given, list) in focus.ratings(isMemorized: { index.status(of: $0) == .memorized }) {
+                try environment.store.applyRating(given.rating, ayahs: list, now: .now)
             }
-            for (given, list) in byAnswer { try environment.store.applyRating(given.rating, ayahs: list, now: .now) }
             if focus.kind == .learn, focus.answer == .memorized, let next = nextPassage(index: index) {
                 environment.settings.remember(next, targetID: focus.planID)
             }
@@ -493,7 +544,7 @@ final class SurahScreenModel {
         self.focus?.engaged = false
         self.focus?.committedSeconds = playback.listeningSeconds
         self.focus?.answer = nil
-        self.focus?.adjusted = [:]
+        self.focus?.slipped = []
     }
 
     // MARK: - Recording and repeat

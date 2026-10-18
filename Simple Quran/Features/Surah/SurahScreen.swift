@@ -72,11 +72,13 @@ struct SurahScreen: View {
         QuranTextView(
             verses: model.verses,
             currentAyah: model.currentAyah,
-            hiddenAyahs: model.focus?.hiddenAyahs ?? [],
-            selectionEnabled: !model.recordingBusy,
+            hiddenAyahs: model.hiddenAyahs,
+            // Testing, a peek while recording is exactly when it's needed.
+            selectionEnabled: !model.recordingBusy || model.focus?.mode == .test,
             focusedAyah: model.selectedAyah,
             scrollToAyah: model.destination.scrollToAyah,
             focusRange: model.focus?.range,
+            markedAyahs: model.focus?.slipped ?? [],
             onSelect: model.select
         ) { verse in ayahMenu(verse) }
     }
@@ -110,15 +112,8 @@ struct SurahScreen: View {
     @ViewBuilder
     private func ayahMenu(_ verse: QuranVerse) -> some View {
         let ayah = verse.globalAyah
-        if let focus = model.focus {
-            if focus.range.contains(ayah) {
-                ForEach(CheckAnswer.choices(for: focus.kind)) { choice in
-                    Button(choice.title, systemImage: focus.adjusted[ayah] == choice ? "checkmark" : choice.systemImage) {
-                        model.adjust(ayah, to: choice)
-                    }
-                }
-            }
-        } else {
+        // While memorizing, tapping the ayah is how it's marked, so there's nothing to add here.
+        if model.focus == nil {
             Button("Memorize from here", systemImage: "leaf") {
                 if let piece = LearningPassage.piece(from: ayah, size: environment.settings.pieceSize, catalog: environment.quran) {
                     model.memorize(piece)

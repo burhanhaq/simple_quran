@@ -5,7 +5,8 @@ import SwiftData
 
 enum RecordingPhase: Equatable {
     case idle
-    case countdown(Int)
+    /// The mic button turns into the stop button before recording begins, so the start is visible.
+    case starting
     case recording
     case finishing
     case comparing
@@ -18,13 +19,21 @@ final class RecitationRecordingController: NSObject, AVAudioRecorderDelegate, AV
     private var recorder: AVAudioRecorder?
     private var player: AVAudioPlayer?
     private var context: ModelContext?
-    private var countdownToken: UUID?
+    /// Long enough for the start animation to finish before the first word is recorded.
+    static let startDelay: Duration = .milliseconds(600)
+    private var startToken: UUID?
     private var pendingRecording: (id: UUID, collectionID: UUID, url: URL)?
     private var playbackContinuation: CheckedContinuation<Void, Error>?
     var phase: RecordingPhase = .idle
     var userMessage: UserFacingMessage?
-    private var latestURL: URL?
+    private var latestURL: URL? {
+        didSet { latestDuration = latestURL.flatMap { try? AVAudioPlayer(contentsOf: $0).duration } }
+    }
     var isPlayingComparison = false
+    /// When the current recording began, for the running timer.
+    private(set) var recordingStartedAt: Date?
+    /// How long the latest recording is.
+    private(set) var latestDuration: TimeInterval?
 
     /// Whether the selected practice collection has a playable recording.
     var hasRecording: Bool { latestURL != nil }
@@ -59,20 +68,17 @@ final class RecitationRecordingController: NSObject, AVAudioRecorderDelegate, AV
         userMessage = nil
         currentCollectionID = collectionID
         let token = UUID()
-        countdownToken = token
+        startToken = token
         let granted = await requestPermission()
-        guard countdownToken == token else { return }
+        guard startToken == token else { return }
         guard granted else {
-            countdownToken = nil
+            startToken = nil
             userMessage = UserFacingMessage.from(.microphoneDenied)
             return
         }
-        for value in [3, 2, 1] {
-            guard countdownToken == token else { return }
-            phase = .countdown(value)
-            try? await Task.sleep(for: .seconds(1))
-        }
-        guard countdownToken == token else { return }
+        phase = .starting
+        try? await Task.sleep(for: Self.startDelay)
+        guard startToken == token else { return }
         do {
             try AudioSessionController.shared.configure(.recording)
             let id = UUID()
@@ -89,11 +95,12 @@ final class RecitationRecordingController: NSObject, AVAudioRecorderDelegate, AV
             pendingRecording = (id, collectionID, url)
             guard recorder.record() else { throw AppError.recordingFailed }
             self.recorder = recorder
-            countdownToken = nil
+            startToken = nil
+            recordingStartedAt = .now
             phase = .recording
         } catch {
             if let url = pendingRecording?.url { try? FileManager.default.removeItem(at: url) }
-            countdownToken = nil
+            startToken = nil
             pendingRecording = nil
             recorder = nil
             phase = .idle
@@ -103,12 +110,12 @@ final class RecitationRecordingController: NSObject, AVAudioRecorderDelegate, AV
     }
 
     func stopRecording() {
-        countdownToken = nil
+        startToken = nil
         switch phase {
-        case .countdown:
-            countdownToken = nil
-            phase = .idle
+        case .starting:
+            phase = latestURL == nil ? .idle : .comparing
         case .recording:
+            recordingStartedAt = nil
             phase = .finishing
             recorder?.stop()
         default:
@@ -141,7 +148,7 @@ final class RecitationRecordingController: NSObject, AVAudioRecorderDelegate, AV
 
     func selectCollection(_ collectionID: UUID) {
         currentCollectionID = collectionID
-        guard phase != .recording, phase != .finishing, !isCountingDown else { return }
+        guard phase != .recording, phase != .finishing, phase != .starting else { return }
         latestURL = latestURL(for: collectionID)
         phase = latestURL == nil ? .idle : .comparing
     }
@@ -162,6 +169,7 @@ final class RecitationRecordingController: NSObject, AVAudioRecorderDelegate, AV
         if let url = try? fileURL(id: record.id) {
             try? FileManager.default.removeItem(at: url)
         }
+        cancelComparisonPlayback()
         context?.delete(record)
         try? context?.save()
         latestURL = nil
@@ -217,7 +225,7 @@ final class RecitationRecordingController: NSObject, AVAudioRecorderDelegate, AV
     nonisolated func audioRecorderDidFinishRecording(_ recorder: AVAudioRecorder, successfully flag: Bool) {
         Task { @MainActor in
             self.recorder = nil
-            self.countdownToken = nil
+            self.startToken = nil
             guard flag, let pending = self.pendingRecording else {
                 if let url = self.pendingRecording?.url { try? FileManager.default.removeItem(at: url) }
                 self.pendingRecording = nil
@@ -284,11 +292,6 @@ final class RecitationRecordingController: NSObject, AVAudioRecorderDelegate, AV
             throw AppError.persistenceFailure
         }
         for url in obsoleteFiles { try? FileManager.default.removeItem(at: url) }
-    }
-
-    private var isCountingDown: Bool {
-        if case .countdown = phase { return true }
-        return false
     }
 
     private func latestRecord(for collectionID: UUID) -> RecitationRecordingRecord? {

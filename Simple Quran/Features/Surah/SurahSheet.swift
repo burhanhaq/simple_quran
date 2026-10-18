@@ -22,7 +22,6 @@ struct SurahSheet: View {
         }
         .foregroundStyle(Color.appBrownText)
         .sheet(isPresented: $model.showsOptions) { RepeatOptions(model: model) }
-        .sheet(isPresented: $model.showsAdjust) { AdjustAyahs(model: model) }
         .sheet(isPresented: $model.showsPassagePicker) {
             if let focus = model.focus {
                 PassagePickerView(startAyah: focus.range.startGlobalAyah, currentRange: focus.range, allowedRange: model.planRange) { newRange, size in
@@ -62,6 +61,8 @@ private struct ReadingOverview: View {
     private var memorized: Int { span.map { index.count(.memorized, in: $0) } ?? 0 }
     private var total: Int { span?.count ?? 0 }
     private var freshness: Freshness? { span.flatMap { index.freshness(of: $0, cycle: environment.settings.revisionCycle) } }
+    /// A short surah is one piece, so there are no parts to list.
+    private var hasParts: Bool { model.pieces.count > 1 }
 
     var body: some View {
         ScrollView {
@@ -70,15 +71,16 @@ private struct ReadingOverview: View {
                 header
                 status
                 revision
-                PieceStrip(model: model, index: index)
                 actions
                 knownRow
-                piecesList
+                if hasParts { piecesList }
             }
             .padding(.horizontal, 22).padding(.top, 20).padding(.bottom, 28)
             .frame(maxWidth: 680).frame(maxWidth: .infinity)
         }
         .scrollBounceBehavior(.basedOnSize)
+        // At peek height a drag should open the sheet, not scroll what's hidden below the player.
+        .scrollDisabled(model.detent == SurahSheetDetent.peek)
         .animation(.snappy, value: model.undo?.id)
     }
 
@@ -243,7 +245,7 @@ private struct ReadingOverview: View {
         return calendar.startOfDay(for: date).formatted(.relative(presentation: .named, unitsStyle: .wide))
     }
 
-    private var action: SurahAction? { SurahAction.make(pieces: model.pieces, chosen: model.chosenPiece, index: index) }
+    private var action: SurahAction? { SurahAction.make(pieces: model.pieces, index: index) }
 
     private var actions: some View {
         HStack(spacing: 10) {
@@ -265,11 +267,8 @@ private struct ReadingOverview: View {
         switch action {
         case .start: return String(localized: "Start memorizing")
         case .continue(let piece):
-            let label = LearningPassage.ayahLabel(piece, catalog: environment.quran)
-            return model.chosenPiece == nil ? String(localized: "Continue · \(label)") : String(localized: "Memorize \(label)")
-        case .revise(let pieces):
-            guard model.chosenPiece != nil, let piece = pieces.first else { return String(localized: "Revise") }
-            return String(localized: "Revise \(LearningPassage.ayahLabel(piece, catalog: environment.quran))")
+            return String(localized: "Continue · \(LearningPassage.ayahLabel(piece, catalog: environment.quran))")
+        case .revise: return String(localized: "Revise")
         }
     }
 
@@ -305,38 +304,9 @@ private struct ReadingOverview: View {
 
     private var piecesList: some View {
         let groups = model.groups
-        return ForEach(groups) { group in
-            VStack(alignment: .leading, spacing: 10) {
-                Text(groups.count == 1 ? String(localized: "Memorize in parts") : group.surah.displayName)
-                    .font(.subheadline.weight(.semibold)).foregroundStyle(Color.secondaryWarm)
-                // Lazy so Al-Baqarah's hundred pieces only build as they scroll into view.
-                LazyVStack(spacing: 0) {
-                    ForEach(group.pieces, id: \.self) { piece in
-                        PieceRow(model: model, piece: piece, index: index)
-                        if piece != group.pieces.last { Divider().padding(.leading, 52) }
-                    }
-                }
-                .background(Color.parchment.opacity(0.6), in: RoundedRectangle(cornerRadius: AppTheme.tightRadius))
-            }
-        }
-    }
-}
-
-/// The surah drawn as its pieces, each colored by how far along it is. Tapping one shows it in the text.
-private struct PieceStrip: View {
-    @Environment(AppEnvironment.self) private var environment
-    let model: SurahScreenModel
-    let index: ProgressIndex
-
-    /// Up to this many pieces share the width; longer surahs scroll.
-    private static let fittingCount = 18
-
-    var body: some View {
-        let pieces = model.pieces
-        VStack(alignment: .leading, spacing: 10) {
+        return VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text(pieces.count == 1 ? String(localized: "1 piece") : String(localized: "\(pieces.count) pieces"))
-                    .font(.caption.weight(.medium)).foregroundStyle(Color.secondaryWarm)
+                Text("Memorize in parts").font(.subheadline.weight(.semibold)).foregroundStyle(Color.secondaryWarm)
                 Spacer()
                 Menu {
                     Picker("Piece size", selection: Bindable(environment.settings).pieceSize) {
@@ -350,100 +320,120 @@ private struct PieceStrip: View {
                 }
                 .accessibilityIdentifier("surah.pieceSize")
             }
-            if pieces.count <= Self.fittingCount {
-                HStack(spacing: 4) {
-                    ForEach(pieces, id: \.self) { segment($0).frame(maxWidth: .infinity) }
+            ForEach(groups) { group in
+                if groups.count > 1 {
+                    Text(group.surah.displayName).font(.footnote.weight(.semibold)).foregroundStyle(Color.secondaryWarm)
+                        .padding(.top, 6)
                 }
-            } else {
-                ScrollView(.horizontal, showsIndicators: false) {
-                    LazyHStack(spacing: 4) {
-                        ForEach(pieces, id: \.self) { segment($0).frame(width: 16) }
+                // Lazy so Al-Baqarah's pages only build as they scroll into view.
+                LazyVStack(spacing: 0) {
+                    ForEach(group.pages) { page in
+                        PageRow(model: model, page: page, index: index)
+                        if page != group.pages.last { Divider().padding(.leading, 50) }
                     }
                 }
+                .background(Color.parchment.opacity(0.6), in: RoundedRectangle(cornerRadius: AppTheme.tightRadius))
             }
-            if let chosen = model.chosenPiece {
-                Text("\(LearningPassage.ayahLabel(chosen, catalog: environment.quran)) · \(index.status(of: chosen).title)")
-                    .font(.caption).foregroundStyle(Color.secondaryWarm)
+        }
+    }
+}
+
+/// One mushaf page: its place in the surah, its opening words, and a chip for each piece on it.
+/// The row opens the page's next piece; a chip opens that piece.
+private struct PageRow: View {
+    @Environment(AppEnvironment.self) private var environment
+    let model: SurahScreenModel
+    let page: SurahPageRow
+    let index: ProgressIndex
+
+    var body: some View {
+        let range = page.range
+        let status = index.status(of: range)
+        let due = index.isDue(range)
+        let freshness = index.freshness(of: range, cycle: environment.settings.revisionCycle)
+        HStack(spacing: 12) {
+            Button { model.open(page, index: index) } label: {
+                HStack(spacing: 12) {
+                    Image(systemName: due ? "arrow.counterclockwise" : status.systemImage)
+                        .foregroundStyle(status == .notStarted ? Color.secondaryWarm : (due ? Freshness.needsRevision : freshness ?? .fresh).color)
+                        .frame(width: 24)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            Text("Page \(page.pageInSurah)").font(.headline).fixedSize()
+                            Spacer(minLength: 0)
+                            Text(page.openingWords).font(.quran(.listName)).lineLimit(1)
+                                .environment(\.layoutDirection, .rightToLeft)
+                                .accessibilityHidden(true)
+                        }
+                        Text(caption(range: range, status: status, due: due, freshness: freshness))
+                            .font(.caption).foregroundStyle(Color.secondaryWarm).lineLimit(1)
+                    }
+                    if page.pieces.count == 1 {
+                        Image(systemName: "chevron.right").font(.caption).foregroundStyle(Color.secondaryWarm)
+                    }
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityIdentifier("surah.page.\(page.mushafPage)")
+            if page.pieces.count > 1 {
+                HStack(spacing: 4) {
+                    ForEach(page.pieces, id: \.self) { chip($0) }
+                }
+            }
+        }
+        .padding(.horizontal, 14).padding(.vertical, 10)
+        .contextMenu {
+            if status != .memorized {
+                Button("I know this page", systemImage: MemorizationStatus.memorized.systemImage) { model.markKnown(range, index: index) }
+            } else {
+                Button("This page needs revision", systemImage: "arrow.counterclockwise") { model.markNeedsRevision(range) }
             }
         }
     }
 
-    private func segment(_ piece: VerseRange) -> some View {
+    private func caption(range: VerseRange, status: MemorizationStatus, due: Bool, freshness: Freshness?) -> String {
+        let state: String
+        if due {
+            state = Freshness.needsRevision.title
+        } else if status == .memorized {
+            state = (freshness ?? .fresh).memorizedLabel
+        } else {
+            let memorized = index.count(.memorized, in: range)
+            state = memorized > 0 ? String(localized: "\(memorized) of \(range.count) memorized") : status.title
+        }
+        return [String(localized: "p. \(page.mushafPage)"), LearningPassage.ayahLabel(range, catalog: environment.quran), state]
+            .joined(separator: " · ")
+    }
+
+    private func chip(_ piece: VerseRange) -> some View {
         let status = index.status(of: piece)
         let freshness = index.freshness(of: piece, cycle: environment.settings.revisionCycle)
-        let chosen = model.chosenPiece == piece
-        return Button { withAnimation(.snappy) { model.choose(piece) } } label: {
+        return Button { model.open(piece, index: index) } label: {
             RoundedRectangle(cornerRadius: 4)
                 .fill(fill(status, freshness: freshness))
-                .frame(height: chosen ? 20 : 14)
-                .overlay {
-                    RoundedRectangle(cornerRadius: 4)
-                        .strokeBorder(chosen ? Color.appBrownText : .clear, lineWidth: 1.5)
-                }
-                .frame(height: 22)
+                .frame(width: 14, height: 22)
+                .frame(minHeight: 44)
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .accessibilityLabel("\(LearningPassage.ayahLabel(piece, catalog: environment.quran)), \(status == .memorized ? (freshness ?? .fresh).memorizedLabel : status.title)")
-        .accessibilityAddTraits(chosen ? .isSelected : [])
+        .accessibilityIdentifier("surah.piece.\(piece.startGlobalAyah)")
     }
 
     private func fill(_ status: MemorizationStatus, freshness: Freshness?) -> Color {
         switch status {
         case .memorized: (freshness ?? .fresh).color
         case .learning: Color.bronze.opacity(0.6)
-        case .notStarted: Color.warmBorder.opacity(0.55)
+        case .notStarted: Color.warmBorder
         }
-    }
-}
-
-private struct PieceRow: View {
-    @Environment(AppEnvironment.self) private var environment
-    let model: SurahScreenModel
-    let piece: VerseRange
-    let index: ProgressIndex
-
-    var body: some View {
-        let status = index.status(of: piece)
-        let due = index.isDue(piece)
-        let freshness = index.freshness(of: piece, cycle: environment.settings.revisionCycle)
-        Button { model.open(piece, index: index) } label: {
-            HStack(spacing: 14) {
-                Image(systemName: due ? "arrow.counterclockwise" : status.systemImage)
-                    .foregroundStyle(status == .notStarted ? Color.secondaryWarm : (due ? Freshness.needsRevision : freshness ?? .fresh).color).frame(width: 24)
-                VStack(alignment: .leading, spacing: 4) {
-                    Text(LearningPassage.ayahLabel(piece, catalog: environment.quran)).font(.headline)
-                    Text(statusText(status: status, due: due, freshness: freshness)).font(.caption).foregroundStyle(Color.secondaryWarm)
-                }
-                Spacer()
-                Image(systemName: "chevron.right").font(.caption).foregroundStyle(Color.secondaryWarm)
-            }
-            .padding(.horizontal, 14).padding(.vertical, 12)
-            .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .accessibilityIdentifier("surah.piece.\(piece.startGlobalAyah)")
-        .contextMenu {
-            if status != .memorized {
-                Button("I know these ayahs", systemImage: MemorizationStatus.memorized.systemImage) { model.markKnown(piece, index: index) }
-            } else {
-                Button("These need revision", systemImage: "arrow.counterclockwise") { model.markNeedsRevision(piece) }
-            }
-        }
-    }
-
-    private func statusText(status: MemorizationStatus, due: Bool, freshness: Freshness?) -> String {
-        if due { return Freshness.needsRevision.title }
-        if status == .memorized { return (freshness ?? .fresh).memorizedLabel }
-        let memorized = index.count(.memorized, in: piece)
-        return memorized > 0 ? String(localized: "\(memorized) of \(piece.count) memorized") : status.title
     }
 }
 
 // MARK: - Memorizing a piece
 
-/// Coaches one piece in place: the steps as a path, the player with its repeat count, and the
-/// optional check. Answering is one tap; skipping it is just Done or Next.
+/// Coaches one piece in place: Learn with the player and repeat count, or Test with the text
+/// hidden, the recorder, and the optional check. Answering is one tap; skipping it is just Done or Next.
 private struct FocusCoach: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.verticalSizeClass) private var verticalSizeClass
@@ -455,23 +445,20 @@ private struct FocusCoach: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 header
-                StepPath(current: focus.step) { model.setStep($0) }
-                    .disabled(model.recordingBusy)
-                Text(focus.step.hint).font(.footnote).foregroundStyle(Color.secondaryWarm)
-                controls
-                if focus.step == .fromMemory {
+                modePicker
+                hintRow
+                switch focus.mode {
+                case .learn: controls
+                case .test:
+                    RecitationBar(model: model)
                     checkCard
-                } else if let next = focus.step.next {
-                    Button { model.setStep(next) } label: {
-                        HStack { Text("Next: \(next.title)"); Image(systemName: "arrow.right") }.frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(WarmButtonStyle()).disabled(model.recordingBusy).accessibilityIdentifier("session.nextStep")
                 }
             }
             .padding(.horizontal, 22).padding(.top, 20).padding(.bottom, 24)
             .frame(maxWidth: 680).frame(maxWidth: .infinity)
         }
         .scrollBounceBehavior(.basedOnSize)
+        .animation(.snappy, value: focus.mode)
     }
 
     /// One row when it fits; with large text the buttons move under the passage name.
@@ -519,13 +506,35 @@ private struct FocusCoach: View {
         return String(localized: "MEMORIZE")
     }
 
+    private var modePicker: some View {
+        Picker("Mode", selection: Binding(get: { focus.mode }, set: { model.setMode($0) })) {
+            ForEach(CoachMode.allCases) { Text($0.title).tag($0) }
+        }
+        .pickerStyle(.segmented)
+        .disabled(model.recordingBusy)
+        .accessibilityIdentifier("session.mode")
+    }
+
+    private var hintRow: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(focus.mode.hint).font(.footnote).foregroundStyle(Color.secondaryWarm)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            if focus.mode == .test, !focus.hiddenAyahs.isEmpty {
+                Button("Show text") { withAnimation(.snappy) { model.showAllText() } }
+                    .font(.footnote.weight(.semibold)).frame(minHeight: 36)
+                    .accessibilityIdentifier("session.showText")
+            }
+        }
+    }
+
     private var controls: some View {
         HStack(spacing: verticalSizeClass == .compact ? 10 : 18) {
             Button { model.step(by: -1) } label: {
                 Image(systemName: "backward.end.fill").font(.title3).frame(width: 44, height: 44)
             }
             .accessibilityLabel("Previous ayah").accessibilityIdentifier("session.previous")
-            .disabled(model.recordingBusy || !model.canStepBack)
+            .disabled(!model.canStepBack)
             Button { model.togglePlayback() } label: {
                 ZStack {
                     PlayGlyph(systemName: model.isPlaying ? "pause.fill" : "play.fill", size: 56)
@@ -533,39 +542,20 @@ private struct FocusCoach: View {
                 }
             }
             .accessibilityLabel(model.isPlaying ? "Pause" : "Play").accessibilityIdentifier("session.play")
-            .disabled(model.recordingBusy)
             Button { model.step(by: 1) } label: {
                 Image(systemName: "forward.end.fill").font(.title3).frame(width: 44, height: 44)
             }
             .accessibilityLabel("Next ayah").accessibilityIdentifier("session.next")
-            .disabled(model.recordingBusy || !model.canStepForward)
-            if focus.step != .listen { recordButton }
+            .disabled(!model.canStepForward)
             if let practice = focus.practice { RepeatChip(model: model, practice: practice) }
         }
         .buttonStyle(.plain).foregroundStyle(Color.bronze)
         .frame(maxWidth: .infinity)
     }
 
-    private var recordButton: some View {
-        Button { model.toggleRecording() } label: {
-            Image(systemName: model.recordingBusy ? "stop.circle.fill" : "mic.circle")
-                .font(.title2).frame(width: 44, height: 44)
-        }
-        .disabled(environment.recorder.phase == .finishing)
-        .accessibilityLabel(model.recordingBusy ? "Stop recording" : "Record myself")
-        .accessibilityIdentifier("session.record")
-    }
-
     private var checkCard: some View {
         VStack(alignment: .leading, spacing: 10) {
-            HStack {
-                Text("How did it go?").font(.subheadline.weight(.semibold))
-                Spacer()
-                if environment.recorder.hasRecording {
-                    Button(environment.recorder.isPlayingComparison ? "Stop" : "Hear myself") { model.toggleRecordingPlayback() }
-                        .font(.footnote.weight(.semibold))
-                }
-            }
+            Text("How did it go?").font(.subheadline.weight(.semibold))
             HStack(spacing: 8) {
                 ForEach(CheckAnswer.choices(for: focus.kind)) { choice in
                     let selected = focus.answer == choice
@@ -582,8 +572,9 @@ private struct FocusCoach: View {
                 }
             }
             HStack {
-                Button(focus.adjusted.isEmpty ? "Some ayahs were different" : "\(focus.adjusted.count) ayahs adjusted") { model.showsAdjust = true }
-                    .font(.footnote).frame(minHeight: 36).accessibilityIdentifier("session.adjust")
+                Text(markedSummary)
+                    .font(.footnote).foregroundStyle(focus.slipped.isEmpty ? Color.secondaryWarm : Color.dangerWarm)
+                    .accessibilityIdentifier("session.marked")
                 Spacer()
                 if let next = model.nextPassage(index: index) {
                     Button { model.advance(to: next, index: index) } label: {
@@ -597,50 +588,111 @@ private struct FocusCoach: View {
         }
         .disabled(model.recordingBusy)
     }
+
+    private var markedSummary: String {
+        switch focus.slipped.count {
+        case 0: String(localized: "Tap any ayah you slipped on")
+        case 1: String(localized: "1 ayah marked")
+        default: String(localized: "\(focus.slipped.count) ayahs marked")
+        }
+    }
 }
 
-/// Listen → Recite along → From memory, as a path the user can jump along. With large text
-/// the steps stack instead, so the coach never grows wider than the screen.
-private struct StepPath: View {
-    let current: SessionStep
-    let onSelect: (SessionStep) -> Void
+/// Record yourself reciting, then hear it back. Starting turns the mic into a stop button with
+/// a short animation; recording shows a pulsing dot and a running timer.
+private struct RecitationBar: View {
+    @Environment(AppEnvironment.self) private var environment
+    let model: SurahScreenModel
+
+    private var recorder: RecitationRecordingController { environment.recorder }
+    private var isActive: Bool { recorder.phase == .starting || recorder.phase == .recording }
 
     var body: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 6) {
-                ForEach(SessionStep.allCases) { step in
-                    button(step).fixedSize()
-                    if step != SessionStep.allCases.last {
-                        Rectangle().fill(isDone(step) ? Color.olive.opacity(0.6) : Color.warmBorder)
-                            .frame(minWidth: 6, maxWidth: .infinity, maxHeight: 1)
-                            .accessibilityHidden(true)
-                    }
+        HStack(spacing: 14) {
+            recordButton
+            status
+            Spacer(minLength: 0)
+            if !isActive, recorder.hasRecording, recorder.phase != .finishing {
+                Button { recorder.deleteLatest() } label: {
+                    Image(systemName: "trash").font(.body).frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain).foregroundStyle(Color.secondaryWarm)
+                .accessibilityLabel("Delete recording").accessibilityIdentifier("session.deleteRecording")
+            }
+        }
+        .animation(.spring(duration: 0.4), value: recorder.phase)
+    }
+
+    private var recordButton: some View {
+        Button { model.toggleRecording() } label: {
+            ZStack {
+                Circle().fill(isActive ? Color.dangerWarm : Color.appCollectedFill)
+                Image(systemName: isActive ? "stop.fill" : "mic.fill")
+                    .font(.title2)
+                    .foregroundStyle(isActive ? Color.white : Color.bronze)
+                    .contentTransition(.symbolEffect(.replace))
+            }
+            .frame(width: 56, height: 56)
+            .scaleEffect(recorder.phase == .starting ? 1.12 : 1)
+            .overlay {
+                if recorder.phase == .starting {
+                    Circle().strokeBorder(Color.dangerWarm.opacity(0.5), lineWidth: 3)
+                        .scaleEffect(1.3)
+                        .transition(.scale(scale: 0.8).combined(with: .opacity))
                 }
             }
-            VStack(alignment: .leading, spacing: 2) {
-                ForEach(SessionStep.allCases) { button($0) }
-            }
-        }
-    }
-
-    private func isDone(_ step: SessionStep) -> Bool {
-        (SessionStep.allCases.firstIndex(of: step) ?? 0) < (SessionStep.allCases.firstIndex(of: current) ?? 0)
-    }
-
-    private func button(_ step: SessionStep) -> some View {
-        Button { onSelect(step) } label: {
-            HStack(spacing: 5) {
-                Image(systemName: isDone(step) ? "checkmark.circle.fill" : step == current ? "circle.inset.filled" : "circle")
-                    .font(.caption)
-                Text(step.title).font(.caption.weight(step == current ? .semibold : .regular))
-            }
-            .foregroundStyle(step == current ? Color.appBrownText : isDone(step) ? Color.olive : Color.secondaryWarm)
-            .frame(minHeight: 36)
-            .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityAddTraits(step == current ? .isSelected : [])
-        .accessibilityIdentifier("session.step.\(step.rawValue)")
+        .disabled(recorder.phase == .finishing)
+        .accessibilityLabel(isActive ? "Stop recording" : "Record myself")
+        .accessibilityIdentifier("session.record")
+    }
+
+    @ViewBuilder
+    private var status: some View {
+        switch recorder.phase {
+        case .starting:
+            Text("Starting…").font(.subheadline.weight(.medium)).foregroundStyle(Color.dangerWarm)
+        case .recording:
+            HStack(spacing: 8) {
+                Image(systemName: "circle.fill").font(.caption2).foregroundStyle(Color.dangerWarm)
+                    .symbolEffect(.pulse, options: .repeating)
+                if let start = recorder.recordingStartedAt {
+                    Text(timerInterval: start...Date.distantFuture, countsDown: false)
+                        .font(.subheadline.weight(.semibold)).monospacedDigit()
+                }
+                Text("Recording").font(.subheadline).foregroundStyle(Color.secondaryWarm)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("session.recording")
+        case .finishing:
+            ProgressView()
+        case .idle, .comparing:
+            if recorder.hasRecording {
+                Button { model.toggleRecordingPlayback() } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: recorder.isPlayingComparison ? "pause.fill" : "play.fill")
+                            .contentTransition(.symbolEffect(.replace))
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Your recitation").font(.subheadline.weight(.semibold))
+                            if let duration = recorder.latestDuration {
+                                Text(Duration.seconds(duration).formatted(.time(pattern: .minuteSecond)))
+                                    .font(.caption).monospacedDigit().foregroundStyle(Color.secondaryWarm)
+                            }
+                        }
+                    }
+                    .frame(minHeight: 44).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain).foregroundStyle(Color.bronze)
+                .accessibilityLabel(recorder.isPlayingComparison ? "Stop your recitation" : "Play your recitation")
+                .accessibilityIdentifier("session.playRecording")
+            } else {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Record yourself").font(.subheadline.weight(.semibold))
+                    Text("Optional. Play it back to check.").font(.caption).foregroundStyle(Color.secondaryWarm)
+                }
+            }
+        }
     }
 }
 
@@ -685,50 +737,12 @@ private struct RepeatOptions: View {
                         Stepper("Pause between ayahs: \(practice.settings.pauseSeconds)s", value: model.setting(\.pauseSeconds, in: practice), in: 0...5)
                         Toggle("Move to the next ayah myself", isOn: model.setting(\.advanceManually, in: practice))
                     }
-                    if environment.recorder.hasRecording {
-                        Section("Your recording") {
-                            Button("Delete recording", role: .destructive) { environment.recorder.deleteLatest() }
-                        }
-                    }
                 }
             }
             .warmListChrome().navigationTitle("Repeat and pause").navigationBarTitleDisplayMode(.inline)
             .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { model.showsOptions = false } } }
         }
         .presentationDetents([.medium, .large])
-        .tint(Color.bronze)
-    }
-}
-
-private struct AdjustAyahs: View {
-    @Environment(AppEnvironment.self) private var environment
-    let model: SurahScreenModel
-
-    var body: some View {
-        NavigationStack {
-            List {
-                Section {
-                    Text("Only change the ayahs that went differently. The rest follow your answer for the passage.")
-                        .font(.subheadline).foregroundStyle(Color.secondaryWarm)
-                }.listRowBackground(Color.clear)
-                if let focus = model.focus {
-                    ForEach(environment.quran.verses(in: focus.range)) { verse in
-                        VStack(alignment: .leading, spacing: 10) {
-                            Text("Ayah \(verse.ayahInSurah)").font(.headline)
-                            Picker("Ayah \(verse.ayahInSurah)", selection: Binding(
-                                get: { model.focus?.adjusted[verse.globalAyah] },
-                                set: { model.adjust(verse.globalAyah, to: $0) }
-                            )) {
-                                Text("Same").tag(CheckAnswer?.none)
-                                ForEach(CheckAnswer.choices(for: focus.kind)) { Text($0.title).tag(Optional($0)) }
-                            }.pickerStyle(.segmented)
-                        }.padding(.vertical, 6).warmListRow()
-                    }
-                }
-            }
-            .warmListChrome().navigationTitle("Adjust ayahs").navigationBarTitleDisplayMode(.inline)
-            .toolbar { ToolbarItem(placement: .confirmationAction) { Button("Done") { model.showsAdjust = false } } }
-        }
         .tint(Color.bronze)
     }
 }

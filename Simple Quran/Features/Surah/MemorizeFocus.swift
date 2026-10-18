@@ -1,34 +1,23 @@
 import Foundation
 
-/// The three steps of memorizing a passage. Suggested in order, but the user can move freely.
-enum SessionStep: String, CaseIterable, Identifiable {
-    case listen
-    case reciteAlong
-    case fromMemory
+/// The two ways to work on a piece: learn it with the text in view, then test yourself with it hidden.
+enum CoachMode: String, CaseIterable, Identifiable {
+    case learn
+    case test
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .listen: String(localized: "Listen")
-        case .reciteAlong: String(localized: "Recite along")
-        case .fromMemory: String(localized: "From memory")
+        case .learn: String(localized: "Learn")
+        case .test: String(localized: "Test")
         }
     }
 
     var hint: String {
         switch self {
-        case .listen: String(localized: "Listen a few times and follow the words.")
-        case .reciteAlong: String(localized: "Recite with the reciter. Pause whenever you need.")
-        case .fromMemory: String(localized: "Recite without looking. Tap an ayah to peek.")
-        }
-    }
-
-    var next: SessionStep? {
-        switch self {
-        case .listen: .reciteAlong
-        case .reciteAlong: .fromMemory
-        case .fromMemory: nil
+        case .learn: String(localized: "Listen and repeat after the reciter.")
+        case .test: String(localized: "Recite from memory. Tap an ayah if you need to see it.")
         }
     }
 }
@@ -48,6 +37,14 @@ enum CheckAnswer: String, Identifiable {
         switch kind {
         case .learn: [.memorized, .almost, .stillLearning]
         case .review: [.stillSolid, .shaky, .forgot]
+        }
+    }
+
+    /// What an ayah the user marked as slipped gets when they answer for the piece.
+    static func slipped(for kind: SessionKind) -> CheckAnswer {
+        switch kind {
+        case .learn: .stillLearning
+        case .review: .forgot
         }
     }
 
@@ -97,11 +94,14 @@ struct MemorizeFocus {
     /// Review passages still waiting after this one.
     var queue: [VerseRange]
     var reviewsDone = 0
-    var step: SessionStep
+    var mode: CoachMode
     var practice: PracticeSet?
-    var peeked: Set<Int> = []
+    /// Ayahs the user tapped open while testing.
+    var revealed: Set<Int> = []
+    /// Ayahs the user marked as slipped. They get a weaker answer than the rest of the piece.
+    var slipped: Set<Int> = []
+    var showsAllText = false
     var answer: CheckAnswer?
-    var adjusted: [Int: CheckAnswer] = [:]
     var engaged = false
     /// Listening time already saved for this piece, so moving on never records it twice.
     var committedSeconds: Double = 0
@@ -112,7 +112,7 @@ struct MemorizeFocus {
         planID = route.planID
         scope = route.scope
         queue = route.reviewQueue
-        step = route.kind == .review ? .fromMemory : .listen
+        mode = Self.startingMode(for: route.kind)
         practice = route.savedPractice
     }
 
@@ -121,18 +121,50 @@ struct MemorizeFocus {
     }
 
     var hiddenAyahs: Set<Int> {
-        step == .fromMemory ? Set(range.globalAyahs).subtracting(peeked) : []
+        mode == .test && !showsAllText ? Set(range.globalAyahs).subtracting(revealed) : []
     }
 
-    /// Starts the piece over at its first step, keeping where it sits in a plan or review queue.
+    /// Testing, a hidden ayah opens and counts as slipped, since the user needed to see it.
+    /// A visible ayah toggles its mark, so a peek that wasn't a slip can be taken back.
+    mutating func tap(_ ayah: Int) {
+        guard range.contains(ayah) else { return }
+        engaged = true
+        if hiddenAyahs.contains(ayah) {
+            revealed.insert(ayah)
+            slipped.insert(ayah)
+        } else if slipped.contains(ayah) {
+            slipped.remove(ayah)
+        } else {
+            slipped.insert(ayah)
+        }
+    }
+
+    /// The answer each ayah gets: slipped ayahs the weaker one, the rest the piece's answer.
+    /// With no answer nothing changes, and a review only speaks for ayahs memorized going in.
+    func ratings(isMemorized: (Int) -> Bool) -> [CheckAnswer: [Int]] {
+        guard let answer else { return [:] }
+        var result: [CheckAnswer: [Int]] = [:]
+        for ayah in range.globalAyahs {
+            if kind == .review && !isMemorized(ayah) { continue }
+            result[slipped.contains(ayah) ? CheckAnswer.slipped(for: kind) : answer, default: []].append(ayah)
+        }
+        return result
+    }
+
+    /// Starts the piece over in its first mode, keeping where it sits in a plan or review queue.
     mutating func move(to newRange: VerseRange) {
         range = newRange
-        step = kind == .review ? .fromMemory : .listen
-        peeked = []
+        mode = Self.startingMode(for: kind)
+        revealed = []
+        slipped = []
+        showsAllText = false
         answer = nil
-        adjusted = [:]
         engaged = false
         practice = nil
         committedSeconds = 0
+    }
+
+    private static func startingMode(for kind: SessionKind) -> CoachMode {
+        kind == .review ? .test : .learn
     }
 }

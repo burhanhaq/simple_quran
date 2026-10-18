@@ -183,6 +183,8 @@ struct QuranAyahText: View {
     var isCurrent: Bool
     var isInPassage: Bool = false
     var hidden: Bool
+    /// Marked as slipped while testing; underlined in the danger color.
+    var marked = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -190,10 +192,12 @@ struct QuranAyahText: View {
                 .font(.quran())
                 .lineSpacing(12)
                 .foregroundStyle(Color.appBrownText)
+                .underline(marked, color: .dangerWarm)
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .environment(\.layoutDirection, .rightToLeft)
                 .accessibilityLabel(hidden ? String(localized: "Arabic hidden for recall") : verse.text)
+                .accessibilityValue(marked ? String(localized: "Marked as slipped") : "")
             HStack {
                 if verse.sajdah != .none {
                     StatusChip(title: String(localized: "Sajdah"), tint: .olive)

@@ -58,6 +58,13 @@ final class Simple_QuranUITests: XCTestCase {
         return count.label
     }
 
+    /// Switches the coach from Learn to Test, which hides the text and shows the check.
+    private func switchToTest(_ app: XCUIApplication) {
+        let mode = app.segmentedControls["session.mode"]
+        XCTAssertTrue(mode.waitForExistence(timeout: 3))
+        mode.buttons["Test"].tap()
+    }
+
     @MainActor
     func testThreeTabsPlanAndMemorizingCountsOnlyWhatIsClaimed() {
         let app = launch()
@@ -70,11 +77,10 @@ final class Simple_QuranUITests: XCTestCase {
         app.buttons["memorize.start"].tap()
         XCTAssertTrue(app.buttons["session.play"].waitForExistence(timeout: 5))
         XCTAssertEqual(app.buttons["session.play"].label, "Play")
-        capture(app, name: "Session-Listen")
-        app.buttons["session.nextStep"].tap()
-        app.buttons["session.nextStep"].tap()
+        capture(app, name: "Session-Learn")
+        switchToTest(app)
         XCTAssertTrue(app.buttons["session.answer.memorized"].waitForExistence(timeout: 3))
-        capture(app, name: "Session-FromMemory")
+        capture(app, name: "Session-Test")
         app.buttons["session.answer.memorized"].tap()
         app.buttons["session.done"].tap()
         // Done goes back to reading the surah, with the overview showing what changed.
@@ -92,7 +98,13 @@ final class Simple_QuranUITests: XCTestCase {
         choosePlan(app)
         app.buttons["memorize.start"].tap()
         XCTAssertTrue(app.buttons["session.done"].waitForExistence(timeout: 5))
-        app.buttons["session.step.fromMemory"].tap()
+        switchToTest(app)
+        // Tapping a hidden ayah shows it and marks it, but marks only count with an answer.
+        let ayah = app.buttons["ayah.2"]
+        XCTAssertTrue(ayah.waitForExistence(timeout: 3))
+        ayah.tap()
+        XCTAssertEqual(app.staticTexts["session.marked"].label, "1 ayah marked")
+        capture(app, name: "Session-Marked")
         finishAndClose(app)
         XCTAssertEqual(memorizedCount(app), "0")
     }
@@ -152,11 +164,11 @@ final class Simple_QuranUITests: XCTestCase {
         let memorize = app.buttons["surah.memorize"]
         XCTAssertTrue(memorize.waitForExistence(timeout: 5))
         memorize.tap()
-        XCTAssertTrue(app.buttons["session.step.listen"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.segmentedControls["session.mode"].waitForExistence(timeout: 3))
         XCTAssertTrue(app.buttons["session.repeat"].exists)
         XCTAssertEqual(app.buttons["session.repeat"].label, "Repeat each ayah, 1x")
-        capture(app, name: "Focus-Listen")
-        app.buttons["session.step.fromMemory"].tap()
+        capture(app, name: "Focus-Learn")
+        switchToTest(app)
         app.buttons["session.answer.memorized"].tap()
         app.buttons["session.nextPassage"].tap()
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "PIECE 2 OF")).firstMatch.waitForExistence(timeout: 3))
@@ -215,7 +227,7 @@ final class Simple_QuranUITests: XCTestCase {
         capture(app, name: "Passage-Picker")
         app.buttons["passage.start"].tap()
         XCTAssertTrue(app.buttons["session.play"].waitForExistence(timeout: 3))
-        app.buttons["session.step.fromMemory"].tap()
+        switchToTest(app)
         app.buttons["session.answer.memorized"].tap()
         app.buttons["session.nextPassage"].tap()
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Ayahs 6–16")).firstMatch.waitForExistence(timeout: 3))
@@ -249,7 +261,7 @@ final class Simple_QuranUITests: XCTestCase {
         app.buttons["plan.start"].tap()
         XCTAssertTrue(app.buttons["session.play"].waitForExistence(timeout: 5))
         capture(app, name: "Session-Night-Continuous")
-        app.buttons["session.step.fromMemory"].tap()
+        switchToTest(app)
         XCTAssertTrue(app.buttons["session.answer.memorized"].waitForExistence(timeout: 3))
         capture(app, name: "Session-Night-Recall")
     }
@@ -262,7 +274,7 @@ final class Simple_QuranUITests: XCTestCase {
         for _ in 0..<6 where !start.isHittable { app.swipeUp() }
         start.tap()
         XCTAssertTrue(app.buttons["session.play"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["session.nextStep"].isHittable)
+        XCTAssertTrue(app.segmentedControls["session.mode"].isHittable)
         XCTAssertTrue(app.buttons["session.done"].isHittable)
         capture(app, name: "Session-LargeText")
         app.terminate()
@@ -276,7 +288,7 @@ final class Simple_QuranUITests: XCTestCase {
         }, object: nil)
         XCTAssertEqual(XCTWaiter.wait(for: [rotated], timeout: 5), .completed)
         XCTAssertTrue(landscape.buttons["session.next"].waitForExistence(timeout: 3))
-        XCTAssertTrue(landscape.buttons["session.nextStep"].isHittable)
+        XCTAssertTrue(landscape.segmentedControls["session.mode"].isHittable)
         capture(landscape, name: "Session-Landscape")
     }
 
