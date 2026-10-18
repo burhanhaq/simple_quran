@@ -141,7 +141,8 @@ final class RecitationRecordingController: NSObject, AVAudioRecorderDelegate, AV
                 }
             }
         } catch {
-            userMessage = UserFacingMessage.from(.recordingFailed)
+            // Pausing or leaving cancels playback on purpose, which isn't a failure.
+            if !(error is CancellationError) { userMessage = UserFacingMessage.from(.recordingFailed) }
             throw error
         }
     }

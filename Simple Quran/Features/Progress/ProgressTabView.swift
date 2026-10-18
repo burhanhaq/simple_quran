@@ -129,10 +129,14 @@ struct ProgressTabView: View {
             switch browse {
             case .surahs:
                 ForEach(environment.quran.surahs) { surah in
+                    let spans = JuzSpan.spans(of: surah.range, in: environment.quran.juzs)
                     Button { open(.surah(number: surah.number)) } label: {
-                        MapTile(number: surah.number, range: surah.range, index: index, cycle: cycle)
+                        VStack(spacing: 4) {
+                            MapTile(number: surah.number, range: surah.range, index: index, cycle: cycle)
+                            JuzBar(spans: spans)
+                        }
                     }.buttonStyle(.plain)
-                        .accessibilityLabel("\(surah.englishName), \(SurahProgressSummary(surah: surah, index: index, cycle: cycle).text)")
+                        .accessibilityLabel("\(surah.englishName), \(juzLabel(spans)), \(SurahProgressSummary(surah: surah, index: index, cycle: cycle).text)")
                         .accessibilityIdentifier("progress.surah.\(surah.number)")
                 }
             case .juz:
@@ -181,6 +185,11 @@ struct ProgressTabView: View {
     /// Opens the surah screen with its overview up, so progress and pieces are the first thing seen.
     private func open(_ destination: QuranDestination) {
         environment.openReader(destination, sheet: .half)
+    }
+
+    private func juzLabel(_ spans: [JuzSpan]) -> String {
+        guard let first = spans.first?.juz, let last = spans.last?.juz else { return "" }
+        return first == last ? String(localized: "Juz \(first)") : String(localized: "Juz \(first) to \(last)")
     }
 
     private func activity(_ insights: ProgressInsights) -> some View {
@@ -274,6 +283,45 @@ private struct MapTile: View {
                 RoundedRectangle(cornerRadius: 10)
                     .strokeBorder(learning > 0 ? Color.bronze : Color.warmBorder.opacity(0.6), lineWidth: learning > 0 ? 1.5 : 0.5)
             }
+    }
+}
+
+/// A thin line under a surah tile, split where a new juz begins, with the juz number at each start.
+/// Neighbouring juz alternate tones so the boundary shows even mid-surah.
+private struct JuzBar: View {
+    let spans: [JuzSpan]
+    @ScaledMetric(relativeTo: .caption2) private var labelHeight: CGFloat = 12
+    private static let barHeight: CGFloat = 3
+    private static let labelGap: CGFloat = 2
+    private static let labelSpacing: CGFloat = 2
+
+    var body: some View {
+        Canvas { context, size in
+            let segments = spans.reduce(into: [(span: JuzSpan, x: CGFloat, width: CGFloat)]()) { result, span in
+                result.append((span, result.last.map { $0.x + $0.width } ?? 0, size.width * span.fraction))
+            }
+            context.drawLayer { bar in
+                bar.clip(to: Path(roundedRect: CGRect(x: 0, y: 0, width: size.width, height: Self.barHeight),
+                                  cornerRadius: Self.barHeight / 2))
+                for segment in segments {
+                    let tone = Color.bronze.opacity(segment.span.juz.isMultiple(of: 2) ? 0.3 : 0.7)
+                    bar.fill(Path(CGRect(x: segment.x, y: 0, width: segment.width, height: Self.barHeight)), with: .color(tone))
+                }
+            }
+            // A juz starting near the tile's end is pulled back inside it; one that would overlap the previous number is skipped.
+            var labelEnd = -CGFloat.infinity
+            for segment in segments where segment.span.startsHere {
+                let label = context.resolve(Text("\(segment.span.juz)").font(.caption2.weight(.semibold)).monospacedDigit()
+                    .foregroundStyle(Color.secondaryWarm))
+                let width = label.measure(in: size).width
+                let x = max(0, min(segment.x, size.width - width))
+                guard x >= labelEnd else { continue }
+                context.draw(label, at: CGPoint(x: x, y: Self.barHeight + Self.labelGap), anchor: .topLeading)
+                labelEnd = x + width + Self.labelSpacing
+            }
+        }
+        .frame(height: Self.barHeight + Self.labelGap + labelHeight)
+        .accessibilityHidden(true)
     }
 }
 

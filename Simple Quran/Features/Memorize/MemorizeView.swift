@@ -4,6 +4,7 @@ import SwiftUI
 /// The daily home for memorizing: only what to do now, with everything else one tap away.
 struct MemorizeView: View {
     @Environment(AppEnvironment.self) private var environment
+    @Environment(\.colorScheme) private var colorScheme
     @Query private var verseProgress: [VerseProgress]
     @Query private var sessions: [PracticeSession]
     @Query(filter: #Predicate<PracticeSet> { $0.deletedAt == nil && $0.archivedAt == nil }) private var sets: [PracticeSet]
@@ -63,7 +64,9 @@ struct MemorizeView: View {
                         .accessibilityLabel("Settings").accessibilityIdentifier("memorize.settings")
                 }
             }
-            .sheet(isPresented: $showSettings) { SettingsView() }
+            // An open sheet keeps its old look when Appearance changes, and going back to System
+            // doesn't reset it, so it takes the scheme this screen actually resolved to.
+            .sheet(isPresented: $showSettings) { SettingsView().preferredColorScheme(colorScheme) }
             .sheet(isPresented: $showKnown) {
                 NavigationStack {
                     KnownSurahsView(continueTitle: String(localized: "Save")) {
