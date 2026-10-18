@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// Quran text in the user's chosen layout, shared by the reader and memorize sessions.
+/// Quran text in the user's chosen layout for the surah screen, reading or memorizing a piece.
 struct QuranTextView<AyahMenu: View>: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -10,6 +10,8 @@ struct QuranTextView<AyahMenu: View>: View {
     var selectionEnabled = true
     var focusedAyah: Int? = nil
     var scrollToAyah: Int? = nil
+    /// The piece being memorized; everything else fades back.
+    var focusRange: VerseRange? = nil
     /// Shown under the surah banner in ayah-by-ayah layout.
     var caption: String? = nil
     let onSelect: (Int) -> Void
@@ -33,6 +35,7 @@ struct QuranTextView<AyahMenu: View>: View {
                 basmala: environment.quran.basmala,
                 selectionEnabled: selectionEnabled,
                 focusedAyah: focusedAyah,
+                focusRange: focusRange,
                 onSelect: onSelect
             )
         } else { ayahList }
@@ -55,6 +58,7 @@ struct QuranTextView<AyahMenu: View>: View {
                             QuranAyahText(verse: verse, isCurrent: verse.globalAyah == currentAyah,
                                           hidden: hiddenAyahs.contains(verse.globalAyah))
                         }
+                        .opacity(focusRange.map { $0.contains(verse.globalAyah) ? 1 : MushafTextBuilder.dimmedAlpha } ?? 1)
                     }
                     .buttonStyle(.plain).disabled(!selectionEnabled)
                     .id(verse.globalAyah)
@@ -68,6 +72,7 @@ struct QuranTextView<AyahMenu: View>: View {
             .padding(.horizontal, 22)
             .frame(maxWidth: 740).frame(maxWidth: .infinity)
         }
+        .animation(.easeInOut(duration: 0.25), value: focusRange)
         .scrollPosition(id: $listPosition, anchor: .center)
         .onAppear(perform: seedListPosition)
         .onChange(of: currentAyah) { previous, ayah in

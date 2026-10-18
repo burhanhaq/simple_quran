@@ -26,10 +26,7 @@ struct AppRootView: View {
             GlobalMiniPlayer()
         }
         .fullScreenCover(item: $environment.route) { route in
-            switch route {
-            case .reader(let reader): QuranReaderView(destination: reader.destination, resumesPlayback: reader.resumePlayback)
-            case .session(let session): MemorizeSessionView(route: session)
-            }
+            SurahScreen(route: route, environment: environment)
         }
     }
 }

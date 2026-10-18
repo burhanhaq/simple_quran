@@ -29,6 +29,27 @@ final class Simple_QuranUITests: XCTestCase {
         app.buttons["plan.save"].tap()
     }
 
+    /// Leaves memorizing (Done returns to reading) and closes the surah screen.
+    @MainActor
+    private func finishAndClose(_ app: XCUIApplication) {
+        app.buttons["session.done"].tap()
+        let close = app.buttons["surah.close"]
+        XCTAssertTrue(close.waitForExistence(timeout: 3))
+        close.tap()
+    }
+
+    /// The picker opens from the coach sheet, which ignores a tap while it is still sliding in.
+    @MainActor
+    private func openPassagePicker(_ app: XCUIApplication) {
+        let change = app.buttons["session.change"]
+        XCTAssertTrue(change.waitForExistence(timeout: 5))
+        for _ in 0..<3 {
+            change.tap()
+            if app.pickerWheels.firstMatch.waitForExistence(timeout: 2) { return }
+        }
+        XCTFail("The passage picker didn't open")
+    }
+
     @MainActor
     private func memorizedCount(_ app: XCUIApplication) -> String {
         app.tabBars.buttons["Progress"].tap()
@@ -56,6 +77,10 @@ final class Simple_QuranUITests: XCTestCase {
         capture(app, name: "Session-FromMemory")
         app.buttons["session.answer.memorized"].tap()
         app.buttons["session.done"].tap()
+        // Done goes back to reading the surah, with the overview showing what changed.
+        XCTAssertTrue(app.buttons["surah.memorize"].waitForExistence(timeout: 3))
+        capture(app, name: "Surah-AfterMemorizing")
+        app.buttons["surah.close"].tap()
         XCTAssertTrue(app.navigationBars["Memorize"].waitForExistence(timeout: 3))
         XCTAssertEqual(memorizedCount(app), "7")
         capture(app, name: "Progress-Light")
@@ -67,8 +92,8 @@ final class Simple_QuranUITests: XCTestCase {
         choosePlan(app)
         app.buttons["memorize.start"].tap()
         XCTAssertTrue(app.buttons["session.done"].waitForExistence(timeout: 5))
-        app.segmentedControls.buttons["From memory"].tap()
-        app.buttons["session.done"].tap()
+        app.buttons["session.step.fromMemory"].tap()
+        finishAndClose(app)
         XCTAssertEqual(memorizedCount(app), "0")
     }
 
@@ -84,6 +109,60 @@ final class Simple_QuranUITests: XCTestCase {
         XCTAssertFalse(app.buttons["session.done"].exists)
         XCTAssertFalse(app.buttons["session.answer.memorized"].exists)
         capture(app, name: "Reader")
+        // Listening never starts learning.
+        app.buttons["surah.close"].tap()
+        XCTAssertEqual(memorizedCount(app), "0")
+    }
+
+    /// Progress opens the surah itself with its overview; knowing it is one tap and can be undone.
+    @MainActor
+    func testProgressOpensTheSurahAndMarksItWithUndo() {
+        let app = launch()
+        app.tabBars.buttons["Progress"].tap()
+        let fatiha = app.buttons["progress.surah.1"]
+        XCTAssertTrue(fatiha.waitForExistence(timeout: 3))
+        fatiha.tap()
+        let markKnown = app.buttons["surah.markKnown"]
+        XCTAssertTrue(markKnown.waitForExistence(timeout: 5))
+        XCTAssertTrue(app.buttons["surah.memorize"].exists)
+        capture(app, name: "Surah-Overview")
+        markKnown.tap()
+        let undo = app.buttons["surah.undo"]
+        XCTAssertTrue(undo.waitForExistence(timeout: 3))
+        capture(app, name: "Surah-Undo")
+        undo.tap()
+        XCTAssertTrue(markKnown.waitForExistence(timeout: 3))
+        app.buttons["surah.close"].tap()
+        XCTAssertEqual(memorizedCount(app), "0")
+
+        app.buttons["progress.surah.1"].tap()
+        XCTAssertTrue(markKnown.waitForExistence(timeout: 5))
+        markKnown.tap()
+        XCTAssertTrue(undo.waitForExistence(timeout: 3))
+        app.buttons["surah.close"].tap()
+        XCTAssertEqual(memorizedCount(app), "7")
+    }
+
+    /// Memorizing focuses a piece in place, then moves on to the next one in the same screen.
+    @MainActor
+    func testMemorizingFocusesAPieceAndMovesToTheNext() {
+        let app = launch()
+        app.tabBars.buttons["Progress"].tap()
+        app.buttons["progress.surah.2"].tap()
+        let memorize = app.buttons["surah.memorize"]
+        XCTAssertTrue(memorize.waitForExistence(timeout: 5))
+        memorize.tap()
+        XCTAssertTrue(app.buttons["session.step.listen"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["session.repeat"].exists)
+        XCTAssertEqual(app.buttons["session.repeat"].label, "Repeat each ayah, 1x")
+        capture(app, name: "Focus-Listen")
+        app.buttons["session.step.fromMemory"].tap()
+        app.buttons["session.answer.memorized"].tap()
+        app.buttons["session.nextPassage"].tap()
+        XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label BEGINSWITH %@", "PIECE 2 OF")).firstMatch.waitForExistence(timeout: 3))
+        capture(app, name: "Focus-NextPiece")
+        finishAndClose(app)
+        XCTAssertNotEqual(memorizedCount(app), "0")
     }
 
     /// Opening a long surah deep down lands on the ayah in both layouts.
@@ -118,7 +197,7 @@ final class Simple_QuranUITests: XCTestCase {
         choosePlan(app, select: "plan.select.ayah.8")
         app.buttons["memorize.start"].tap()
         XCTAssertTrue(app.buttons["session.change"].waitForExistence(timeout: 5))
-        app.buttons["session.close"].tap()
+        app.buttons["surah.close"].tap()
         XCTAssertTrue(app.buttons["playback.open"].waitForExistence(timeout: 3))
         app.buttons["playback.open"].tap()
         XCTAssertTrue(app.buttons["session.change"].waitForExistence(timeout: 3))
@@ -130,17 +209,17 @@ final class Simple_QuranUITests: XCTestCase {
         let app = launch()
         choosePlan(app, select: "plan.select.ayah.8")
         app.buttons["memorize.start"].tap()
-        app.buttons["session.change"].tap()
-        XCTAssertTrue(app.navigationBars["Your passage"].waitForExistence(timeout: 3))
-        app.buttons["One page"].tap()
+        openPassagePicker(app)
+        XCTAssertTrue(app.navigationBars["Your passage"].exists)
+        app.buttons["Full page"].tap()
         capture(app, name: "Passage-Picker")
         app.buttons["passage.start"].tap()
         XCTAssertTrue(app.buttons["session.play"].waitForExistence(timeout: 3))
-        app.segmentedControls.buttons["From memory"].tap()
+        app.buttons["session.step.fromMemory"].tap()
         app.buttons["session.answer.memorized"].tap()
         app.buttons["session.nextPassage"].tap()
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Ayahs 6–16")).firstMatch.waitForExistence(timeout: 3))
-        app.buttons["session.done"].tap()
+        finishAndClose(app)
         XCTAssertTrue(app.buttons["memorize.start"].waitForExistence(timeout: 3))
         capture(app, name: "Memorize-Continue")
     }
@@ -153,7 +232,7 @@ final class Simple_QuranUITests: XCTestCase {
         app.buttons["Open page"].tap()
         XCTAssertTrue(app.navigationBars["Page 1"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["quran.play"].exists)
-        app.buttons["reader.close"].tap()
+        app.buttons["surah.close"].tap()
         app.segmentedControls.buttons["Juz"].tap()
         app.buttons["quran.juz.1"].tap()
         XCTAssertTrue(app.navigationBars["Juz 1"].waitForExistence(timeout: 5))
@@ -170,7 +249,7 @@ final class Simple_QuranUITests: XCTestCase {
         app.buttons["plan.start"].tap()
         XCTAssertTrue(app.buttons["session.play"].waitForExistence(timeout: 5))
         capture(app, name: "Session-Night-Continuous")
-        app.segmentedControls.buttons["From memory"].tap()
+        app.buttons["session.step.fromMemory"].tap()
         XCTAssertTrue(app.buttons["session.answer.memorized"].waitForExistence(timeout: 3))
         capture(app, name: "Session-Night-Recall")
     }
@@ -235,11 +314,10 @@ final class Simple_QuranUITests: XCTestCase {
         app.pickerWheels.element(boundBy: 1).adjust(toPickerWheelValue: "6")
         app.buttons["plan.range.save"].tap()
         app.buttons["plan.memorizeNext"].tap()
-        app.buttons["session.change"].tap()
-        XCTAssertTrue(app.pickerWheels.firstMatch.waitForExistence(timeout: 3))
+        openPassagePicker(app)
         let end = app.pickerWheels.element(boundBy: 1).value as? String
         app.buttons["passage.start"].tap()
-        app.buttons["session.change"].tap()
+        openPassagePicker(app)
         XCTAssertEqual(app.pickerWheels.element(boundBy: 1).value as? String, end)
         capture(app, name: "Passage-Exact-Range")
     }

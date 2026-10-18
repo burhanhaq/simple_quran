@@ -45,6 +45,8 @@ enum MushafPageBlocks {
 struct MushafHighlightState: Equatable {
     var highlightedAyah: Int?
     var collectedAyahs: Set<Int> = []
+    /// Ayahs faded back while the user memorizes a piece around them.
+    var dimmedAyahs: Set<Int> = []
 
     static let empty = MushafHighlightState()
 }
@@ -52,6 +54,8 @@ struct MushafHighlightState: Equatable {
 struct MushafAttributedPage {
     var text: NSAttributedString
     var ayahRanges: [Int: NSRange]
+    /// Each ayah's words without its number, so dimming can restore both colors.
+    var bodyRanges: [Int: NSRange] = [:]
 }
 
 enum MushafTextBuilder {
@@ -59,6 +63,7 @@ enum MushafTextBuilder {
     static let collectedColor = UIColor(named: "CollectedFill") ?? .secondarySystemBackground
     private static let bodyColor = UIColor(named: "BrownText") ?? .label
     private static let numberColor = UIColor(named: "Bronze") ?? bodyColor
+    static let dimmedAlpha: CGFloat = 0.3
 
     private static let bodyParagraph: NSParagraphStyle = {
         let style = NSMutableParagraphStyle()
@@ -86,6 +91,7 @@ enum MushafTextBuilder {
     ) -> MushafAttributedPage {
         let result = NSMutableAttributedString()
         var ayahRanges: [Int: NSRange] = [:]
+        var bodyRanges: [Int: NSRange] = [:]
         let bodyFont = QuranScript.uiFont(.body, category: contentSizeCategory)
         let basmalaFont = QuranScript.uiFont(.basmala, category: contentSizeCategory)
         let numberAttributes: [NSAttributedString.Key: Any] = [
@@ -133,15 +139,17 @@ enum MushafTextBuilder {
             result.append(NSAttributedString(string: numberText, attributes: numberAttributes))
             let segmentLength = (bodyText as NSString).length + (numberText as NSString).length
             ayahRanges[verse.globalAyah] = NSRange(location: location, length: segmentLength)
+            bodyRanges[verse.globalAyah] = NSRange(location: location, length: (bodyText as NSString).length)
         }
 
-        return MushafAttributedPage(text: result, ayahRanges: ayahRanges)
+        return MushafAttributedPage(text: result, ayahRanges: ayahRanges, bodyRanges: bodyRanges)
     }
 
     /// Updates only background colors. Character data, and therefore line breaks, stay put.
     static func applyHighlightChange(
         to text: NSMutableAttributedString,
         ayahRanges: [Int: NSRange],
+        bodyRanges: [Int: NSRange] = [:],
         from previous: MushafHighlightState,
         to next: MushafHighlightState
     ) {
@@ -156,6 +164,16 @@ enum MushafTextBuilder {
 
         let storage = text as? NSTextStorage
         storage?.beginEditing()
+        for ayah in previous.dimmedAyahs.symmetricDifference(next.dimmedAyahs) {
+            guard let range = ayahRanges[ayah], range.location + range.length <= text.length else { continue }
+            let dimmed = next.dimmedAyahs.contains(ayah)
+            let body = bodyRanges[ayah] ?? range
+            text.addAttribute(.foregroundColor, value: dimmed ? bodyColor.withAlphaComponent(dimmedAlpha) : bodyColor, range: body)
+            let number = NSRange(location: NSMaxRange(body), length: NSMaxRange(range) - NSMaxRange(body))
+            if number.length > 0 {
+                text.addAttribute(.foregroundColor, value: dimmed ? numberColor.withAlphaComponent(dimmedAlpha) : numberColor, range: number)
+            }
+        }
         for ayah in affected {
             guard let range = ayahRanges[ayah], range.location + range.length <= text.length else { continue }
             if ayah == next.highlightedAyah {
@@ -198,6 +216,8 @@ struct MushafFlowView: View {
     var selectionEnabled: Bool
     var collectedAyahs: Set<Int> = []
     var focusedAyah: Int? = nil
+    /// The piece being memorized; everything else fades back.
+    var focusRange: VerseRange? = nil
     var onSelect: (Int) -> Void
 
     @State private var glyphScrolledAyah: Int?
@@ -217,6 +237,7 @@ struct MushafFlowView: View {
         selectionEnabled: Bool,
         collectedAyahs: Set<Int> = [],
         focusedAyah: Int? = nil,
+        focusRange: VerseRange? = nil,
         onSelect: @escaping (Int) -> Void
     ) {
         self.verses = verses
@@ -226,6 +247,7 @@ struct MushafFlowView: View {
         self.selectionEnabled = selectionEnabled
         self.collectedAyahs = collectedAyahs
         self.focusedAyah = focusedAyah
+        self.focusRange = focusRange
         self.onSelect = onSelect
         let blocks = MushafPageBlocks.make(from: verses)
         self.blocks = blocks
@@ -259,6 +281,7 @@ struct MushafFlowView: View {
                             highlightedAyah: ayah(currentGlobalAyah, in: block),
                             hiddenAyahs: ayahs(hiddenAyahs, in: block),
                             collectedAyahs: ayahs(collectedAyahs, in: block),
+                            dimmedAyahs: dimmedAyahs(in: block),
                             anchorAyah: ayah(target, in: block),
                             basmala: basmala,
                             passageID: passageID,
@@ -292,6 +315,12 @@ struct MushafFlowView: View {
         return ayah
     }
 
+    /// This page's ayahs outside the piece being memorized.
+    private func dimmedAyahs(in block: MushafPageBlock) -> Set<Int> {
+        guard let focusRange else { return [] }
+        return Set(block.verses.lazy.map(\.globalAyah).filter { !focusRange.contains($0) })
+    }
+
     /// Only the members on this page, so a change elsewhere leaves this page's inputs equal.
     private func ayahs(_ ayahs: Set<Int>, in block: MushafPageBlock) -> Set<Int> {
         guard !ayahs.isEmpty else { return [] }
@@ -323,6 +352,7 @@ private struct MushafPageContainer: View {
     var highlightedAyah: Int?
     var hiddenAyahs: Set<Int>
     var collectedAyahs: Set<Int>
+    var dimmedAyahs: Set<Int>
     var anchorAyah: Int?
     var basmala: String
     var passageID: String
@@ -338,6 +368,7 @@ private struct MushafPageContainer: View {
             highlightedAyah: highlightedAyah,
             hiddenAyahs: hiddenAyahs,
             collectedAyahs: collectedAyahs,
+            dimmedAyahs: dimmedAyahs,
             anchorAyah: anchorAyah,
             basmala: basmala,
             selectionEnabled: selectionEnabled,
@@ -381,6 +412,7 @@ private struct MushafPageView: UIViewRepresentable {
     var highlightedAyah: Int?
     var hiddenAyahs: Set<Int>
     var collectedAyahs: Set<Int>
+    var dimmedAyahs: Set<Int>
     var anchorAyah: Int?
     var basmala: String
     var selectionEnabled: Bool
@@ -403,10 +435,8 @@ private struct MushafPageView: UIViewRepresentable {
         textView.adjustsFontForContentSizeCategory = false
         textView.textContainerInset = .zero
         textView.textContainer.lineFragmentPadding = 0
-        textView.linkTextAttributes = [
-            .foregroundColor: UIColor(named: "BrownText") ?? UIColor.label,
-            .underlineStyle: 0
-        ]
+        // Ayahs are links for tapping, but their color comes from the text so a piece can dim its surroundings.
+        textView.linkTextAttributes = [:]
         textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         textView.setContentHuggingPriority(.required, for: .vertical)
         textView.setContentCompressionResistancePriority(.required, for: .vertical)
@@ -428,7 +458,8 @@ private struct MushafPageView: UIViewRepresentable {
             basmala: basmala,
             highlight: MushafHighlightState(
                 highlightedAyah: highlightedAyah,
-                collectedAyahs: collectedAyahs
+                collectedAyahs: collectedAyahs,
+                dimmedAyahs: dimmedAyahs
             ),
             contentSizeCategory: dynamicTypeSize.uiContentSizeCategory
         )
@@ -513,6 +544,7 @@ private final class MushafPageTextView: UITextView {
     private var renderKey: RenderKey?
     private var appliedHighlight = MushafHighlightState.empty
     private var ayahRanges: [Int: NSRange] = [:]
+    private var bodyRanges: [Int: NSRange] = [:]
     private var lastReportedAnchor: CGRect?
     private var isApplying = false
 
@@ -581,10 +613,12 @@ private final class MushafPageTextView: UITextView {
             MushafTextBuilder.applyHighlightChange(
                 to: mutable,
                 ayahRanges: document.ayahRanges,
+                bodyRanges: document.bodyRanges,
                 from: .empty,
                 to: pendingHighlight
             )
             ayahRanges = document.ayahRanges
+            bodyRanges = document.bodyRanges
             appliedHighlight = pendingHighlight
             renderKey = key
             attributedText = mutable
@@ -596,6 +630,7 @@ private final class MushafPageTextView: UITextView {
         MushafTextBuilder.applyHighlightChange(
             to: textStorage,
             ayahRanges: ayahRanges,
+            bodyRanges: bodyRanges,
             from: appliedHighlight,
             to: pendingHighlight
         )

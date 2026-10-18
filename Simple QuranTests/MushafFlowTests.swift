@@ -177,6 +177,33 @@ struct MushafFlowTests {
         text.attributedSubstring(from: range).string
     }
 
+    @Test func dimmingFadesWordsAndNumberThenRestoresThem() throws {
+        let verses = [
+            sampleVerse(globalAyah: 8, ayahInSurah: 1, page: 2, text: "الٓمٓ"),
+            sampleVerse(globalAyah: 9, ayahInSurah: 2, page: 2, text: "ذَٰلِكَ ٱلْكِتَٰبُ")
+        ]
+        let page = MushafTextBuilder.make(verses: verses, hiddenAyahs: [], basmala: Self.basmala, contentSizeCategory: .large)
+        let text = NSMutableAttributedString(attributedString: page.text)
+        let body = try #require(page.bodyRanges[8])
+        let whole = try #require(page.ayahRanges[8])
+        let numberLocation = NSMaxRange(body)
+        func alpha(at location: Int) -> CGFloat {
+            (text.attribute(.foregroundColor, at: location, effectiveRange: nil) as? UIColor)?.cgColor.alpha ?? 1
+        }
+        let originalNumberColor = text.attribute(.foregroundColor, at: numberLocation, effectiveRange: nil) as? UIColor
+
+        let dimmed = MushafHighlightState(dimmedAyahs: [8])
+        MushafTextBuilder.applyHighlightChange(to: text, ayahRanges: page.ayahRanges, bodyRanges: page.bodyRanges, from: .empty, to: dimmed)
+        #expect(alpha(at: body.location) < 0.5)
+        #expect(alpha(at: numberLocation) < 0.5)
+        #expect(alpha(at: try #require(page.ayahRanges[9]).location) == 1)
+        #expect(numberLocation < NSMaxRange(whole))
+
+        MushafTextBuilder.applyHighlightChange(to: text, ayahRanges: page.ayahRanges, bodyRanges: page.bodyRanges, from: dimmed, to: .empty)
+        #expect(alpha(at: body.location) == 1)
+        #expect(text.attribute(.foregroundColor, at: numberLocation, effectiveRange: nil) as? UIColor == originalNumberColor)
+    }
+
     private func backgroundColor(_ text: NSAttributedString, range: NSRange) -> UIColor? {
         text.attribute(.backgroundColor, at: range.location, effectiveRange: nil) as? UIColor
     }

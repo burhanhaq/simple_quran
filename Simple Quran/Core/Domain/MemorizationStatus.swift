@@ -51,13 +51,22 @@ nonisolated struct ProgressIndex: Sendable {
 
     func needsRefresh(_ globalAyah: Int) -> Bool { snapshots[globalAyah]?.needsRefresh ?? false }
 
+    /// Walks whichever is shorter, the range or the recorded ayahs, so a small piece stays cheap
+    /// however much the user has recorded.
     func count(_ status: MemorizationStatus, in range: VerseRange) -> Int {
         if status == .notStarted { return range.count - count(.learning, in: range) - count(.memorized, in: range) }
-        return snapshots.values.reduce(0) { $0 + (range.contains($1.globalAyah) && $1.status == status ? 1 : 0) }
+        return count(in: range) { $0.status == status }
     }
 
     func needsRefreshCount(in range: VerseRange) -> Int {
-        snapshots.values.reduce(0) { $0 + (range.contains($1.globalAyah) && $1.needsRefresh ? 1 : 0) }
+        count(in: range) { $0.needsRefresh }
+    }
+
+    private func count(in range: VerseRange, where matches: (VerseProgressSnapshot) -> Bool) -> Int {
+        if range.count <= snapshots.count {
+            return (range.startGlobalAyah...range.endGlobalAyah).reduce(0) { total, ayah in total + (snapshots[ayah].map(matches) == true ? 1 : 0) }
+        }
+        return snapshots.values.reduce(0) { $0 + (range.contains($1.globalAyah) && matches($1) ? 1 : 0) }
     }
 
     func isDue(_ range: VerseRange, at now: Date = .now) -> Bool {

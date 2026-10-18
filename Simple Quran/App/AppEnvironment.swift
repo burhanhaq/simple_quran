@@ -269,8 +269,9 @@ final class AppEnvironment {
         downloads.updateCellular(!settings.wifiOnly)
     }
 
-    func openReader(_ destination: QuranDestination) {
-        route = .reader(ReaderRoute(destination: destination))
+    /// Opens the surah screen. Readers start with the text in full view; Progress opens the overview.
+    func openReader(_ destination: QuranDestination, sheet: SurahSheetStart = .peek) {
+        route = .reader(ReaderRoute(destination: destination, sheet: sheet))
     }
 
     /// `scope` is what the user chose to memorize (a surah, juz, or range), so "Next passage"

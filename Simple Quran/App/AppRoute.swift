@@ -17,6 +17,7 @@ struct ReaderRoute: Identifiable {
     let id = UUID()
     let destination: QuranDestination
     var resumePlayback = false
+    var sheet = SurahSheetStart.peek
 }
 
 enum SessionKind {

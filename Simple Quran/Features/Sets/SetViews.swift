@@ -30,6 +30,6 @@ struct SetListView: View {
             }
         }
         .warmListChrome().navigationTitle("Older saved passages")
-        .fullScreenCover(item: $session) { MemorizeSessionView(route: $0) }
+        .fullScreenCover(item: $session) { SurahScreen(route: .session($0), environment: environment) }
     }
 }

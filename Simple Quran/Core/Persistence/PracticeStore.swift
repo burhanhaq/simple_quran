@@ -32,6 +32,7 @@ protocol PracticeStoring: AnyObject {
     func beginLearning(ayahs: [Int]) throws
     func markMemorized(ayahs: [Int], now: Date) throws
     func markNeedsRefresh(ayahs: [Int], now: Date) throws
+    func restoreProgress(_ previous: [Int: VerseProgressSnapshot], ayahs: [Int]) throws
     func startSession(for set: PracticeSet) throws -> PracticeSession
     func finishSession(_ session: PracticeSession, coveredAyahs: Int, repetitions: Int, lastAyah: Int?, completed: Bool, rating: RecallRating?) throws
     func continueSet() throws -> PracticeSet?
@@ -175,6 +176,20 @@ final class PracticeStore: PracticeStoring {
         try save()
     }
 
+    /// Puts ayahs back the way they were before a claim. An ayah with no earlier progress loses its record.
+    func restoreProgress(_ previous: [Int: VerseProgressSnapshot], ayahs: [Int]) throws {
+        for ayah in Set(ayahs) {
+            let descriptor = FetchDescriptor<VerseProgress>(predicate: #Predicate { $0.globalAyah == ayah })
+            let existing = try context.fetch(descriptor).first
+            if let snapshot = previous[ayah] {
+                (existing ?? progressModel(inserting: ayah)).apply(snapshot)
+            } else if let existing {
+                context.delete(existing)
+            }
+        }
+        try save()
+    }
+
     /// One-time cleanup for progress recorded before memorization became an explicit claim.
     /// Returns whether the user had any earlier progress, so the app can explain the change.
     @discardableResult
@@ -312,6 +327,10 @@ final class PracticeStore: PracticeStoring {
         if let existing = try context.fetch(descriptor).first {
             return existing
         }
+        return progressModel(inserting: globalAyah)
+    }
+
+    private func progressModel(inserting globalAyah: Int) -> VerseProgress {
         let created = VerseProgress(globalAyah: globalAyah)
         context.insert(created)
         return created

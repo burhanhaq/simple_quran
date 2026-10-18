@@ -34,8 +34,6 @@ struct ProgressTabView: View {
             .background(Color.parchment.ignoresSafeArea())
             .navigationTitle(AppTab.progress.title)
             .searchable(text: $search, prompt: browse == .surahs ? "Find a surah" : "Find a juz")
-            .navigationDestination(for: Surah.self) { PassageProgressView(title: $0.englishName, range: $0.range, destination: .surah(number: $0.number)) }
-            .navigationDestination(for: JuzSection.self) { PassageProgressView(title: "Juz \($0.number)", range: $0.range, destination: .juz($0.number)) }
         }
     }
 
@@ -87,7 +85,7 @@ struct ProgressTabView: View {
                 ForEach(PlanBrowse.allCases) { Text($0.title).tag($0) }
             }.pickerStyle(.segmented)
             // Surahs and juz share ids 1–30, so each browse mode needs its own identity
-            // or SwiftUI keeps the surah links when showing juz.
+            // or SwiftUI keeps the surah buttons when showing juz.
             Group { if showsList { list(index) } else { grid(index) } }.id(browse)
         }
     }
@@ -97,7 +95,7 @@ struct ProgressTabView: View {
             switch browse {
             case .surahs:
                 ForEach(environment.quran.surahs) { surah in
-                    NavigationLink(value: surah) {
+                    Button { open(.surah(number: surah.number)) } label: {
                         MapTile(number: surah.number, range: surah.range, index: index)
                     }.buttonStyle(.plain)
                         .accessibilityLabel("\(surah.englishName), \(SurahProgressSummary(surah: surah, index: index).text)")
@@ -105,7 +103,7 @@ struct ProgressTabView: View {
                 }
             case .juz:
                 ForEach(environment.quran.juzs) { juz in
-                    NavigationLink(value: juz) {
+                    Button { open(.juz(juz.number)) } label: {
                         MapTile(number: juz.number, range: juz.range, index: index)
                     }.buttonStyle(.plain)
                         .accessibilityLabel("Juz \(juz.number), \(index.count(.memorized, in: juz.range)) of \(juz.range.count) memorized")
@@ -124,7 +122,7 @@ struct ProgressTabView: View {
                 switch browse {
                 case .surahs:
                     ForEach(surahs) { surah in
-                        NavigationLink(value: surah) {
+                        Button { open(.surah(number: surah.number)) } label: {
                             ProgressListRow(number: surah.number, range: surah.range, index: index, title: surah.englishName,
                                             subtitle: "\(surah.translation) · \(surah.ayahCount) ayahs", arabicName: surah.arabicName)
                         }.buttonStyle(.plain)
@@ -133,7 +131,7 @@ struct ProgressTabView: View {
                     }
                 case .juz:
                     ForEach(juzs) { juz in
-                        NavigationLink(value: juz) {
+                        Button { open(.juz(juz.number)) } label: {
                             ProgressListRow(number: juz.number, range: juz.range, index: index,
                                             title: PassageLabel.passage(juz.range, catalog: environment.quran),
                                             subtitle: LearningPassage.referenceLabel(juz.range, catalog: environment.quran), arabicName: nil)
@@ -144,6 +142,11 @@ struct ProgressTabView: View {
             }
             .background(Color.appWarmSurface, in: RoundedRectangle(cornerRadius: AppTheme.tightRadius))
         }
+    }
+
+    /// Opens the surah screen with its overview up, so progress and pieces are the first thing seen.
+    private func open(_ destination: QuranDestination) {
+        environment.openReader(destination, sheet: .half)
     }
 
     private func activity(_ insights: ProgressInsights) -> some View {
@@ -249,5 +252,20 @@ private struct MapLegend: View {
                 .overlay { RoundedRectangle(cornerRadius: 3).strokeBorder(stroke, lineWidth: 1) }
             Text(title)
         }
+    }
+}
+
+/// One line describing a surah's memorization, shared by progress lists.
+struct SurahProgressSummary {
+    let surah: Surah
+    let index: ProgressIndex
+
+    var memorized: Int { index.count(.memorized, in: surah.range) }
+    var learning: Int { index.count(.learning, in: surah.range) }
+
+    var text: String {
+        if memorized == surah.ayahCount { return String(localized: "Memorized") }
+        if learning == 0 { return String(localized: "\(memorized) of \(surah.ayahCount) memorized") }
+        return String(localized: "\(memorized) of \(surah.ayahCount) memorized · \(learning) learning")
     }
 }
