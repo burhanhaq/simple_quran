@@ -61,6 +61,7 @@ private struct ReadingOverview: View {
     private var span: VerseRange? { model.span }
     private var memorized: Int { span.map { index.count(.memorized, in: $0) } ?? 0 }
     private var total: Int { span?.count ?? 0 }
+    private var freshness: Freshness? { span.flatMap { index.freshness(of: $0, cycle: environment.settings.revisionCycle) } }
 
     var body: some View {
         ScrollView {
@@ -68,6 +69,7 @@ private struct ReadingOverview: View {
                 peekBar
                 header
                 status
+                revision
                 PieceStrip(model: model, index: index)
                 actions
                 knownRow
@@ -126,6 +128,7 @@ private struct ReadingOverview: View {
     }
 
     private var compactStatusLine: String {
+        if total > 0, memorized == total, let freshness, freshness != .fresh { return freshness.title }
         guard memorized > 0, memorized < total else { return statusLine }
         return String(localized: "\(memorized)/\(total)")
     }
@@ -136,14 +139,14 @@ private struct ReadingOverview: View {
     }
 
     private var statusLine: String {
-        if total > 0 && memorized == total { return String(localized: "Memorized") }
+        if total > 0 && memorized == total { return (freshness ?? .fresh).memorizedLabel }
         if memorized > 0 { return String(localized: "\(memorized) of \(total) memorized") }
         let learning = span.map { index.count(.learning, in: $0) } ?? 0
         return learning > 0 ? MemorizationStatus.learning.title : MemorizationStatus.notStarted.title
     }
 
     private var statusColor: Color {
-        if total > 0 && memorized == total { return Color.olive }
+        if total > 0 && memorized == total { return (freshness ?? .fresh).color }
         let started = span.map { index.status(of: $0) != .notStarted } ?? false
         return started ? Color.bronze : Color.warmBorder
     }
@@ -189,6 +192,55 @@ private struct ReadingOverview: View {
         let refresh = index.needsRefreshCount(in: span)
         if refresh > 0 { parts.append(String(localized: "\(refresh) need a refresh")) }
         return parts.joined(separator: " · ")
+    }
+
+    /// How fresh the memorized ayahs are, when they were last revised, and a one-tap "Revised today".
+    @ViewBuilder
+    private var revision: some View {
+        if let span, let freshness {
+            let history = index.history(of: span)
+            VStack(alignment: .leading, spacing: 8) {
+                HStack(spacing: 8) {
+                    Circle().fill(freshness.color).frame(width: 9, height: 9)
+                    Text(freshness.title).font(.subheadline.weight(.semibold))
+                    Spacer(minLength: 8)
+                    // Only once everything here is fresh; a part revised today doesn't make the rest fresh.
+                    if freshness == .fresh, history.lastRevisedAt.map(Calendar.current.isDateInToday) == true {
+                        Label("Revised today", systemImage: "checkmark")
+                            .font(.footnote.weight(.semibold)).foregroundStyle(Color.olive)
+                    } else {
+                        Button("Revised today") { withAnimation(.snappy) { model.markRevised(span) } }
+                            .font(.footnote.weight(.semibold)).frame(minHeight: 44)
+                            .accessibilityHint("Marks the memorized ayahs here as revised")
+                            .accessibilityIdentifier("surah.revisedToday")
+                    }
+                }
+                if let line = historyLine(history, oldest: freshness == .fresh ? nil : index.oldestRevision(in: span)) {
+                    Text(line).font(.caption).foregroundStyle(Color.secondaryWarm).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .padding(.horizontal, 14).padding(.vertical, 6)
+            .background(Color.parchment.opacity(0.6), in: RoundedRectangle(cornerRadius: AppTheme.tightRadius))
+            .accessibilityElement(children: .contain)
+        }
+    }
+
+    /// Once something is fading, the oldest revision explains why; otherwise the latest of each kind.
+    private func historyLine(_ history: RevisionHistory, oldest: Date?) -> String? {
+        let parts = [
+            oldest.map { String(localized: "Oldest revision \(Self.relativeDay($0))") },
+            history.lastRecitedAt.map { String(localized: "Recited \(Self.relativeDay($0))") },
+            history.lastHeardAt.map { String(localized: "Listened \(Self.relativeDay($0))") },
+            oldest == nil ? history.lastRevisedAt.map { String(localized: "Revised \(Self.relativeDay($0))") } : nil
+        ].compactMap { $0 }
+        return parts.isEmpty ? nil : parts.joined(separator: " · ")
+    }
+
+    /// "today", "yesterday", or "3 weeks ago": revision is counted in days, not hours.
+    private static func relativeDay(_ date: Date, now: Date = .now) -> String {
+        let calendar = Calendar.current
+        if calendar.isDateInToday(date) { return String(localized: "today") }
+        return calendar.startOfDay(for: date).formatted(.relative(presentation: .named, unitsStyle: .wide))
     }
 
     private var action: SurahAction? { SurahAction.make(pieces: model.pieces, chosen: model.chosenPiece, index: index) }
@@ -318,10 +370,11 @@ private struct PieceStrip: View {
 
     private func segment(_ piece: VerseRange) -> some View {
         let status = index.status(of: piece)
+        let freshness = index.freshness(of: piece, cycle: environment.settings.revisionCycle)
         let chosen = model.chosenPiece == piece
         return Button { withAnimation(.snappy) { model.choose(piece) } } label: {
             RoundedRectangle(cornerRadius: 4)
-                .fill(fill(status))
+                .fill(fill(status, freshness: freshness))
                 .frame(height: chosen ? 20 : 14)
                 .overlay {
                     RoundedRectangle(cornerRadius: 4)
@@ -331,13 +384,13 @@ private struct PieceStrip: View {
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .accessibilityLabel("\(LearningPassage.ayahLabel(piece, catalog: environment.quran)), \(status.title)")
+        .accessibilityLabel("\(LearningPassage.ayahLabel(piece, catalog: environment.quran)), \(status == .memorized ? (freshness ?? .fresh).memorizedLabel : status.title)")
         .accessibilityAddTraits(chosen ? .isSelected : [])
     }
 
-    private func fill(_ status: MemorizationStatus) -> Color {
+    private func fill(_ status: MemorizationStatus, freshness: Freshness?) -> Color {
         switch status {
-        case .memorized: Color.olive
+        case .memorized: (freshness ?? .fresh).color
         case .learning: Color.bronze.opacity(0.6)
         case .notStarted: Color.warmBorder.opacity(0.55)
         }
@@ -353,13 +406,14 @@ private struct PieceRow: View {
     var body: some View {
         let status = index.status(of: piece)
         let due = index.isDue(piece)
+        let freshness = index.freshness(of: piece, cycle: environment.settings.revisionCycle)
         Button { model.open(piece, index: index) } label: {
             HStack(spacing: 14) {
                 Image(systemName: due ? "arrow.counterclockwise" : status.systemImage)
-                    .foregroundStyle(status == .notStarted ? Color.secondaryWarm : Color.olive).frame(width: 24)
+                    .foregroundStyle(status == .notStarted ? Color.secondaryWarm : (freshness ?? .fresh).color).frame(width: 24)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(LearningPassage.ayahLabel(piece, catalog: environment.quran)).font(.headline)
-                    Text(statusText(status: status, due: due)).font(.caption).foregroundStyle(Color.secondaryWarm)
+                    Text(statusText(status: status, due: due, freshness: freshness)).font(.caption).foregroundStyle(Color.secondaryWarm)
                 }
                 Spacer()
                 Image(systemName: "chevron.right").font(.caption).foregroundStyle(Color.secondaryWarm)
@@ -378,9 +432,9 @@ private struct PieceRow: View {
         }
     }
 
-    private func statusText(status: MemorizationStatus, due: Bool) -> String {
+    private func statusText(status: MemorizationStatus, due: Bool, freshness: Freshness?) -> String {
         if due { return String(localized: "Ready to review") }
-        if status == .memorized { return status.title }
+        if status == .memorized { return (freshness ?? .fresh).memorizedLabel }
         let memorized = index.count(.memorized, in: piece)
         return memorized > 0 ? String(localized: "\(memorized) of \(piece.count) memorized") : status.title
     }

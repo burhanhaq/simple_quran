@@ -57,6 +57,8 @@ final class AppSettings {
         static let legacyPracticeByPage = "learning.byPage"
         static let memorizePlayback = "learning.playback"
         static let piecesAdopted = "learning.piecesAdopted"
+        static let revisionCycle = "learning.revisionCycle"
+        static let revisionClocksStarted = "learning.revisionClocksStarted"
         static let legacyLearningStart = "learning.start"
         static let legacyLearningEnd = "learning.end"
     }
@@ -133,6 +135,14 @@ final class AppSettings {
     var pieceSize: PieceSize {
         didSet { defaults.set(pieceSize.rawValue, forKey: Key.pieceSize) }
     }
+    /// How often the user means to revise what they've memorized; drives fresh, fading, and needs revision.
+    var revisionCycle: RevisionCycle {
+        didSet { defaults.set(revisionCycle.rawValue, forKey: Key.revisionCycle) }
+    }
+    /// Memorized ayahs from before revision dates were kept have had their clocks started.
+    var revisionClocksStarted: Bool {
+        didSet { defaults.set(revisionClocksStarted, forKey: Key.revisionClocksStarted) }
+    }
     /// How memorize passages play: one setting for all of them, so a new passage never resets it.
     var memorizePlayback: PracticeSettings {
         didSet {
@@ -190,6 +200,8 @@ final class AppSettings {
         readingAyah = defaults.integer(forKey: "reading.ayah")
         pieceSize = defaults.string(forKey: Key.pieceSize).flatMap(PieceSize.init(rawValue:))
             ?? (defaults.bool(forKey: Key.legacyPracticeByPage) ? .fullPage : .default)
+        revisionCycle = RevisionCycle(rawValue: defaults.integer(forKey: Key.revisionCycle)) ?? .default
+        revisionClocksStarted = defaults.bool(forKey: Key.revisionClocksStarted)
         memorizePlayback = defaults.data(forKey: Key.memorizePlayback)
             .flatMap { try? JSONDecoder().decode(PracticeSettings.self, from: $0) } ?? .default
         generatedPracticeIDs = defaults.stringArray(forKey: "learning.generatedIDs") ?? []
@@ -258,6 +270,17 @@ final class AppEnvironment {
                 do { try store?.save() }
                 catch { playback?.userMessage = .from(.persistenceFailure) }
             } else { settings?.readingAyah = ayah }
+        }
+        playback.onAyahHeard = { [weak playback, weak store] ayah in
+            do { try store?.recordHeard(globalAyah: ayah, at: .now) }
+            catch { playback?.userMessage = .from(.persistenceFailure) }
+        }
+        if !settings.revisionClocksStarted {
+            // Retried on the next launch if it fails.
+            do {
+                try store.startRevisionClocks()
+                settings.revisionClocksStarted = true
+            } catch {}
         }
         playback.downloadMissingAudio = { [weak downloads, weak settings] ayahs in
             guard settings?.downloadWhilePlaying == true, let downloads else { return false }

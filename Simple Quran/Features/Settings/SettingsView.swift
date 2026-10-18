@@ -64,11 +64,16 @@ struct SettingsView: View {
                     }
                     .accessibilityIdentifier("settings.ayahRepeat")
                     .warmListRow()
+                    Picker(String(localized: "Revise what I know"), selection: Bindable(environment.settings).revisionCycle) {
+                        ForEach(RevisionCycle.allCases) { Text($0.title).tag($0) }
+                    }
+                    .accessibilityIdentifier("settings.revisionCycle")
+                    .warmListRow()
                     NavigationLink(String(localized: "Older saved passages")) { SetListView() }.warmListRow()
                 } header: {
                     Text(String(localized: "Memorize"))
                 } footer: {
-                    Text(String(localized: "Pieces follow the Madani mushaf page. A short surah is always one piece."))
+                    Text(String(localized: "Pieces follow the Madani mushaf page. A short surah is always one piece. Memorized surahs fade when they go longer than this without a revision; listening, reciting, and \u{201C}Revised today\u{201D} all count."))
                 }
                 Section(String(localized: "Recordings")) {
                     Button(String(localized: "Delete all recordings"), role: .destructive) {

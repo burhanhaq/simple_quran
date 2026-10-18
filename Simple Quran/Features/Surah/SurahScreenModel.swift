@@ -302,6 +302,12 @@ final class SurahScreenModel {
         self.undo = nil
     }
 
+    /// "Revised today" for the memorized ayahs in range; the rest are left as they are.
+    func markRevised(_ range: VerseRange) {
+        do { try environment.store.markRevised(ayahs: range.globalAyahs, now: .now) }
+        catch { errorMessage = .from(.persistenceFailure) }
+    }
+
     func markNeedsRefresh(_ range: VerseRange) {
         do { try environment.store.markNeedsRefresh(ayahs: range.globalAyahs, now: .now) }
         catch { errorMessage = .from(.persistenceFailure) }

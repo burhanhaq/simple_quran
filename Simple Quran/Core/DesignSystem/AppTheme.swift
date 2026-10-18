@@ -14,12 +14,24 @@ extension Color {
     static let secondaryWarm = Color("SecondaryText")
     static let olive = Color("OliveAccent")
     static let gold = Color("GoldAccent")
+    static let fadingAmber = Color("FadingAmber")
     static let goldButtonText = Color("GoldButtonText")
     static let bronze = Color("Bronze")
     static let appHighlightFill = Color("HighlightFill")
     static let appCollectedFill = Color("CollectedFill")
     static let warmBorder = Color("WarmBorder")
     static let dangerWarm = Color("DangerText")
+}
+
+extension Freshness {
+    /// Green while fresh, amber while fading, and the warm danger color once it needs revision.
+    var color: Color {
+        switch self {
+        case .fresh: .olive
+        case .fading: .fadingAmber
+        case .needsRevision: .dangerWarm
+        }
+    }
 }
 
 extension Font {

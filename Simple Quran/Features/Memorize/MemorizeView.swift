@@ -19,6 +19,7 @@ struct MemorizeView: View {
         let index = ProgressIndex(snapshots)
         let next = plan?.nextPassage(catalog: environment.quran, size: environment.settings.pieceSize) { index.status(of: $0) == .memorized }
         let reviews = ReviewPlanner.duePassages(snapshots: snapshots, catalog: environment.quran)
+        let toRevise = index.surahsToRevise(environment.quran.surahs, cycle: environment.settings.revisionCycle)
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
@@ -26,6 +27,7 @@ struct MemorizeView: View {
                     if environment.settings.showsStatusChangeNote { statusChangeNote }
                     todayCard(next: next, index: index)
                     if !reviews.isEmpty { reviewCard(reviews) }
+                    if !toRevise.isEmpty { reviseCard(toRevise) }
                     if let plan {
                         NavigationLink { PlanDetailView() } label: { PlanCard(plan: plan, index: index) }
                             .buttonStyle(.plain).accessibilityIdentifier("memorize.plan")
@@ -170,6 +172,30 @@ struct MemorizeView: View {
                 }
             }
         }.buttonStyle(.plain).accessibilityIdentifier("memorize.review")
+    }
+
+    /// The surah that has gone longest without a revision, from the "revise every" setting.
+    private func reviseCard(_ toRevise: [SurahRevision]) -> some View {
+        let first = toRevise[0]
+        return Button {
+            environment.openReviews(ReviewPlanner.memorizedPassages(in: first.surah.range, snapshots: snapshots, catalog: environment.quran))
+        } label: {
+            WarmCard {
+                HStack(spacing: 14) {
+                    WarmSymbol(systemName: "clock.arrow.circlepath")
+                    VStack(alignment: .leading, spacing: 4) {
+                        Text("Revise \(first.surah.englishName)").font(.headline)
+                        HStack(spacing: 6) {
+                            Circle().fill(first.freshness.color).frame(width: 8, height: 8)
+                            Text(toRevise.count > 1 ? String(localized: "\(first.freshness.title) · \(toRevise.count - 1) more to revise") : first.freshness.title)
+                        }
+                        .font(.subheadline).foregroundStyle(Color.secondaryWarm)
+                    }
+                    Spacer(minLength: 0)
+                    Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(Color.bronze)
+                }
+            }
+        }.buttonStyle(.plain).accessibilityIdentifier("memorize.revise")
     }
 
     @ViewBuilder

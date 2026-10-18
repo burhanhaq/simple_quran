@@ -22,6 +22,7 @@ struct ProgressTabView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
                     header(insights)
+                    revisionBanner(index)
                     if let plan = environment.settings.activePlan {
                         NavigationLink { PlanDetailView() } label: { PlanCard(plan: plan, index: index) }.buttonStyle(.plain)
                     }
@@ -56,6 +57,38 @@ struct ProgressTabView: View {
         }
     }
 
+    private var cycle: RevisionCycle { environment.settings.revisionCycle }
+
+    /// Memorized surahs that have gone too long without a revision, with the most urgent one a tap away.
+    @ViewBuilder
+    private func revisionBanner(_ index: ProgressIndex) -> some View {
+        let toRevise = index.surahsToRevise(environment.quran.surahs, cycle: cycle)
+        if let first = toRevise.first {
+            let needsRevision = toRevise.filter { $0.freshness == .needsRevision }.count
+            WarmCard {
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack(spacing: 10) {
+                        Circle().fill(first.freshness.color).frame(width: 10, height: 10)
+                        Text(needsRevision > 0
+                             ? (needsRevision == 1 ? String(localized: "1 surah needs revision") : String(localized: "\(needsRevision) surahs need revision"))
+                             : (toRevise.count == 1 ? String(localized: "1 surah is fading") : String(localized: "\(toRevise.count) surahs are fading")))
+                            .font(.headline)
+                    }
+                    Text(toRevise.prefix(3).map(\.surah.englishName).joined(separator: ", ") + (toRevise.count > 3 ? "…" : ""))
+                        .font(.subheadline).foregroundStyle(Color.secondaryWarm).lineLimit(1)
+                    Button { revise(first.surah, index: index) } label: {
+                        Label("Revise \(first.surah.englishName)", systemImage: "arrow.counterclockwise").frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(WarmButtonStyle()).accessibilityIdentifier("progress.revise")
+                }
+            }
+        }
+    }
+
+    private func revise(_ surah: Surah, index: ProgressIndex) {
+        environment.openReviews(ReviewPlanner.memorizedPassages(in: surah.range, snapshots: progress.map(\.snapshot), catalog: environment.quran))
+    }
+
     private var surahs: [Surah] {
         environment.quran.surahs.filter {
             search.isEmpty || "\($0.number) \($0.englishName) \($0.arabicName) \($0.translation) \($0.aliases.joined(separator: " "))"
@@ -72,7 +105,6 @@ struct ProgressTabView: View {
             HStack(spacing: 10) {
                 Text("The Quran").font(.title3.weight(.semibold))
                 Spacer()
-                if !showsList { MapLegend() }
                 Button { withAnimation(.snappy) { layout = layout == .map ? .list : .map } } label: {
                     Image(systemName: layout == .map ? "list.bullet" : "square.grid.3x3").font(.subheadline.weight(.semibold))
                         .frame(width: 44, height: 44)
@@ -84,6 +116,7 @@ struct ProgressTabView: View {
             Picker("Browse", selection: $browse) {
                 ForEach(PlanBrowse.allCases) { Text($0.title).tag($0) }
             }.pickerStyle(.segmented)
+            if !showsList { MapLegend() }
             // Surahs and juz share ids 1–30, so each browse mode needs its own identity
             // or SwiftUI keeps the surah buttons when showing juz.
             Group { if showsList { list(index) } else { grid(index) } }.id(browse)
@@ -96,15 +129,15 @@ struct ProgressTabView: View {
             case .surahs:
                 ForEach(environment.quran.surahs) { surah in
                     Button { open(.surah(number: surah.number)) } label: {
-                        MapTile(number: surah.number, range: surah.range, index: index)
+                        MapTile(number: surah.number, range: surah.range, index: index, cycle: cycle)
                     }.buttonStyle(.plain)
-                        .accessibilityLabel("\(surah.englishName), \(SurahProgressSummary(surah: surah, index: index).text)")
+                        .accessibilityLabel("\(surah.englishName), \(SurahProgressSummary(surah: surah, index: index, cycle: cycle).text)")
                         .accessibilityIdentifier("progress.surah.\(surah.number)")
                 }
             case .juz:
                 ForEach(environment.quran.juzs) { juz in
                     Button { open(.juz(juz.number)) } label: {
-                        MapTile(number: juz.number, range: juz.range, index: index)
+                        MapTile(number: juz.number, range: juz.range, index: index, cycle: cycle)
                     }.buttonStyle(.plain)
                         .accessibilityLabel("Juz \(juz.number), \(index.count(.memorized, in: juz.range)) of \(juz.range.count) memorized")
                 }
@@ -123,7 +156,7 @@ struct ProgressTabView: View {
                 case .surahs:
                     ForEach(surahs) { surah in
                         Button { open(.surah(number: surah.number)) } label: {
-                            ProgressListRow(number: surah.number, range: surah.range, index: index, title: surah.englishName,
+                            ProgressListRow(number: surah.number, range: surah.range, index: index, cycle: cycle, title: surah.englishName,
                                             subtitle: "\(surah.translation) · \(surah.ayahCount) ayahs", arabicName: surah.arabicName)
                         }.buttonStyle(.plain)
                             .accessibilityIdentifier("progress.list.surah.\(surah.number)")
@@ -132,7 +165,7 @@ struct ProgressTabView: View {
                 case .juz:
                     ForEach(juzs) { juz in
                         Button { open(.juz(juz.number)) } label: {
-                            ProgressListRow(number: juz.number, range: juz.range, index: index,
+                            ProgressListRow(number: juz.number, range: juz.range, index: index, cycle: cycle,
                                             title: PassageLabel.passage(juz.range, catalog: environment.quran),
                                             subtitle: LearningPassage.referenceLabel(juz.range, catalog: environment.quran), arabicName: nil)
                         }.buttonStyle(.plain)
@@ -185,6 +218,7 @@ private struct ProgressListRow: View {
     let number: Int
     let range: VerseRange
     let index: ProgressIndex
+    let cycle: RevisionCycle
     let title: String
     let subtitle: String
     let arabicName: String?
@@ -192,16 +226,18 @@ private struct ProgressListRow: View {
     var body: some View {
         let memorized = index.count(.memorized, in: range)
         let learning = index.count(.learning, in: range)
+        let freshness = index.freshness(of: range, cycle: cycle)
+        let tint = freshness?.color ?? Color.olive
         HStack(spacing: 14) {
-            MapTile(number: number, range: range, index: index).frame(width: 44)
+            MapTile(number: number, range: range, index: index, cycle: cycle).frame(width: 44)
             VStack(alignment: .leading, spacing: 4) {
                 Text(title).font(.headline).foregroundStyle(Color.appBrownText).lineLimit(1)
                 Text(subtitle).font(.caption).foregroundStyle(Color.secondaryWarm).lineLimit(1)
                 if memorized + learning > 0 {
                     HStack(spacing: 8) {
-                        ProgressView(value: Double(memorized), total: Double(range.count)).tint(Color.olive)
-                        Text(memorized == range.count ? String(localized: "Memorized") : "\(memorized)/\(range.count)")
-                            .font(.caption2.weight(.medium)).monospacedDigit().foregroundStyle(Color.olive)
+                        ProgressView(value: Double(memorized), total: Double(range.count)).tint(tint)
+                        Text(memorized == range.count ? (freshness ?? .fresh).memorizedLabel : "\(memorized)/\(range.count)")
+                            .font(.caption2.weight(.medium)).monospacedDigit().foregroundStyle(tint)
                     }
                 }
             }
@@ -216,21 +252,23 @@ private struct ProgressListRow: View {
     }
 }
 
-/// A map square shaded by how much of its range is memorized.
+/// A map square shaded by how much of its range is memorized, colored by how fresh it is.
 private struct MapTile: View {
     let number: Int
     let range: VerseRange
     let index: ProgressIndex
+    let cycle: RevisionCycle
 
     var body: some View {
         let memorized = index.count(.memorized, in: range)
         let learning = index.count(.learning, in: range)
         let fraction = Double(memorized) / Double(max(range.count, 1))
+        let fill = index.freshness(of: range, cycle: cycle)?.color ?? Color.olive
         Text("\(number)")
             .font(.caption.weight(.semibold)).monospacedDigit()
             .foregroundStyle(fraction >= 0.6 ? Color.white : Color.appBrownText)
             .frame(maxWidth: .infinity, minHeight: 44)
-            .background(RoundedRectangle(cornerRadius: 10).fill(memorized > 0 ? Color.olive.opacity(0.25 + 0.75 * fraction) : Color.appWarmSurface))
+            .background(RoundedRectangle(cornerRadius: 10).fill(memorized > 0 ? fill.opacity(0.25 + 0.75 * fraction) : Color.appWarmSurface))
             .overlay {
                 RoundedRectangle(cornerRadius: 10)
                     .strokeBorder(learning > 0 ? Color.bronze : Color.warmBorder.opacity(0.6), lineWidth: learning > 0 ? 1.5 : 0.5)
@@ -240,10 +278,12 @@ private struct MapTile: View {
 
 private struct MapLegend: View {
     var body: some View {
-        HStack(spacing: 10) {
-            item(MemorizationStatus.memorized.title, fill: Color.olive, stroke: .clear)
+        HStack(spacing: 12) {
+            ForEach(Freshness.allCases, id: \.self) { item($0.title, fill: $0.color, stroke: .clear) }
             item(MemorizationStatus.learning.title, fill: Color.appWarmSurface, stroke: Color.bronze)
-        }.font(.caption2).foregroundStyle(Color.secondaryWarm)
+        }
+        .font(.caption2).foregroundStyle(Color.secondaryWarm)
+        .accessibilityElement(children: .combine)
     }
 
     private func item(_ title: String, fill: Color, stroke: Color) -> some View {
@@ -259,12 +299,13 @@ private struct MapLegend: View {
 struct SurahProgressSummary {
     let surah: Surah
     let index: ProgressIndex
+    let cycle: RevisionCycle
 
     var memorized: Int { index.count(.memorized, in: surah.range) }
     var learning: Int { index.count(.learning, in: surah.range) }
 
     var text: String {
-        if memorized == surah.ayahCount { return String(localized: "Memorized") }
+        if memorized == surah.ayahCount { return (index.freshness(of: surah.range, cycle: cycle) ?? .fresh).memorizedLabel }
         if learning == 0 { return String(localized: "\(memorized) of \(surah.ayahCount) memorized") }
         return String(localized: "\(memorized) of \(surah.ayahCount) memorized · \(learning) learning")
     }

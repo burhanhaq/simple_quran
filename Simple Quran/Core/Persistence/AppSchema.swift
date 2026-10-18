@@ -1,8 +1,9 @@
 import Foundation
 import SwiftData
 
-enum AppSchemaV1: VersionedSchema {
-    static let versionIdentifier = Schema.Version(1, 0, 0)
+/// The current models. V2 added when each ayah was last heard, recited, and marked revised.
+enum AppSchemaV2: VersionedSchema {
+    static let versionIdentifier = Schema.Version(2, 0, 0)
 
     static var models: [any PersistentModel.Type] {
         [
@@ -17,8 +18,8 @@ enum AppSchemaV1: VersionedSchema {
 }
 
 enum AppMigrationPlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [AppSchemaV1.self] }
-    static var stages: [MigrationStage] { [] }
+    static var schemas: [any VersionedSchema.Type] { [AppSchemaV1.self, AppSchemaV2.self] }
+    static var stages: [MigrationStage] { [.lightweight(fromVersion: AppSchemaV1.self, toVersion: AppSchemaV2.self)] }
 }
 
 @Model
@@ -136,6 +137,12 @@ final class VerseProgress {
     var exposureCount: Int
     var listeningSeconds: Double
     var recallAttempts: Int
+    /// Audio played through this ayah, in the reader or while memorizing.
+    var lastHeardAt: Date?
+    /// The user recited it from memory and said how it went.
+    var lastRecitedAt: Date?
+    /// The user said they know it or revised it, without reciting in the app.
+    var lastRevisedAt: Date?
 
     init(globalAyah: Int) {
         self.globalAyah = globalAyah
@@ -158,7 +165,10 @@ final class VerseProgress {
             nextReviewAt: nextReviewAt,
             exposureCount: exposureCount,
             listeningSeconds: listeningSeconds,
-            recallAttempts: recallAttempts
+            recallAttempts: recallAttempts,
+            lastHeardAt: lastHeardAt,
+            lastRecitedAt: lastRecitedAt,
+            lastRevisedAt: lastRevisedAt
         )
     }
 
@@ -172,6 +182,9 @@ final class VerseProgress {
         exposureCount = snapshot.exposureCount
         listeningSeconds = snapshot.listeningSeconds
         recallAttempts = snapshot.recallAttempts
+        lastHeardAt = snapshot.lastHeardAt
+        lastRecitedAt = snapshot.lastRecitedAt
+        lastRevisedAt = snapshot.lastRevisedAt
     }
 }
 

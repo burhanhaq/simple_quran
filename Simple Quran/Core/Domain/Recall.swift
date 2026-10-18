@@ -43,6 +43,9 @@ nonisolated struct VerseProgressSnapshot: Equatable, Sendable {
     var exposureCount: Int
     var listeningSeconds: Double
     var recallAttempts: Int
+    var lastHeardAt: Date? = nil
+    var lastRecitedAt: Date? = nil
+    var lastRevisedAt: Date? = nil
 
     static func fresh(globalAyah: Int) -> VerseProgressSnapshot {
         VerseProgressSnapshot(

@@ -71,6 +71,8 @@ final class PlaybackCoordinator {
     var versesInSet: [QuranVerse] = []
     var onWillStartAudio: (() -> Void)?
     var onPositionChanged: ((Int) -> Void)?
+    /// An ayah's audio played to its end (not skipped), in the reader or while memorizing.
+    var onAyahHeard: ((Int) -> Void)?
     /// Asks for missing ayahs to be saved, nearest first; returns false when automatic downloads are off.
     var downloadMissingAudio: (([Int]) -> Bool)?
     var passageRanges: [VerseRange] { preparedPassages }
@@ -510,6 +512,7 @@ final class PlaybackCoordinator {
     private func itemDidFinish(_ item: AVPlayerItem) {
         guard let info = queuedItems.removeValue(forKey: ObjectIdentifier(item)) else { return }
         accumulateListeningTime()
+        if case .ayah(let ayah, _, _) = info.step { onAyahHeard?(ayah) }
         if info.completesStep {
             cursor?.advanceAfterCompletion()
         }

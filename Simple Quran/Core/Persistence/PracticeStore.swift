@@ -2,13 +2,13 @@ import Foundation
 import SwiftData
 
 enum PersistenceController {
-    static func makeContainer(inMemory: Bool = false) throws -> ModelContainer {
-        let schema = Schema(versionedSchema: AppSchemaV1.self)
-        let configuration = ModelConfiguration(
-            "SimpleQuran",
-            schema: schema,
-            isStoredInMemoryOnly: inMemory
-        )
+    static let storeName = "SimpleQuran"
+
+    /// `url` places the store somewhere specific, for migration tests.
+    static func makeContainer(inMemory: Bool = false, url: URL? = nil) throws -> ModelContainer {
+        let schema = Schema(versionedSchema: AppSchemaV2.self)
+        let configuration = url.map { ModelConfiguration(storeName, schema: schema, url: $0) }
+            ?? ModelConfiguration(storeName, schema: schema, isStoredInMemoryOnly: inMemory)
         return try ModelContainer(
             for: schema,
             migrationPlan: AppMigrationPlan.self,
@@ -26,6 +26,8 @@ protocol PracticeStoring: AnyObject {
     func archive(_ set: PracticeSet, archived: Bool) throws
     func delete(_ set: PracticeSet) throws
     func recordExposure(ayahs: [Int], seconds: Double) throws
+    func recordHeard(globalAyah: Int, at now: Date) throws
+    func markRevised(ayahs: [Int], now: Date) throws
     func markWeak(globalAyah: Int, weak: Bool) throws
     func isMarkedWeak(globalAyah: Int) throws -> Bool
     func applyRating(_ rating: RecallRating, ayahs: [Int], now: Date) throws
@@ -136,6 +138,7 @@ final class PracticeStore: PracticeStoring {
             snapshot.isWeak = decision.isWeak
             snapshot.nextReviewAt = decision.nextReviewAt
             snapshot.lastPractisedAt = decision.practisedAt
+            snapshot.lastRecitedAt = now
             snapshot.recallAttempts += 1
             model.apply(snapshot)
         }
@@ -161,6 +164,36 @@ final class PracticeStore: PracticeStoring {
             model.streak = decision.streak
             model.isWeak = decision.isWeak
             model.nextReviewAt = decision.nextReviewAt
+            // Saying you know it now starts its revision clock.
+            model.lastRevisedAt = now
+        }
+        try save()
+    }
+
+    /// Audio played through an ayah. It keeps memorized ayahs fresh but never changes a status.
+    func recordHeard(globalAyah: Int, at now: Date = .now) throws {
+        try progressModel(for: globalAyah).lastHeardAt = now
+        try save()
+    }
+
+    /// "Revised today": the user went over these memorized ayahs on their own, so they're fresh
+    /// again and no longer flagged for a refresh. Other ayahs are left alone.
+    func markRevised(ayahs: [Int], now: Date = .now) throws {
+        for ayah in Set(ayahs) {
+            let descriptor = FetchDescriptor<VerseProgress>(predicate: #Predicate { $0.globalAyah == ayah })
+            guard let model = try context.fetch(descriptor).first, model.snapshot.status == .memorized else { continue }
+            model.lastRevisedAt = now
+            model.isWeak = false
+        }
+        try save()
+    }
+
+    /// Memorized ayahs from before revision dates were kept start their clock now,
+    /// so an update doesn't mark everything as needing revision at once.
+    func startRevisionClocks(now: Date = .now) throws {
+        let models = try context.fetch(FetchDescriptor<VerseProgress>())
+        for model in models where model.snapshot.status == .memorized && model.snapshot.lastTouchedAt == nil {
+            model.lastRevisedAt = now
         }
         try save()
     }
@@ -258,6 +291,7 @@ final class PracticeStore: PracticeStoring {
                     snapshot.streak = decision.streak
                     snapshot.isWeak = decision.isWeak
                     snapshot.nextReviewAt = decision.nextReviewAt
+                    snapshot.lastRecitedAt = now
                     snapshot.recallAttempts += 1
                     model.apply(snapshot)
                 }
