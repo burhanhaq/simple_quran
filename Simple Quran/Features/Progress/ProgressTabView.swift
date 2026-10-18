@@ -17,7 +17,8 @@ struct ProgressTabView: View {
         let snapshots = progress.map(\.snapshot)
         let index = ProgressIndex(snapshots)
         let insights = ProgressInsights.make(snapshots: snapshots, activityDates: sessions.compactMap(\.endedAt),
-                                             surahs: environment.quran.surahs, now: .now, calendar: .current)
+                                             surahs: environment.quran.surahs, cycle: environment.settings.revisionCycle,
+                                             now: .now, calendar: .current)
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
@@ -46,7 +47,7 @@ struct ProgressTabView: View {
             Text(insights.memorizedCount == 1 ? "ayah memorized" : "ayahs memorized").font(.headline)
             let details = [
                 insights.learningCount > 0 ? String(localized: "\(insights.learningCount) learning") : nil,
-                insights.needsRefreshCount > 0 ? String(localized: "\(insights.needsRefreshCount) need a refresh") : nil
+                insights.needsRevisionCount > 0 ? String(localized: "\(insights.needsRevisionCount) need revision") : nil
             ].compactMap { $0 }
             if !details.isEmpty {
                 Text(details.joined(separator: " · ")).font(.subheadline).foregroundStyle(Color.secondaryWarm)

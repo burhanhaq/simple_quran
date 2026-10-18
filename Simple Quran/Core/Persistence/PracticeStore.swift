@@ -33,7 +33,7 @@ protocol PracticeStoring: AnyObject {
     func applyRating(_ rating: RecallRating, ayahs: [Int], now: Date) throws
     func beginLearning(ayahs: [Int]) throws
     func markMemorized(ayahs: [Int], now: Date) throws
-    func markNeedsRefresh(ayahs: [Int], now: Date) throws
+    func markNeedsRevision(ayahs: [Int], now: Date) throws
     func restoreProgress(_ previous: [Int: VerseProgressSnapshot], ayahs: [Int]) throws
     func startSession(for set: PracticeSet) throws -> PracticeSession
     func finishSession(_ session: PracticeSession, coveredAyahs: Int, repetitions: Int, lastAyah: Int?, completed: Bool, rating: RecallRating?) throws
@@ -177,7 +177,7 @@ final class PracticeStore: PracticeStoring {
     }
 
     /// "Revised today": the user went over these memorized ayahs on their own, so they're fresh
-    /// again and no longer flagged for a refresh. Other ayahs are left alone.
+    /// again and no longer flagged as forgotten. Other ayahs are left alone.
     func markRevised(ayahs: [Int], now: Date = .now) throws {
         for ayah in Set(ayahs) {
             let descriptor = FetchDescriptor<VerseProgress>(predicate: #Predicate { $0.globalAyah == ayah })
@@ -198,8 +198,8 @@ final class PracticeStore: PracticeStoring {
         try save()
     }
 
-    /// Memorized ayahs keep their status and come back for review now; others become learning.
-    func markNeedsRefresh(ayahs: [Int], now: Date = .now) throws {
+    /// Memorized ayahs keep their status and need revision now; others become learning.
+    func markNeedsRevision(ayahs: [Int], now: Date = .now) throws {
         for ayah in Set(ayahs) {
             let model = try progressModel(for: ayah)
             model.isWeak = true

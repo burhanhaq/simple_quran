@@ -268,7 +268,7 @@ struct PlanDetailView: View {
                         Button {
                             environment.openReviews(ReviewPlanner.memorizedPassages(in: plan.range, snapshots: progress.map(\.snapshot), catalog: environment.quran))
                         } label: {
-                            Label("Review what you’ve memorized", systemImage: "arrow.counterclockwise").frame(maxWidth: .infinity)
+                            Label("Revise what you’ve memorized", systemImage: "arrow.counterclockwise").frame(maxWidth: .infinity)
                         }.buttonStyle(WarmButtonStyle(emphasis: .secondary))
                     }
                     upNext(excluding: plan, index: index)

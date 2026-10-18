@@ -24,7 +24,7 @@ struct ProgressInsightsTests {
         #expect(insights.closestInProgress == nil)
     }
 
-    @Test func countsSplitByStatusAndNeedsRefresh() throws {
+    @Test func countsSplitByStatusAndNeedsRevision() throws {
         let catalog = try BundledQuranCatalog.loadFromBundle()
         var refresh = memorizedAyah(3)
         refresh.isWeak = true
@@ -33,7 +33,7 @@ struct ProgressInsightsTests {
         let insights = ProgressInsights.make(snapshots: snapshots, surahs: catalog.surahs, now: now, calendar: calendar)
         #expect(insights.memorizedCount == 3)
         #expect(insights.learningCount == 2)
-        #expect(insights.needsRefreshCount == 1)
+        #expect(insights.needsRevisionCount == 1)
     }
 
     @Test func completedSurahRequiresEveryAyahMemorized() throws {

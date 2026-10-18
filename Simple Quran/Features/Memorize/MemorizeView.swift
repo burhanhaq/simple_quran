@@ -18,15 +18,13 @@ struct MemorizeView: View {
     var body: some View {
         let index = ProgressIndex(snapshots)
         let next = plan?.nextPassage(catalog: environment.quran, size: environment.settings.pieceSize) { index.status(of: $0) == .memorized }
-        let reviews = ReviewPlanner.duePassages(snapshots: snapshots, catalog: environment.quran)
-        let toRevise = index.surahsToRevise(environment.quran.surahs, cycle: environment.settings.revisionCycle)
+        let toRevise = RevisionList(snapshots: snapshots, catalog: environment.quran, cycle: environment.settings.revisionCycle)
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     if let error = environment.catalogLoadError { FriendlyErrorView(message: error) }
                     if environment.settings.showsStatusChangeNote { statusChangeNote }
                     todayCard(next: next, index: index)
-                    if !reviews.isEmpty { reviewCard(reviews) }
                     if !toRevise.isEmpty { reviseCard(toRevise) }
                     if let plan {
                         NavigationLink { PlanDetailView() } label: { PlanCard(plan: plan, index: index) }
@@ -123,7 +121,7 @@ struct MemorizeView: View {
             } else if let plan {
                 Text("You’ve memorized all of \(plan.title(catalog: environment.quran)).")
                     .font(.system(.title, design: .serif).weight(.medium)).fixedSize(horizontal: false, vertical: true)
-                Text("Keep it fresh with review, or choose what to memorize next.")
+                Text("Keep it fresh by revising, or choose what to memorize next.")
                     .font(.subheadline).foregroundStyle(.white.opacity(0.8))
                 heroButton("Choose your next plan", identifier: "memorize.choosePlan") { picker = .plan }
             } else {
@@ -157,37 +155,30 @@ struct MemorizeView: View {
         }.buttonStyle(.plain).accessibilityIdentifier(identifier)
     }
 
-    private func reviewCard(_ reviews: [VerseRange]) -> some View {
-        Button { environment.openReviews(reviews) } label: {
-            WarmCard {
-                HStack(spacing: 14) {
-                    WarmSymbol(systemName: "arrow.counterclockwise")
-                    VStack(alignment: .leading, spacing: 4) {
-                        Text("Review").font(.headline)
-                        Text(reviews.count == 1 ? "1 passage ready · \(LearningPassage.referenceLabel(reviews[0], catalog: environment.quran))" : "\(reviews.count) passages ready")
-                            .font(.subheadline).foregroundStyle(Color.secondaryWarm)
-                    }
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(Color.bronze)
-                }
-            }
-        }.buttonStyle(.plain).accessibilityIdentifier("memorize.review")
-    }
-
-    /// The surah that has gone longest without a revision, from the "revise every" setting.
-    private func reviseCard(_ toRevise: [SurahRevision]) -> some View {
-        let first = toRevise[0]
-        return Button {
-            environment.openReviews(ReviewPlanner.memorizedPassages(in: first.surah.range, snapshots: snapshots, catalog: environment.quran))
-        } label: {
+    /// The most urgent thing to revise: due pieces first, then the surah gone longest without a revision.
+    private func reviseCard(_ toRevise: RevisionList) -> some View {
+        let name: String
+        let freshness: Freshness
+        let passages: [VerseRange]
+        if let piece = toRevise.pieces.first {
+            name = LearningPassage.referenceLabel(piece, catalog: environment.quran)
+            freshness = .needsRevision
+            passages = toRevise.pieces
+        } else {
+            let surah = toRevise.surahs[0]
+            name = surah.surah.englishName
+            freshness = surah.freshness
+            passages = ReviewPlanner.memorizedPassages(in: surah.surah.range, snapshots: snapshots, catalog: environment.quran)
+        }
+        return Button { environment.openReviews(passages) } label: {
             WarmCard {
                 HStack(spacing: 14) {
                     WarmSymbol(systemName: "clock.arrow.circlepath")
                     VStack(alignment: .leading, spacing: 4) {
-                        Text("Revise \(first.surah.englishName)").font(.headline)
+                        Text("Revise \(name)").font(.headline)
                         HStack(spacing: 6) {
-                            Circle().fill(first.freshness.color).frame(width: 8, height: 8)
-                            Text(toRevise.count > 1 ? String(localized: "\(first.freshness.title) · \(toRevise.count - 1) more to revise") : first.freshness.title)
+                            Circle().fill(freshness.color).frame(width: 8, height: 8)
+                            Text(toRevise.count > 1 ? String(localized: "\(freshness.title) · \(toRevise.count - 1) more to revise") : freshness.title)
                         }
                         .font(.subheadline).foregroundStyle(Color.secondaryWarm)
                     }

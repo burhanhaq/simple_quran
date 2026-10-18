@@ -21,15 +21,6 @@ nonisolated enum RecallState: String, Codable, CaseIterable, Sendable {
     case learning
     case strengthening
     case review
-
-    var title: String {
-        switch self {
-        case .new: String(localized: "New")
-        case .learning: String(localized: "Learning")
-        case .strengthening: String(localized: "Strengthening")
-        case .review: String(localized: "Review")
-        }
-    }
 }
 
 nonisolated struct VerseProgressSnapshot: Equatable, Sendable {
@@ -92,7 +83,7 @@ nonisolated struct ReviewScheduler: Sendable {
         let state: RecallState
 
         // Memorized is sticky: only an explicit `.solid` gets an ayah there, and a weaker
-        // answer afterwards flags it for a sooner refresh instead of taking it away.
+        // answer afterwards flags it for revision instead of taking it away.
         let memorized = current.recallState == .review
         switch rating {
         case .again:

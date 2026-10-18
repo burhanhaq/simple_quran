@@ -84,6 +84,20 @@ struct FreshnessTests {
         #expect(try store.progress(for: 10).lastRevisedAt == nil)
     }
 
+    @Test func dueSurahsAreListedOnceAmongWhatToRevise() throws {
+        let catalog = try BundledQuranCatalog.loadFromBundle()
+        var forgotten = memorized(1, touched: daysAgo(1), weak: true)
+        forgotten.nextReviewAt = now
+        let snapshots = [forgotten, memorized(2, touched: daysAgo(1)), memorized(9, touched: daysAgo(20))]
+
+        let list = RevisionList(snapshots: snapshots, catalog: catalog, cycle: .twoWeeks, now: now)
+        #expect(list.pieces == [.clamped(start: 1, end: 1)])
+        // Al-Fatiha already has a due piece, so only Al-Baqarah is left as a surah.
+        #expect(list.surahs.map(\.surah.number) == [2])
+        #expect(list.count == 2)
+        #expect(ProgressIndex(snapshots).needsRevisionCount(in: .clamped(start: 1, end: 7), cycle: .twoWeeks, now: now) == 1)
+    }
+
     @Test @MainActor func memorizedAyahsWithoutDatesStartTheirClockOnce() throws {
         let container = try PersistenceController.makeContainer(inMemory: true)
         let store = PracticeStore(context: container.mainContext)

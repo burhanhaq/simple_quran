@@ -16,7 +16,7 @@ nonisolated struct ProgressInsights: Equatable, Sendable {
 
     var memorizedCount: Int
     var learningCount: Int
-    var needsRefreshCount: Int
+    var needsRevisionCount: Int
     var practicedToday: Bool
     var lastSevenDays: [Bool]
     var completedSurahs: [Surah]
@@ -30,20 +30,21 @@ nonisolated struct ProgressInsights: Equatable, Sendable {
         snapshots: [VerseProgressSnapshot],
         activityDates: [Date] = [],
         surahs: [Surah],
+        cycle: RevisionCycle = .default,
         now: Date,
         calendar: Calendar
     ) -> ProgressInsights {
         let index = ProgressIndex(snapshots)
         var memorizedCount = 0
         var learningCount = 0
-        var needsRefreshCount = 0
+        var needsRevisionCount = 0
         for snapshot in snapshots {
             switch snapshot.status {
             case .memorized: memorizedCount += 1
             case .learning: learningCount += 1
             case .notStarted: break
             }
-            if snapshot.needsRefresh { needsRefreshCount += 1 }
+            if snapshot.freshness(cycle: cycle, now: now) == .needsRevision { needsRevisionCount += 1 }
         }
 
         let practicedDays = Set((snapshots.compactMap(\.lastPractisedAt) + activityDates).map { calendar.startOfDay(for: $0) })
@@ -83,7 +84,7 @@ nonisolated struct ProgressInsights: Equatable, Sendable {
         return ProgressInsights(
             memorizedCount: memorizedCount,
             learningCount: learningCount,
-            needsRefreshCount: needsRefreshCount,
+            needsRevisionCount: needsRevisionCount,
             practicedToday: practicedDays.contains(today),
             lastSevenDays: lastSevenDays,
             completedSurahs: completedSurahs,

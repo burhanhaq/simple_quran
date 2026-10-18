@@ -190,7 +190,7 @@ struct KnownSurahsView: View {
             Section {
                 VStack(alignment: .leading, spacing: 10) {
                     Text("Already know some surahs?").font(.system(.largeTitle, design: .serif))
-                    Text("Tick what you can recite from memory. It counts as memorized and comes back for gentle review.")
+                    Text("Tick what you can recite from memory. It counts as memorized and comes back for gentle revision.")
                         .font(.subheadline).foregroundStyle(Color.secondaryWarm)
                 }.padding(.vertical, 8)
             }.listRowBackground(Color.clear)

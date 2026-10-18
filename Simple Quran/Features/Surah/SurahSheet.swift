@@ -189,8 +189,8 @@ private struct ReadingOverview: View {
         var parts = [String(localized: "\(memorized) of \(total) ayahs memorized")]
         let learning = index.count(.learning, in: span)
         if learning > 0 { parts.append(String(localized: "\(learning) learning")) }
-        let refresh = index.needsRefreshCount(in: span)
-        if refresh > 0 { parts.append(String(localized: "\(refresh) need a refresh")) }
+        let needsRevision = index.needsRevisionCount(in: span, cycle: environment.settings.revisionCycle)
+        if needsRevision > 0 { parts.append(String(localized: "\(needsRevision) need revision")) }
         return parts.joined(separator: " · ")
     }
 
@@ -410,7 +410,7 @@ private struct PieceRow: View {
         Button { model.open(piece, index: index) } label: {
             HStack(spacing: 14) {
                 Image(systemName: due ? "arrow.counterclockwise" : status.systemImage)
-                    .foregroundStyle(status == .notStarted ? Color.secondaryWarm : (freshness ?? .fresh).color).frame(width: 24)
+                    .foregroundStyle(status == .notStarted ? Color.secondaryWarm : (due ? Freshness.needsRevision : freshness ?? .fresh).color).frame(width: 24)
                 VStack(alignment: .leading, spacing: 4) {
                     Text(LearningPassage.ayahLabel(piece, catalog: environment.quran)).font(.headline)
                     Text(statusText(status: status, due: due, freshness: freshness)).font(.caption).foregroundStyle(Color.secondaryWarm)
@@ -427,13 +427,13 @@ private struct PieceRow: View {
             if status != .memorized {
                 Button("I know these ayahs", systemImage: MemorizationStatus.memorized.systemImage) { model.markKnown(piece, index: index) }
             } else {
-                Button("These need a refresh", systemImage: "arrow.counterclockwise") { model.markNeedsRefresh(piece) }
+                Button("These need revision", systemImage: "arrow.counterclockwise") { model.markNeedsRevision(piece) }
             }
         }
     }
 
     private func statusText(status: MemorizationStatus, due: Bool, freshness: Freshness?) -> String {
-        if due { return String(localized: "Ready to review") }
+        if due { return Freshness.needsRevision.title }
         if status == .memorized { return (freshness ?? .fresh).memorizedLabel }
         let memorized = index.count(.memorized, in: piece)
         return memorized > 0 ? String(localized: "\(memorized) of \(piece.count) memorized") : status.title
@@ -510,7 +510,7 @@ private struct FocusCoach: View {
     private var label: String {
         if focus.kind == .review {
             let total = focus.reviewsDone + 1 + focus.queue.count
-            return total > 1 ? String(localized: "REVIEW \(focus.reviewsDone + 1) OF \(total)") : String(localized: "REVIEW")
+            return total > 1 ? String(localized: "REVISE \(focus.reviewsDone + 1) OF \(total)") : String(localized: "REVISE")
         }
         let pieces = model.pieces
         if let position = pieces.firstIndex(of: focus.range), pieces.count > 1 {
@@ -587,7 +587,7 @@ private struct FocusCoach: View {
                 Spacer()
                 if let next = model.nextPassage(index: index) {
                     Button { model.advance(to: next, index: index) } label: {
-                        Label(focus.kind == .review ? "Next review" : "Next piece", systemImage: "arrow.right")
+                        Label(focus.kind == .review ? "Next to revise" : "Next piece", systemImage: "arrow.right")
                             .font(.footnote.weight(.semibold))
                     }
                     .frame(minHeight: 36).accessibilityIdentifier("session.nextPassage")

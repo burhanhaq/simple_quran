@@ -308,8 +308,8 @@ final class SurahScreenModel {
         catch { errorMessage = .from(.persistenceFailure) }
     }
 
-    func markNeedsRefresh(_ range: VerseRange) {
-        do { try environment.store.markNeedsRefresh(ayahs: range.globalAyahs, now: .now) }
+    func markNeedsRevision(_ range: VerseRange) {
+        do { try environment.store.markNeedsRevision(ayahs: range.globalAyahs, now: .now) }
         catch { errorMessage = .from(.persistenceFailure) }
     }
 

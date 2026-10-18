@@ -17,9 +17,9 @@ struct MemorizationStatusTests {
         #expect(item.status == .learning)
         item.recallState = .review
         #expect(item.status == .memorized)
-        #expect(item.needsRefresh == false)
+        #expect(item.isFlaggedForRevision == false)
         item.isWeak = true
-        #expect(item.needsRefresh)
+        #expect(item.isFlaggedForRevision)
     }
 
     @Test func comfortableNeverPromotesToMemorized() {
@@ -88,14 +88,14 @@ struct MemorizationStatusTests {
         #expect(try store.progress(for: 2).status == .learning)
     }
 
-    @Test @MainActor func markNeedsRefreshKeepsMemorizedAndMakesItDue() throws {
+    @Test @MainActor func markNeedsRevisionKeepsMemorizedAndMakesItDue() throws {
         let (container, store) = try makeStore()
         defer { withExtendedLifetime(container) {} }
         try store.markMemorized(ayahs: [1], now: now)
-        try store.markNeedsRefresh(ayahs: [1, 2], now: now)
+        try store.markNeedsRevision(ayahs: [1, 2], now: now)
         let first = try store.progress(for: 1)
         #expect(first.status == .memorized)
-        #expect(first.needsRefresh)
+        #expect(first.isFlaggedForRevision)
         #expect(first.isDue(at: now))
         #expect(try store.progress(for: 2).status == .learning)
     }

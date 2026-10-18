@@ -33,8 +33,8 @@ extension VerseProgressSnapshot {
         }
     }
 
-    /// A memorized ayah the user said they've forgotten or flagged; it stays memorized but comes back sooner.
-    nonisolated var needsRefresh: Bool { status == .memorized && isWeak }
+    /// A memorized ayah the user said they've forgotten; it stays memorized, needs revision, and comes back sooner.
+    nonisolated var isFlaggedForRevision: Bool { status == .memorized && isWeak }
 }
 
 /// Looks up memorization status by ayah so views don't re-filter progress arrays per row.
@@ -49,8 +49,6 @@ nonisolated struct ProgressIndex: Sendable {
 
     func status(of globalAyah: Int) -> MemorizationStatus { snapshots[globalAyah]?.status ?? .notStarted }
 
-    func needsRefresh(_ globalAyah: Int) -> Bool { snapshots[globalAyah]?.needsRefresh ?? false }
-
     /// Walks whichever is shorter, the range or the recorded ayahs, so a small piece stays cheap
     /// however much the user has recorded.
     func count(_ status: MemorizationStatus, in range: VerseRange) -> Int {
@@ -58,11 +56,7 @@ nonisolated struct ProgressIndex: Sendable {
         return count(in: range) { $0.status == status }
     }
 
-    func needsRefreshCount(in range: VerseRange) -> Int {
-        count(in: range) { $0.needsRefresh }
-    }
-
-    private func count(in range: VerseRange, where matches: (VerseProgressSnapshot) -> Bool) -> Int {
+    func count(in range: VerseRange, where matches: (VerseProgressSnapshot) -> Bool) -> Int {
         if range.count <= snapshots.count {
             return (range.startGlobalAyah...range.endGlobalAyah).reduce(0) { total, ayah in total + (snapshots[ayah].map(matches) == true ? 1 : 0) }
         }

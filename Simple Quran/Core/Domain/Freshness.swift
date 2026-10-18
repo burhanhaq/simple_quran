@@ -89,6 +89,11 @@ extension ProgressIndex {
         return worst
     }
 
+    /// Memorized ayahs in the range that need revision.
+    nonisolated func needsRevisionCount(in range: VerseRange, cycle: RevisionCycle, now: Date = .now) -> Int {
+        count(in: range) { $0.freshness(cycle: cycle, now: now) == .needsRevision }
+    }
+
     /// The longest any memorized ayah in the range has gone without a revision: what makes it fade.
     nonisolated func oldestRevision(in range: VerseRange) -> Date? {
         (range.startGlobalAyah...range.endGlobalAyah)
