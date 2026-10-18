@@ -12,26 +12,22 @@ nonisolated struct LearningTarget: Codable, Identifiable, Equatable {
         return PassageLabel.passage(range, catalog: catalog)
     }
 
-    func passage(from start: Int? = nil, catalog: some QuranCatalog, byPage: Bool = false) -> VerseRange? {
+    func passage(from start: Int? = nil, catalog: some QuranCatalog, size: PieceSize = .default) -> VerseRange? {
         let start = start ?? resumeRange?.startGlobalAyah ?? range.startGlobalAyah
         guard range.contains(start) else { return nil }
         if let resumeRange, start == resumeRange.startGlobalAyah,
            range.contains(resumeRange.endGlobalAyah) { return resumeRange }
-        let suggestion: VerseRange?
-        if byPage, let verse = catalog.verse(globalAyah: start),
-           let page = catalog.pages.first(where: { $0.number == verse.page }) {
-            suggestion = .clamped(start: start, end: page.endGlobalAyah)
-        } else { suggestion = LearningPassage.suggested(from: start, catalog: catalog) }
-        return suggestion.map { .clamped(start: start, end: min($0.endGlobalAyah, range.endGlobalAyah)) }
+        return LearningPassage.piece(from: start, size: size, catalog: catalog)
+            .map { .clamped(start: start, end: min($0.endGlobalAyah, range.endGlobalAyah)) }
     }
 
     /// The next passage in this plan that isn't fully memorized, starting where the user left off
     /// and wrapping to the beginning; nil once the whole plan is memorized.
-    func nextPassage(catalog: some QuranCatalog, byPage: Bool = false, isMemorized: (VerseRange) -> Bool) -> VerseRange? {
+    func nextPassage(catalog: some QuranCatalog, size: PieceSize = .default, isMemorized: (VerseRange) -> Bool) -> VerseRange? {
         let resume = resumeRange?.startGlobalAyah ?? range.startGlobalAyah
         func scan(from start: Int, through end: Int) -> VerseRange? {
             var cursor = start
-            while cursor <= end, let candidate = passage(from: cursor, catalog: catalog, byPage: byPage) {
+            while cursor <= end, let candidate = passage(from: cursor, catalog: catalog, size: size) {
                 if !isMemorized(candidate) { return candidate }
                 cursor = candidate.endGlobalAyah + 1
             }

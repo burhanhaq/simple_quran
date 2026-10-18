@@ -7,6 +7,11 @@ struct ProgressTabView: View {
     @Query private var progress: [VerseProgress]
     @Query private var sessions: [PracticeSession]
     @State private var browse = PlanBrowse.surahs
+    @State private var search = ""
+    @AppStorage(ProgressLayout.storageKey) private var layout = ProgressLayout.map
+
+    /// Searching always shows names, whichever layout is chosen.
+    private var showsList: Bool { layout == .list || !search.isEmpty }
 
     var body: some View {
         let snapshots = progress.map(\.snapshot)
@@ -28,8 +33,9 @@ struct ProgressTabView: View {
             }
             .background(Color.parchment.ignoresSafeArea())
             .navigationTitle(AppTab.progress.title)
-            .navigationDestination(for: Surah.self) { PassageProgressView(title: $0.englishName, range: $0.range) }
-            .navigationDestination(for: JuzSection.self) { PassageProgressView(title: "Juz \($0.number)", range: $0.range) }
+            .searchable(text: $search, prompt: browse == .surahs ? "Find a surah" : "Find a juz")
+            .navigationDestination(for: Surah.self) { PassageProgressView(title: $0.englishName, range: $0.range, destination: .surah(number: $0.number)) }
+            .navigationDestination(for: JuzSection.self) { PassageProgressView(title: "Juz \($0.number)", range: $0.range, destination: .juz($0.number)) }
         }
     }
 
@@ -52,35 +58,91 @@ struct ProgressTabView: View {
         }
     }
 
+    private var surahs: [Surah] {
+        environment.quran.surahs.filter {
+            search.isEmpty || "\($0.number) \($0.englishName) \($0.arabicName) \($0.translation) \($0.aliases.joined(separator: " "))"
+                .localizedCaseInsensitiveContains(search)
+        }
+    }
+
+    private var juzs: [JuzSection] {
+        environment.quran.juzs.filter { search.isEmpty || "Juz \($0.number) \($0.number == 30 ? "Amma" : "")".localizedCaseInsensitiveContains(search) }
+    }
+
     private func map(_ index: ProgressIndex) -> some View {
         VStack(alignment: .leading, spacing: 14) {
-            HStack {
+            HStack(spacing: 10) {
                 Text("The Quran").font(.title3.weight(.semibold))
                 Spacer()
-                MapLegend()
+                if !showsList { MapLegend() }
+                Button { withAnimation(.snappy) { layout = layout == .map ? .list : .map } } label: {
+                    Image(systemName: layout == .map ? "list.bullet" : "square.grid.3x3").font(.subheadline.weight(.semibold))
+                        .frame(width: 44, height: 44)
+                }
+                .foregroundStyle(Color.bronze)
+                .accessibilityLabel(layout == .map ? "Show as list" : "Show as map")
+                .accessibilityIdentifier("progress.layout")
             }
             Picker("Browse", selection: $browse) {
                 ForEach(PlanBrowse.allCases) { Text($0.title).tag($0) }
             }.pickerStyle(.segmented)
-            LazyVGrid(columns: [GridItem(.adaptive(minimum: browse == .surahs ? 44 : 56), spacing: 8)], spacing: 8) {
+            // Surahs and juz share ids 1–30, so each browse mode needs its own identity
+            // or SwiftUI keeps the surah links when showing juz.
+            Group { if showsList { list(index) } else { grid(index) } }.id(browse)
+        }
+    }
+
+    private func grid(_ index: ProgressIndex) -> some View {
+        LazyVGrid(columns: [GridItem(.adaptive(minimum: browse == .surahs ? 44 : 56), spacing: 8)], spacing: 8) {
+            switch browse {
+            case .surahs:
+                ForEach(environment.quran.surahs) { surah in
+                    NavigationLink(value: surah) {
+                        MapTile(number: surah.number, range: surah.range, index: index)
+                    }.buttonStyle(.plain)
+                        .accessibilityLabel("\(surah.englishName), \(SurahProgressSummary(surah: surah, index: index).text)")
+                        .accessibilityIdentifier("progress.surah.\(surah.number)")
+                }
+            case .juz:
+                ForEach(environment.quran.juzs) { juz in
+                    NavigationLink(value: juz) {
+                        MapTile(number: juz.number, range: juz.range, index: index)
+                    }.buttonStyle(.plain)
+                        .accessibilityLabel("Juz \(juz.number), \(index.count(.memorized, in: juz.range)) of \(juz.range.count) memorized")
+                }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func list(_ index: ProgressIndex) -> some View {
+        let empty = browse == .surahs ? surahs.isEmpty : juzs.isEmpty
+        if empty {
+            ContentUnavailableView.search(text: search)
+        } else {
+            LazyVStack(spacing: 0) {
                 switch browse {
                 case .surahs:
-                    ForEach(environment.quran.surahs) { surah in
+                    ForEach(surahs) { surah in
                         NavigationLink(value: surah) {
-                            MapTile(number: surah.number, range: surah.range, index: index)
+                            ProgressListRow(number: surah.number, range: surah.range, index: index, title: surah.englishName,
+                                            subtitle: "\(surah.translation) · \(surah.ayahCount) ayahs", arabicName: surah.arabicName)
                         }.buttonStyle(.plain)
-                            .accessibilityLabel("\(surah.englishName), \(SurahProgressSummary(surah: surah, index: index).text)")
-                            .accessibilityIdentifier("progress.surah.\(surah.number)")
+                            .accessibilityIdentifier("progress.list.surah.\(surah.number)")
+                        if surah.id != surahs.last?.id { Divider().padding(.leading, 72) }
                     }
                 case .juz:
-                    ForEach(environment.quran.juzs) { juz in
+                    ForEach(juzs) { juz in
                         NavigationLink(value: juz) {
-                            MapTile(number: juz.number, range: juz.range, index: index)
+                            ProgressListRow(number: juz.number, range: juz.range, index: index,
+                                            title: PassageLabel.passage(juz.range, catalog: environment.quran),
+                                            subtitle: LearningPassage.referenceLabel(juz.range, catalog: environment.quran), arabicName: nil)
                         }.buttonStyle(.plain)
-                            .accessibilityLabel("Juz \(juz.number), \(index.count(.memorized, in: juz.range)) of \(juz.range.count) memorized")
+                        if juz.id != juzs.last?.id { Divider().padding(.leading, 72) }
                     }
                 }
             }
+            .background(Color.appWarmSurface, in: RoundedRectangle(cornerRadius: AppTheme.tightRadius))
         }
     }
 
@@ -105,6 +167,49 @@ struct ProgressTabView: View {
     private func weekdayInitial(daysAgo: Int) -> String {
         let day = Calendar.current.date(byAdding: .day, value: -daysAgo, to: .now) ?? .now
         return day.formatted(.dateTime.weekday(.narrow))
+    }
+}
+
+enum ProgressLayout: String {
+    case map
+    case list
+
+    static let storageKey = "progress.layout"
+}
+
+/// A named row for the list layout: the map square, the name, and how much is memorized.
+private struct ProgressListRow: View {
+    let number: Int
+    let range: VerseRange
+    let index: ProgressIndex
+    let title: String
+    let subtitle: String
+    let arabicName: String?
+
+    var body: some View {
+        let memorized = index.count(.memorized, in: range)
+        let learning = index.count(.learning, in: range)
+        HStack(spacing: 14) {
+            MapTile(number: number, range: range, index: index).frame(width: 44)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(title).font(.headline).foregroundStyle(Color.appBrownText).lineLimit(1)
+                Text(subtitle).font(.caption).foregroundStyle(Color.secondaryWarm).lineLimit(1)
+                if memorized + learning > 0 {
+                    HStack(spacing: 8) {
+                        ProgressView(value: Double(memorized), total: Double(range.count)).tint(Color.olive)
+                        Text(memorized == range.count ? String(localized: "Memorized") : "\(memorized)/\(range.count)")
+                            .font(.caption2.weight(.medium)).monospacedDigit().foregroundStyle(Color.olive)
+                    }
+                }
+            }
+            Spacer(minLength: 8)
+            if let arabicName {
+                Text(arabicName).font(.quran(.listName)).foregroundStyle(Color.appBrownText).multilineTextAlignment(.trailing)
+            }
+        }
+        .padding(.vertical, 10).padding(.horizontal, 14)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .combine)
     }
 }
 

@@ -1,36 +1,20 @@
 import Foundation
 
-/// Suggestions are deliberately small and always end at an ayah boundary.
+/// Memorize passages follow the mushaf page (see `QuranPieces`) and always end at an ayah boundary.
 /// They are editable, not a fixed curriculum or a claim about thematic divisions.
 nonisolated enum LearningPassage {
-    static func suggested(from start: Int, catalog: some QuranCatalog) -> VerseRange? {
-        guard let first = catalog.verse(globalAyah: start),
-              let surah = catalog.surah(number: first.surahNumber) else { return nil }
-        let remaining = catalog.verses(in: .clamped(start: start, end: surah.endGlobalAyah))
-        let wholeIsSmall = start == surah.startGlobalAyah && surah.ayahCount <= 7
-            && remaining.reduce(0, { $0 + wordCount($1) }) <= 45
-        if wholeIsSmall { return .clamped(start: start, end: surah.endGlobalAyah) }
-        var end = start
-        var words = 0
-        for verse in remaining.prefix(3) {
-            let count = wordCount(verse)
-            if words > 0 && words + count > 40 { break }
-            words += count
-            end = verse.globalAyah
+    /// The piece starting at `start`. Starting partway into a piece runs to its end, and when only
+    /// a sliver of it is left the passage carries on through the next piece in the same surah.
+    static func piece(from start: Int, size: PieceSize, catalog: some QuranCatalog) -> VerseRange? {
+        guard let piece = catalog.piece(containing: start, size: size) else { return nil }
+        let remaining = piece.endGlobalAyah - start + 1
+        if start != piece.startGlobalAyah, remaining * 2 < piece.count,
+           let first = catalog.verse(globalAyah: start),
+           let next = catalog.piece(containing: piece.endGlobalAyah + 1, size: size),
+           catalog.verse(globalAyah: next.startGlobalAyah)?.surahNumber == first.surahNumber {
+            return .clamped(start: start, end: next.endGlobalAyah)
         }
-        return .clamped(start: start, end: end)
-    }
-
-    static func next(after range: VerseRange, catalog: some QuranCatalog, byPage: Bool = false) -> VerseRange? {
-        guard let last = catalog.verse(globalAyah: range.endGlobalAyah),
-              let surah = catalog.surah(number: last.surahNumber),
-              range.endGlobalAyah < surah.endGlobalAyah else { return nil }
-        let start = range.endGlobalAyah + 1
-        if byPage, let verse = catalog.verse(globalAyah: start),
-           let page = catalog.pages.first(where: { $0.number == verse.page }) {
-            return .clamped(start: start, end: page.endGlobalAyah)
-        }
-        return suggested(from: start, catalog: catalog)
+        return .clamped(start: start, end: piece.endGlobalAyah)
     }
 
     static func ayahLabel(_ range: VerseRange, catalog: some QuranCatalog) -> String {
@@ -51,9 +35,5 @@ nonisolated enum LearningPassage {
             return "\(firstSurah.englishName) · \(ayahLabel(range, catalog: catalog))"
         }
         return "\(firstSurah.englishName) \(first.ayahInSurah) – \(lastSurah.englishName) \(last.ayahInSurah)"
-    }
-
-    private static func wordCount(_ verse: QuranVerse) -> Int {
-        verse.text.split(whereSeparator: { $0.isWhitespace }).count
     }
 }

@@ -62,6 +62,8 @@ nonisolated protocol QuranCatalog: Sendable {
     func verse(globalAyah: Int) -> QuranVerse?
     func surah(number: Int) -> Surah?
     func verses(in range: VerseRange) -> [QuranVerse]
+    /// The memorize piece of the given size that holds this ayah.
+    func piece(containing globalAyah: Int, size: PieceSize) -> VerseRange?
     func range(surah: Int, startAyah: Int, endAyah: Int) throws -> VerseRange
     func search(_ query: String) -> QuranSearchResult
 }

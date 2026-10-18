@@ -53,6 +53,10 @@ final class AppSettings {
         static let showsStatusChangeNote = "settings.showsStatusChangeNote"
         static let startTab = "settings.startTab"
         static let hasCompletedOnboarding = "settings.hasCompletedOnboarding"
+        static let pieceSize = "learning.pieceSize"
+        static let legacyPracticeByPage = "learning.byPage"
+        static let memorizePlayback = "learning.playback"
+        static let piecesAdopted = "learning.piecesAdopted"
         static let legacyLearningStart = "learning.start"
         static let legacyLearningEnd = "learning.end"
     }
@@ -110,11 +114,30 @@ final class AppSettings {
         setActivePlan(plan)
     }
 
+    /// Plans saved before passages followed the mushaf page resume at the piece holding their place.
+    func adoptPagePieces(catalog: some QuranCatalog) {
+        guard !defaults.bool(forKey: Key.piecesAdopted) else { return }
+        defaults.set(true, forKey: Key.piecesAdopted)
+        for index in learningTargets.indices {
+            guard let resume = learningTargets[index].resumeRange else { continue }
+            var target = learningTargets[index]
+            target.resumeRange = nil
+            learningTargets[index].resumeRange = target.passage(from: resume.startGlobalAyah, catalog: catalog, size: pieceSize)
+        }
+    }
+
     var readingAyah: Int {
         didSet { defaults.set(readingAyah, forKey: "reading.ayah") }
     }
-    var practiceByPage: Bool {
-        didSet { defaults.set(practiceByPage, forKey: "learning.byPage") }
+    /// How much of a page each memorize piece covers, for every plan and passage.
+    var pieceSize: PieceSize {
+        didSet { defaults.set(pieceSize.rawValue, forKey: Key.pieceSize) }
+    }
+    /// How memorize passages play: one setting for all of them, so a new passage never resets it.
+    var memorizePlayback: PracticeSettings {
+        didSet {
+            if let data = try? JSONEncoder().encode(memorizePlayback) { defaults.set(data, forKey: Key.memorizePlayback) }
+        }
     }
     var generatedPracticeIDs: [String] {
         didSet { defaults.set(generatedPracticeIDs, forKey: "learning.generatedIDs") }
@@ -165,7 +188,10 @@ final class AppSettings {
             .flatMap { try? JSONDecoder().decode([LearningTarget].self, from: $0) } ?? []
         activeTargetID = defaults.string(forKey: "learning.activeTarget").flatMap(UUID.init(uuidString:))
         readingAyah = defaults.integer(forKey: "reading.ayah")
-        practiceByPage = defaults.bool(forKey: "learning.byPage")
+        pieceSize = defaults.string(forKey: Key.pieceSize).flatMap(PieceSize.init(rawValue:))
+            ?? (defaults.bool(forKey: Key.legacyPracticeByPage) ? .fullPage : .default)
+        memorizePlayback = defaults.data(forKey: Key.memorizePlayback)
+            .flatMap { try? JSONDecoder().decode(PracticeSettings.self, from: $0) } ?? .default
         generatedPracticeIDs = defaults.stringArray(forKey: "learning.generatedIDs") ?? []
         self.wifiOnly = defaults.object(forKey: Key.wifiOnly) as? Bool ?? false
         self.streamWhenMissing = defaults.object(forKey: Key.streamWhenMissing) as? Bool ?? true
@@ -216,6 +242,7 @@ final class AppEnvironment {
         self.settings = settings
         selectedTab = settings.startTab
         settings.adoptLegacyLearningPlace(catalog: quran)
+        settings.adoptPagePieces(catalog: quran)
         // People updating from an earlier version get the one-time note instead of onboarding.
         if !settings.hasCompletedOnboarding,
            settings.showsStatusChangeNote || !settings.learningTargets.isEmpty || settings.readingAyah > 0 {
@@ -246,8 +273,10 @@ final class AppEnvironment {
         route = .reader(ReaderRoute(destination: destination))
     }
 
-    func openSession(_ range: VerseRange, kind: SessionKind = .learn, planID: UUID? = nil) {
-        route = .session(SessionRoute(range: range, kind: kind, planID: planID))
+    /// `scope` is what the user chose to memorize (a surah, juz, or range), so "Next passage"
+    /// carries on through it. Without one, the passage's surah.
+    func openSession(_ range: VerseRange, kind: SessionKind = .learn, planID: UUID? = nil, scope: VerseRange? = nil) {
+        route = .session(SessionRoute(range: range, kind: kind, planID: planID, scope: scope))
     }
 
     func openReviews(_ passages: [VerseRange]) {
@@ -267,7 +296,7 @@ final class AppEnvironment {
         guard let ayah = playback.snapshot.currentGlobalAyah,
               let verse = quran.verse(globalAyah: ayah) else { return }
         if let active = playback.activeSet, let session = lastSession {
-            route = .session(SessionRoute(range: session.range, kind: session.kind, planID: session.planID,
+            route = .session(SessionRoute(range: session.range, kind: session.kind, planID: session.planID, scope: session.scope,
                                           reviewQueue: session.reviewQueue, savedPractice: active, resumePlayback: true))
         } else {
             route = .reader(ReaderRoute(destination: .surah(number: verse.surahNumber, scrollToAyah: ayah), resumePlayback: true))
@@ -276,14 +305,21 @@ final class AppEnvironment {
 
     func practice(for range: VerseRange) throws -> PracticeSet {
         if let existing = try store.activeSets().first(where: { $0.orderedPassages.map(\.range) == [range] }) {
+            // Passages the app made follow the one memorize setting; ones the user saved keep their own.
+            if settings.generatedPracticeIDs.contains(existing.id.uuidString) {
+                let playback = settings.memorizePlayback.keepingHideArabic(of: existing.settings)
+                if existing.settings != playback {
+                    existing.settings = playback
+                    try store.save()
+                }
+            }
             return existing
         }
         let title = PassageLabel.passage(range, catalog: quran)
-        let created = try store.createSet(title: title, passages: [range], settings: .memorize)
+        let created = try store.createSet(title: title, passages: [range], settings: settings.memorizePlayback)
         settings.generatedPracticeIDs.append(created.id.uuidString)
         return created
     }
-
 
 }
 

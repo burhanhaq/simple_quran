@@ -51,8 +51,8 @@ struct PlanPickerView: View {
     @Environment(\.dismiss) private var dismiss
     @Query private var progress: [VerseProgress]
     let purpose: PlanPickerPurpose
-    /// Called with the passage to start once the picker has dismissed (one-off only).
-    var onStart: (VerseRange) -> Void = { _ in }
+    /// Called with the passage to start and what it belongs to, once the picker has dismissed (one-off only).
+    var onStart: (_ passage: VerseRange, _ scope: VerseRange) -> Void = { _, _ in }
     @State private var browse = PlanBrowse.surahs
     @State private var search = ""
     @State private var selection: LearningTarget?
@@ -141,12 +141,18 @@ struct PlanPickerView: View {
     private func start() {
         guard let selection else { return }
         let index = ProgressIndex(progress.map(\.snapshot))
-        let byPage = environment.settings.practiceByPage
-        let passage = selection.nextPassage(catalog: environment.quran, byPage: byPage) { index.status(of: $0) == .memorized }
-            ?? selection.passage(catalog: environment.quran, byPage: byPage)
-        if let passage { onStart(passage) }
+        let size = environment.settings.pieceSize
+        let passage = selection.nextPassage(catalog: environment.quran, size: size) { index.status(of: $0) == .memorized }
+            ?? selection.passage(catalog: environment.quran, size: size)
+        if let passage { onStart(passage, selection.range) }
         dismiss()
     }
+}
+
+/// A one-off passage waiting for the picker to dismiss before its session opens.
+struct PendingStart {
+    let passage: VerseRange
+    let scope: VerseRange
 }
 
 enum PlanBrowse: String, CaseIterable, Identifiable {
@@ -249,7 +255,7 @@ struct PlanDetailView: View {
                             }
                         }
                     }
-                    if let next = plan.nextPassage(catalog: environment.quran, byPage: environment.settings.practiceByPage, isMemorized: { index.status(of: $0) == .memorized }) {
+                    if let next = plan.nextPassage(catalog: environment.quran, size: environment.settings.pieceSize, isMemorized: { index.status(of: $0) == .memorized }) {
                         VStack(alignment: .leading, spacing: 12) {
                             Text("NEXT").font(.caption.weight(.semibold)).tracking(1.4).foregroundStyle(Color.secondaryWarm)
                             Text(LearningPassage.referenceLabel(next, catalog: environment.quran)).font(.headline)

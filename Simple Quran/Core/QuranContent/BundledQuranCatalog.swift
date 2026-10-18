@@ -20,6 +20,7 @@ nonisolated struct BundledQuranCatalog: QuranCatalog, Sendable {
     let verses: [QuranVerse]
     let juzs: [JuzSection]
     let pages: [PageSection]
+    let pieces: QuranPieces
     let integrity: QuranIntegrityReport
 
     init(from url: URL) throws {
@@ -76,6 +77,7 @@ nonisolated struct BundledQuranCatalog: QuranCatalog, Sendable {
         self.surahs = surahs
         self.juzs = Self.makeJuzs(from: verses)
         self.pages = Self.makePages(from: verses)
+        self.pieces = QuranPieces(verses: verses)
         self.integrity = Self.validate(surahs: surahs, verses: verses, juzs: juzs, pages: pages)
 
         if strict, !integrity.isValid {
@@ -118,6 +120,10 @@ nonisolated struct BundledQuranCatalog: QuranCatalog, Sendable {
 
     func verses(in range: VerseRange) -> [QuranVerse] {
         range.globalAyahs.compactMap(verse(globalAyah:))
+    }
+
+    func piece(containing globalAyah: Int, size: PieceSize) -> VerseRange? {
+        pieces.piece(containing: globalAyah, size: size)
     }
 
     func range(surah surahNumber: Int, startAyah: Int, endAyah: Int) throws -> VerseRange {

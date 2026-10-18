@@ -53,8 +53,22 @@ struct SettingsView: View {
                     }
                     .warmListRow()
                 }
-                Section(String(localized: "Memorize")) {
+                Section {
+                    Picker(String(localized: "Piece size"), selection: Bindable(environment.settings).pieceSize) {
+                        ForEach(PieceSize.allCases) { Text($0.title).tag($0) }
+                    }
+                    .accessibilityIdentifier("settings.pieceSize")
+                    .warmListRow()
+                    Picker(String(localized: "Repeat each ayah"), selection: Bindable(environment.settings).memorizePlayback.ayahRepeatCount) {
+                        ForEach(RepeatCount.ayahPresets) { Text($0.label).tag($0) }
+                    }
+                    .accessibilityIdentifier("settings.ayahRepeat")
+                    .warmListRow()
                     NavigationLink(String(localized: "Older saved passages")) { SetListView() }.warmListRow()
+                } header: {
+                    Text(String(localized: "Memorize"))
+                } footer: {
+                    Text(String(localized: "Pieces follow the Madani mushaf page. A short surah is always one piece."))
                 }
                 Section(String(localized: "Recordings")) {
                     Button(String(localized: "Delete all recordings"), role: .destructive) {

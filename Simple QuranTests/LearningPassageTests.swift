@@ -4,41 +4,45 @@ import Testing
 @testable import Simple_Quran
 
 struct LearningPassageTests {
-    @Test func suggestionsCoverEverySurahWithoutGapsOrCrossingItsEnd() throws {
-        let catalog = try BundledQuranCatalog.loadFromBundle()
-        for surah in catalog.surahs {
-            var start = surah.startGlobalAyah
-            var covered: [Int] = []
-            while start <= surah.endGlobalAyah {
-                let range = try #require(LearningPassage.suggested(from: start, catalog: catalog))
-                #expect(range.startGlobalAyah == start)
-                #expect(range.endGlobalAyah <= surah.endGlobalAyah)
-                #expect(range.count > 0)
-                covered += range.globalAyahs
-                start = range.endGlobalAyah + 1
-            }
-            #expect(covered == Array(surah.startGlobalAyah...surah.endGlobalAyah))
-        }
+    @Test @MainActor func pieceSizeAndPlaybackArePreferencesThatPersist() throws {
+        let suite = "PieceTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let fresh = AppSettings(defaults: defaults)
+        #expect(fresh.pieceSize == .halfPage)
+        #expect(fresh.memorizePlayback.ayahRepeatCount == .one)
+
+        fresh.pieceSize = .quarterPage
+        fresh.memorizePlayback.ayahRepeatCount = .five
+        let reopened = AppSettings(defaults: defaults)
+        #expect(reopened.pieceSize == .quarterPage)
+        #expect(reopened.memorizePlayback.ayahRepeatCount == .five)
     }
 
-    @Test func shortSurahsAndLongAyahsGetAppropriateSuggestions() throws {
-        let catalog = try BundledQuranCatalog.loadFromBundle()
-        let ikhlas = try #require(catalog.surah(number: 112))
-        let short = try #require(LearningPassage.suggested(from: ikhlas.startGlobalAyah, catalog: catalog))
-        #expect(short.count == 4)
-        #expect(LearningPassage.next(after: short, catalog: catalog) == nil)
-        let long = try catalog.range(surah: 2, startAyah: 282, endAyah: 282)
-        #expect(LearningPassage.suggested(from: long.startGlobalAyah, catalog: catalog) == long)
+    @Test @MainActor func pagePreferenceFromEarlierVersionsBecomesFullPages() throws {
+        let suite = "PieceTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        defaults.set(true, forKey: "learning.byPage")
+        #expect(AppSettings(defaults: defaults).pieceSize == .fullPage)
     }
 
-    @Test func nextPassageUsesAyahBoundariesAndPagePreference() throws {
+    @Test @MainActor func savedPlanPlacesSnapToTheirPieceOnce() throws {
         let catalog = try BundledQuranCatalog.loadFromBundle()
-        let range = try catalog.range(surah: 67, startAyah: 1, endAyah: 3)
-        let next = try #require(LearningPassage.next(after: range, catalog: catalog))
-        #expect(next.startGlobalAyah == range.endGlobalAyah + 1)
-        let page = try #require(LearningPassage.next(after: range, catalog: catalog, byPage: true))
-        let verse = try #require(catalog.verse(globalAyah: page.startGlobalAyah))
-        #expect(page.endGlobalAyah == catalog.pages.first(where: { $0.number == verse.page })?.endGlobalAyah)
+        let suite = "PieceTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let mulk = try #require(catalog.surah(number: 67))
+        let settings = AppSettings(defaults: defaults)
+        let oldPlace = VerseRange.clamped(start: mulk.startGlobalAyah, end: mulk.startGlobalAyah + 2)
+        settings.setActivePlan(LearningTarget(range: mulk.range, resumeRange: oldPlace))
+        settings.adoptPagePieces(catalog: catalog)
+        let piece = try #require(catalog.piece(containing: mulk.startGlobalAyah, size: .halfPage))
+        #expect(settings.activePlan?.resumeRange == piece)
+
+        settings.remember(oldPlace, targetID: settings.activePlan?.id)
+        settings.adoptPagePieces(catalog: catalog)
+        #expect(settings.activePlan?.resumeRange == oldPlace)
     }
 
     @Test @MainActor func finishingWithoutAnAnswerRecordsActivityButNotMemorization() throws {

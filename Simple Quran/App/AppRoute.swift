@@ -31,6 +31,8 @@ struct SessionRoute: Identifiable {
     var range: VerseRange
     var kind: SessionKind = .learn
     var planID: UUID? = nil
+    /// What the user chose to memorize; "Next passage" stays inside it. Nil means the passage's surah.
+    var scope: VerseRange? = nil
     /// Review passages still waiting after this one.
     var reviewQueue: [VerseRange] = []
     var savedPractice: PracticeSet? = nil

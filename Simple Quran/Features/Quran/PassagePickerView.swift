@@ -1,5 +1,20 @@
 import SwiftUI
 
+/// One of the piece sizes, or exact ayahs the user picks.
+enum PassagePickMode: Hashable {
+    case piece(PieceSize)
+    case custom
+
+    static let all: [PassagePickMode] = PieceSize.allCases.map(PassagePickMode.piece) + [.custom]
+
+    var title: String {
+        switch self {
+        case .piece(let size): size.title
+        case .custom: String(localized: "Choose ayahs")
+        }
+    }
+}
+
 struct PassagePickerView: View {
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     @Environment(AppEnvironment.self) private var environment
@@ -7,26 +22,18 @@ struct PassagePickerView: View {
     let startAyah: Int
     let currentRange: VerseRange?
     var allowedRange: VerseRange? = nil
-    let onChoose: (VerseRange, Bool) -> Void
+    /// Called with the passage, and the piece size when one was chosen.
+    let onChoose: (VerseRange, PieceSize?) -> Void
     @State private var initialized = false
-    @State private var mode = 2
+    @State private var mode = PassagePickMode.custom
     @State private var first = 1
     @State private var last = 1
-    @State private var pageNumber = 1
-
-    private var availablePages: [PageSection] {
-        environment.quran.pages.filter {
-            guard let allowedRange else { return true }
-            return $0.endGlobalAyah >= allowedRange.startGlobalAyah && $0.startGlobalAyah <= allowedRange.endGlobalAyah
-        }
-    }
 
     private var selectedRange: VerseRange? {
         let selection: VerseRange?
         switch mode {
-        case 0: selection = LearningPassage.suggested(from: first, catalog: environment.quran)
-        case 1: selection = try? environment.quran.versesForPage(pageNumber)
-        default: selection = try? VerseRange(startGlobalAyah: first, endGlobalAyah: last)
+        case .piece(let size): selection = LearningPassage.piece(from: first, size: size, catalog: environment.quran)
+        case .custom: selection = try? VerseRange(startGlobalAyah: first, endGlobalAyah: last)
         }
         guard let selection else { return nil }
         guard let allowedRange else { return selection }
@@ -40,21 +47,11 @@ struct PassagePickerView: View {
             Form {
                 Section {
                     Picker("Practice", selection: $mode) {
-                        Text("A few ayahs").tag(0)
-                        Text("One page").tag(1)
-                        Text("Choose ayahs").tag(2)
+                        ForEach(PassagePickMode.all, id: \.self) { Text($0.title).tag($0) }
                     }.pickerStyle(.inline).labelsHidden()
-                } header: { Text("Make it your own") }
-                  footer: { Text("Choose a small passage or set the exact ayahs you want to practice.") }
-                if mode == 1 {
-                    Section {
-                        Picker("Page", selection: $pageNumber) {
-                            ForEach(availablePages) { Text("\($0.number)").tag($0.number) }
-                        }.pickerStyle(.wheel).frame(height: 140)
-                    } header: { Text("Madani mushaf · 604 pages") }
-                } else {
-                    AyahRangeFields(first: $first, last: $last, showsEnd: mode == 2, bounds: allowedRange)
-                }
+                } header: { Text("How much at a time") }
+                  footer: { Text("Pieces follow the Madani mushaf page, so what you memorize matches what you see.") }
+                AyahRangeFields(first: $first, last: $last, showsEnd: mode == .custom, bounds: allowedRange)
                 if verticalSizeClass == .compact { Section { rangeSummary } }
             }
             .warmListChrome().navigationTitle("Your passage").navigationBarTitleDisplayMode(.inline)
@@ -63,7 +60,7 @@ struct PassagePickerView: View {
                     if verticalSizeClass != .compact { rangeSummary }
                     Button {
                         guard let range = selectedRange else { return }
-                        onChoose(range, mode == 1)
+                        if case .piece(let size) = mode { onChoose(range, size) } else { onChoose(range, nil) }
                         dismiss()
                     } label: { Text("Practice this passage").frame(maxWidth: .infinity) }
                         .buttonStyle(WarmButtonStyle()).disabled(selectedRange == nil).accessibilityIdentifier("passage.start")
@@ -75,14 +72,10 @@ struct PassagePickerView: View {
                 initialized = true
                 first = currentRange?.startGlobalAyah ?? startAyah
                 last = currentRange?.endGlobalAyah ?? first
-                pageNumber = environment.quran.verse(globalAyah: first)?.page ?? 1
-                // Opening an existing passage must preserve its exact boundaries.
-                mode = currentRange == nil ? 0 : 2
-                if environment.settings.practiceByPage, let range = currentRange,
-                   let page = try? environment.quran.versesForPage(pageNumber),
-                   range.startGlobalAyah == max(page.startGlobalAyah, allowedRange?.startGlobalAyah ?? 1),
-                   range.endGlobalAyah == min(page.endGlobalAyah, allowedRange?.endGlobalAyah ?? QuranCatalogMetrics.ayahCount) {
-                    mode = 1
+                // Opening an existing passage keeps its exact boundaries unless it is a whole piece.
+                let size = environment.settings.pieceSize
+                if currentRange == nil || currentRange == LearningPassage.piece(from: first, size: size, catalog: environment.quran) {
+                    mode = .piece(size)
                 }
             }
         }.tint(Color.bronze)
@@ -94,7 +87,7 @@ struct PassagePickerView: View {
                 .fixedSize(horizontal: false, vertical: true)
             Text("\(range.count) ayahs · At your own pace").font(.caption).foregroundStyle(Color.secondaryWarm)
         } else {
-            Text("Choose a page within your focus.").font(.subheadline)
+            Text("Choose ayahs within your focus.").font(.subheadline)
         }
     }
 }
@@ -128,7 +121,7 @@ struct AyahRangeFields: View {
                 ayahWheels
             }
         } header: { Text(showsEnd ? "Ayah range" : "Start here") }
-          footer: { Text(showsEnd ? "Both the first and last ayah are included." : "We’ll suggest a few ayahs from this starting point.") }
+          footer: { Text(showsEnd ? "Both the first and last ayah are included." : "The piece runs from here to its place on the page.") }
     }
 
     @ViewBuilder private var surahControls: some View {

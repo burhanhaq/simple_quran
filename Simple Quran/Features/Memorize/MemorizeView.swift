@@ -9,7 +9,7 @@ struct MemorizeView: View {
     @Query(filter: #Predicate<PracticeSet> { $0.deletedAt == nil && $0.archivedAt == nil }) private var sets: [PracticeSet]
     @State private var showSettings = false
     @State private var picker: PlanPickerPurpose?
-    @State private var pendingRange: VerseRange?
+    @State private var pendingStart: PendingStart?
     @State private var showKnown = false
 
     private var snapshots: [VerseProgressSnapshot] { verseProgress.map(\.snapshot) }
@@ -17,7 +17,7 @@ struct MemorizeView: View {
 
     var body: some View {
         let index = ProgressIndex(snapshots)
-        let next = plan?.nextPassage(catalog: environment.quran, byPage: environment.settings.practiceByPage) { index.status(of: $0) == .memorized }
+        let next = plan?.nextPassage(catalog: environment.quran, size: environment.settings.pieceSize) { index.status(of: $0) == .memorized }
         let reviews = ReviewPlanner.duePassages(snapshots: snapshots, catalog: environment.quran)
         NavigationStack {
             ScrollView {
@@ -74,12 +74,12 @@ struct MemorizeView: View {
                 }.tint(Color.bronze)
             }
             .sheet(item: $picker, onDismiss: {
-                if let pendingRange {
-                    self.pendingRange = nil
-                    environment.openSession(pendingRange)
+                if let pendingStart {
+                    self.pendingStart = nil
+                    environment.openSession(pendingStart.passage, scope: pendingStart.scope)
                 }
             }) { purpose in
-                PlanPickerView(purpose: purpose) { pendingRange = $0 }
+                PlanPickerView(purpose: purpose) { pendingStart = PendingStart(passage: $0, scope: $1) }
             }
         }
     }
@@ -127,7 +127,7 @@ struct MemorizeView: View {
             } else {
                 Text("What would you like to memorize?")
                     .font(.system(.largeTitle, design: .serif).weight(.medium)).fixedSize(horizontal: false, vertical: true)
-                Text("Pick a surah, a juz, or a few ayahs. We’ll take it a small passage at a time.")
+                Text("Pick a surah, a juz, or a few ayahs. We’ll take it half a page at a time.")
                     .font(.subheadline).foregroundStyle(.white.opacity(0.8))
                 heroButton("Choose a plan", identifier: "memorize.choosePlan") { picker = .plan }
                 Button { environment.selectedTab = .quran } label: {

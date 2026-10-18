@@ -10,7 +10,7 @@ final class Simple_QuranUITests: XCTestCase {
         app.launchArguments = ["-ui-testing", "-ui-testing-reset-focus", "-ui-testing-skip-onboarding",
                                "-settings.appearance", appearance, "-settings.quranReadingLayout", "ayahByAyah",
                                "-settings.startTab", "memorize",
-                               "-learning.start", "0", "-learning.end", "0", "-reading.ayah", "0", "-learning.byPage", "NO"] + extra
+                               "-learning.start", "0", "-learning.end", "0", "-reading.ayah", "0", "-learning.pieceSize", "halfPage"] + extra
         app.launch()
         return app
     }
@@ -309,7 +309,7 @@ final class Simple_QuranUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-ui-testing", "-ui-testing-reset-focus", "-ui-testing-reset-onboarding",
                                "-settings.appearance", "light", "-settings.quranReadingLayout", "ayahByAyah",
-                               "-learning.start", "0", "-learning.end", "0", "-reading.ayah", "0", "-learning.byPage", "NO"]
+                               "-learning.start", "0", "-learning.end", "0", "-reading.ayah", "0", "-learning.pieceSize", "halfPage"]
         app.launch()
         return app
     }

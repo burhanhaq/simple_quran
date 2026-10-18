@@ -22,11 +22,11 @@ struct LearningTargetTests {
     @Test func customFocusClipsSuggestionsAndPagesToItsBoundaries() throws {
         let catalog = try BundledQuranCatalog.loadFromBundle()
         let target = LearningTarget(range: try catalog.range(surah: 2, startAyah: 4, endAyah: 6))
-        for byPage in [false, true] {
-            let passage = try #require(target.passage(catalog: catalog, byPage: byPage))
+        for size in PieceSize.allCases {
+            let passage = try #require(target.passage(catalog: catalog, size: size))
             #expect(passage.startGlobalAyah == target.range.startGlobalAyah)
             #expect(passage.endGlobalAyah <= target.range.endGlobalAyah)
-            #expect(target.passage(from: target.range.endGlobalAyah + 1, catalog: catalog, byPage: byPage) == nil)
+            #expect(target.passage(from: target.range.endGlobalAyah + 1, catalog: catalog, size: size) == nil)
         }
     }
 

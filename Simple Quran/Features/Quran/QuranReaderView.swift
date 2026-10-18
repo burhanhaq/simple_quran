@@ -54,7 +54,7 @@ struct QuranReaderView: View {
                 ToolbarItem(placement: .topBarTrailing) {
                     Menu {
                         ReadingLayoutMenu()
-                        Button(audioDownloaded ? "Audio saved on this device" : downloading ? "Saving audio…" : "Download this audio", systemImage: audioDownloaded ? "checkmark.circle" : "arrow.down.circle") {
+                        Button(audioDownloaded ? "Audio downloaded" : downloading ? "Downloading audio…" : "Download this audio", systemImage: audioDownloaded ? "checkmark.circle" : "arrow.down.circle") {
                             environment.downloads.download(ayahs: passage.ayahIDs)
                         }.disabled(audioDownloaded || downloading)
                     } label: { Image(systemName: "ellipsis").frame(width: 32, height: 32) }
@@ -89,7 +89,7 @@ struct QuranReaderView: View {
         ) { verse in
             Button("Memorize from here", systemImage: "leaf") {
                 savePosition()
-                if let range = LearningPassage.suggested(from: verse.globalAyah, catalog: environment.quran) {
+                if let range = LearningPassage.piece(from: verse.globalAyah, size: environment.settings.pieceSize, catalog: environment.quran) {
                     environment.openSession(range)
                 }
             }
@@ -128,7 +128,7 @@ struct QuranReaderView: View {
                     .font(.caption).monospacedDigit().foregroundStyle(Color.secondaryWarm)
             }
             if downloading {
-                HStack(spacing: 8) { ProgressView(); Text("Saving audio for offline use…").font(.caption) }
+                HStack(spacing: 8) { ProgressView(); Text("Downloading audio for offline use…").font(.caption) }
             }
         }
         .buttonStyle(.plain).foregroundStyle(Color.bronze)

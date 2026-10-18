@@ -18,7 +18,7 @@ enum OnboardingIntent: String, CaseIterable, Identifiable {
 
     var detail: String {
         switch self {
-        case .memorize: String(localized: "Learn surahs a small passage at a time.")
+        case .memorize: String(localized: "Learn surahs half a page at a time.")
         case .readAndListen: String(localized: "Open the Quran and listen to recitation.")
         case .both: String(localized: "Memorize, and read whenever you like.")
         }

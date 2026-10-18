@@ -1,24 +1,33 @@
 import SwiftData
 import SwiftUI
 
-/// A surah or juz broken into small passages, each with its memorization status and quick actions.
+/// A surah or juz broken into mushaf pieces, each with its memorization status and quick actions.
 struct PassageProgressView: View {
     @Environment(AppEnvironment.self) private var environment
     @Query private var progress: [VerseProgress]
     let title: String
     let range: VerseRange
+    /// What "Read" opens: the surah or the juz itself.
+    let destination: QuranDestination
     @State private var pendingMark: PendingMark?
     @State private var errorMessage: UserFacingMessage?
 
-    private var passages: [VerseRange] {
-        let target = LearningTarget(range: range)
-        var result: [VerseRange] = []
-        var start = range.startGlobalAyah
-        while start <= range.endGlobalAyah, let passage = target.passage(from: start, catalog: environment.quran) {
-            result.append(passage)
-            start = passage.endGlobalAyah + 1
+    /// Pieces grouped by surah, so a juz reads as the surahs it holds.
+    private var groups: [SurahPieces] {
+        let size = environment.settings.pieceSize
+        return environment.quran.surahs.compactMap { surah -> SurahPieces? in
+            let start = max(surah.startGlobalAyah, range.startGlobalAyah)
+            let end = min(surah.endGlobalAyah, range.endGlobalAyah)
+            guard start <= end else { return nil }
+            let target = LearningTarget(range: .clamped(start: start, end: end))
+            var pieces: [VerseRange] = []
+            var cursor = start
+            while let piece = target.passage(from: cursor, catalog: environment.quran, size: size) {
+                pieces.append(piece)
+                cursor = piece.endGlobalAyah + 1
+            }
+            return SurahPieces(surah: surah, pieces: pieces)
         }
-        return result
     }
 
     var body: some View {
@@ -33,24 +42,12 @@ struct PassageProgressView: View {
                         .font(.subheadline).foregroundStyle(Color.secondaryWarm)
                 }.padding(.vertical, 8)
             }.listRowBackground(Color.clear)
-            Section("Passages") {
-                ForEach(passages, id: \.self) { passage in
-                    let status = index.status(of: passage)
-                    let due = index.isDue(passage)
-                    Button { open(passage, status: status) } label: {
-                        HStack(spacing: 14) {
-                            Image(systemName: due ? "arrow.counterclockwise" : status.systemImage)
-                                .foregroundStyle(status == .notStarted ? Color.secondaryWarm : Color.olive).frame(width: 24)
-                            VStack(alignment: .leading, spacing: 5) {
-                                Text(LearningPassage.ayahLabel(passage, catalog: environment.quran)).font(.headline)
-                                Text(statusText(passage, status: status, due: due, index: index))
-                                    .font(.caption).foregroundStyle(Color.secondaryWarm)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right").font(.caption).foregroundStyle(Color.secondaryWarm)
-                        }.padding(.vertical, 8)
-                    }.buttonStyle(.plain).warmListRow()
-                        .contextMenu { markMenu(passage, status: status) }
+            let groups = groups
+            ForEach(groups, id: \.surah.number) { group in
+                Section {
+                    ForEach(group.pieces, id: \.self) { passage in pieceRow(passage, index: index) }
+                } header: {
+                    Text(groups.count == 1 ? String(localized: "Memorize in parts") : group.surah.displayName)
                 }
             }
             Section {
@@ -76,9 +73,23 @@ struct PassageProgressView: View {
         } message: { Text(errorMessage?.message ?? "") }
     }
 
-    private var destination: QuranDestination {
-        guard let verse = environment.quran.verse(globalAyah: range.startGlobalAyah) else { return .surah(number: 1) }
-        return .surah(number: verse.surahNumber, scrollToAyah: range.startGlobalAyah)
+    private func pieceRow(_ passage: VerseRange, index: ProgressIndex) -> some View {
+        let status = index.status(of: passage)
+        let due = index.isDue(passage)
+        return Button { open(passage, status: status) } label: {
+            HStack(spacing: 14) {
+                Image(systemName: due ? "arrow.counterclockwise" : status.systemImage)
+                    .foregroundStyle(status == .notStarted ? Color.secondaryWarm : Color.olive).frame(width: 24)
+                VStack(alignment: .leading, spacing: 5) {
+                    Text(LearningPassage.ayahLabel(passage, catalog: environment.quran)).font(.headline)
+                    Text(statusText(passage, status: status, due: due, index: index))
+                        .font(.caption).foregroundStyle(Color.secondaryWarm)
+                }
+                Spacer()
+                Image(systemName: "chevron.right").font(.caption).foregroundStyle(Color.secondaryWarm)
+            }.padding(.vertical, 8)
+        }.buttonStyle(.plain).warmListRow()
+            .contextMenu { markMenu(passage, status: status) }
     }
 
     @ViewBuilder
@@ -99,7 +110,7 @@ struct PassageProgressView: View {
 
     /// Memorized passages open as a review of just those ayahs; anything else opens to learn.
     private func open(_ passage: VerseRange, status: MemorizationStatus) {
-        if status == .memorized { environment.openReviews([passage]) } else { environment.openSession(passage) }
+        if status == .memorized { environment.openReviews([passage]) } else { environment.openSession(passage, scope: range) }
     }
 
     private func apply(_ mark: PendingMark) {
@@ -110,6 +121,11 @@ struct PassageProgressView: View {
             }
         } catch { errorMessage = .from(.persistenceFailure) }
     }
+}
+
+private struct SurahPieces {
+    let surah: Surah
+    let pieces: [VerseRange]
 }
 
 private struct PendingMark {

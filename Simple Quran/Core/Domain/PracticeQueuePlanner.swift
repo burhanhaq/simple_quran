@@ -40,15 +40,6 @@ nonisolated struct PracticeSettings: Equatable, Sendable, Codable {
         advanceManually: false
     )
 
-    /// New memorize sessions hear each ayah a few times before reciting along.
-    static let memorize = PracticeSettings(
-        ayahRepeatCount: .three,
-        setRepeatCount: .one,
-        pauseSeconds: 0,
-        hideArabic: false,
-        advanceManually: false
-    )
-
     static let listening = PracticeSettings(
         ayahRepeatCount: .one,
         setRepeatCount: .one,
@@ -59,6 +50,13 @@ nonisolated struct PracticeSettings: Equatable, Sendable, Codable {
 
     var clampedPauseSeconds: Int {
         min(5, max(0, pauseSeconds))
+    }
+
+    /// These settings with another set's hide-Arabic flag, which belongs to the session, not the preference.
+    func keepingHideArabic(of other: PracticeSettings) -> PracticeSettings {
+        var copy = self
+        copy.hideArabic = other.hideArabic
+        return copy
     }
 }
 

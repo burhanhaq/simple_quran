@@ -137,14 +137,20 @@ struct MemorizeSessionView: View {
     private var surahTitle: String {
         verses.first.flatMap { environment.quran.surah(number: $0.surahNumber) }?.englishName ?? ""
     }
+    /// What "Next passage" walks through: the surah, juz, or range the user chose, else this passage's surah.
+    private var scope: VerseRange {
+        if let scope = route.scope, scope.contains(range.startGlobalAyah) { return scope }
+        return verses.first.flatMap { environment.quran.surah(number: $0.surahNumber) }?.range ?? range
+    }
     private var nextPassage: VerseRange? {
         if route.kind == .review { return queue.first }
+        let size = environment.settings.pieceSize
         if let plan {
             let index = ProgressIndex(progress.map(\.snapshot))
-            return plan.passage(from: range.endGlobalAyah + 1, catalog: environment.quran, byPage: environment.settings.practiceByPage)
-                ?? plan.nextPassage(catalog: environment.quran, byPage: environment.settings.practiceByPage) { $0 == range || index.status(of: $0) == .memorized }
+            return plan.passage(from: range.endGlobalAyah + 1, catalog: environment.quran, size: size)
+                ?? plan.nextPassage(catalog: environment.quran, size: size) { $0 == range || index.status(of: $0) == .memorized }
         }
-        return LearningPassage.next(after: range, catalog: environment.quran, byPage: environment.settings.practiceByPage)
+        return LearningTarget(range: scope).passage(from: range.endGlobalAyah + 1, catalog: environment.quran, size: size)
     }
 
     var body: some View {
@@ -173,8 +179,8 @@ struct MemorizeSessionView: View {
                 selectedAyah = ayah
             }
             .sheet(isPresented: $showPassage) {
-                PassagePickerView(startAyah: range.startGlobalAyah, currentRange: range, allowedRange: plan?.range) { newRange, byPage in
-                    environment.settings.practiceByPage = byPage
+                PassagePickerView(startAyah: range.startGlobalAyah, currentRange: range, allowedRange: plan?.range) { newRange, size in
+                    if let size { environment.settings.pieceSize = size }
                     move(to: newRange)
                 }
             }
@@ -247,7 +253,7 @@ struct MemorizeSessionView: View {
         VStack(spacing: 12) {
             Text(step.hint).font(.footnote).foregroundStyle(Color.secondaryWarm)
                 .frame(maxWidth: .infinity, alignment: .leading)
-            HStack(spacing: 22) {
+            HStack(spacing: verticalSizeClass == .compact ? 10 : 18) {
                 Button { moveAyah(by: -1) } label: {
                     Image(systemName: "backward.end.fill").font(.title3).frame(width: 44, height: 44)
                 }.accessibilityLabel("Previous ayah").accessibilityIdentifier("session.previous")
@@ -263,6 +269,7 @@ struct MemorizeSessionView: View {
                 }.accessibilityLabel("Next ayah").accessibilityIdentifier("session.next")
                     .disabled(recordingBusy || currentAyah == verses.last?.globalAyah)
                 if step != .listen { recordButton }
+                if let practice { repeatMenu(practice) }
             }.frame(maxWidth: .infinity)
             if step == .fromMemory {
                 checkCard
@@ -294,6 +301,24 @@ struct MemorizeSessionView: View {
         .disabled(environment.recorder.phase == .finishing)
         .accessibilityLabel(recordingBusy ? "Stop recording" : "Record myself")
         .accessibilityIdentifier("session.record")
+    }
+
+    /// The repeat count stays in view so it's never a surprise; the full options are one tap further.
+    private func repeatMenu(_ practice: PracticeSet) -> some View {
+        let repeats = practice.settings.ayahRepeatCount
+        return Menu {
+            Picker("Repeat each ayah", selection: setting(\.ayahRepeatCount, in: practice)) {
+                ForEach(RepeatCount.ayahPresets) { Text($0.label).tag($0) }
+            }
+            Button("Repeat and pause", systemImage: "slider.horizontal.3") { showOptions = true }
+        } label: {
+            Text(repeats.label).font(.subheadline.weight(.semibold)).monospacedDigit()
+                .padding(.horizontal, 10).frame(minWidth: 44, minHeight: 32)
+                .background(Color.appCollectedFill, in: Capsule())
+        }
+        .disabled(recordingBusy)
+        .accessibilityLabel("Repeat each ayah, \(repeats.label)")
+        .accessibilityIdentifier("session.repeat")
     }
 
     /// Optional and inline: answering is one tap, skipping is just tapping Done or Next.
@@ -452,7 +477,7 @@ struct MemorizeSessionView: View {
         if environment.playback.snapshot.hideArabic { environment.playback.toggleArabicHidden() }
         selectedAyah = environment.playback.snapshot.currentGlobalAyah ?? range.startGlobalAyah
         environment.recorder.selectCollection(set.id)
-        environment.lastSession = SessionRoute(range: range, kind: route.kind, planID: route.planID, reviewQueue: queue)
+        environment.lastSession = SessionRoute(range: range, kind: route.kind, planID: route.planID, scope: route.scope, reviewQueue: queue)
         if route.kind == .learn { environment.settings.remember(range, targetID: route.planID) }
     }
 
@@ -544,11 +569,15 @@ struct MemorizeSessionView: View {
         }
     }
 
+    /// Changes to an app-made passage become the memorize preference, so the next passage plays the same way.
     private func setting<Value>(_ keyPath: WritableKeyPath<PracticeSettings, Value>, in practice: PracticeSet) -> Binding<Value> {
         Binding(get: { practice.settings[keyPath: keyPath] }, set: { value in
             var settings = practice.settings
             settings[keyPath: keyPath] = value
-            environment.playback.applySettingsAndRestart(settings)
+            if ownsPlayback { environment.playback.applySettingsAndRestart(settings) } else { practice.settings = settings }
+            if environment.settings.generatedPracticeIDs.contains(practice.id.uuidString) {
+                environment.settings.memorizePlayback = settings.keepingHideArabic(of: environment.settings.memorizePlayback)
+            }
             do { try environment.store.save() } catch { errorMessage = .from(.persistenceFailure) }
         })
     }
