@@ -32,14 +32,24 @@ Open `Simple Quran.xcodeproj` and run the **Simple Quran** scheme.
 
 Unit tests live in `Simple QuranTests` and use the Swift Testing framework. They cover the bundled text integrity (114 surahs, 6,236 ayahs, 604 pages), search, practice playback, and progress scheduling. UI tests live in `Simple QuranUITests`.
 
-From the repository root:
+Boot the simulator once and leave it running. If `xcodebuild` has to boot it, it shuts it down again afterwards, so every run pays a ~35s cold boot:
+
+```sh
+xcrun simctl boot "iPhone 17"
+```
+
+Unit tests only (about 10s on a booted simulator), from the repository root:
 
 ```sh
 xcodebuild test \
   -project "Simple Quran.xcodeproj" \
   -scheme "Simple Quran" \
-  -destination 'platform=iOS Simulator,name=iPhone 17'
+  -destination 'platform=iOS Simulator,name=iPhone 17' \
+  -only-testing:"Simple QuranTests" \
+  -collect-test-diagnostics never
 ```
+
+Drop `-only-testing` to include the UI tests, which launch the app for every test and take several minutes. `-collect-test-diagnostics never` stops `xcodebuild` from running a sysdiagnose (up to 10 minutes) when the playback tests log an AVAudioSession hang-risk warning, even though every test passed.
 
 Use an installed simulator name if `iPhone 17` is not available.
 
