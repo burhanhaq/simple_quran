@@ -1,14 +1,18 @@
 import SwiftData
 import SwiftUI
 
-/// What the user has memorized, shown as honest counts and a map of the whole Quran.
+/// A map of the whole Quran showing what the user has memorized, with honest counts below it.
 struct ProgressTabView: View {
     @Environment(AppEnvironment.self) private var environment
     @Query private var progress: [VerseProgress]
     @State private var browse = PlanBrowse.surahs
     @State private var search = ""
     @AppStorage(ProgressLayout.storageKey) private var layout = ProgressLayout.map
-    @State private var gridWidth: CGFloat = 0
+    @AppStorage(ProgressOrder.storageKey) private var order = ProgressOrder.fromAnNas
+    /// Juz the user unfolded from a "not started" line.
+    @State private var revealedJuz: Set<Int> = []
+    /// Juz the user opened or closed by hand; the rest start open.
+    @State private var juzOpen: [Int: Bool] = [:]
     private static let gridSpacing: CGFloat = 8
 
     /// Searching always shows names, whichever layout is chosen.
@@ -22,12 +26,9 @@ struct ProgressTabView: View {
         NavigationStack {
             ScrollView {
                 VStack(alignment: .leading, spacing: 24) {
-                    header(insights)
                     revisionBanner(index)
-                    if let plan = environment.settings.activePlan {
-                        NavigationLink { PlanDetailView() } label: { PlanCard(plan: plan, index: index) }.buttonStyle(.plain)
-                    }
                     map(index)
+                    memorizedSummary(insights)
                 }
                 .foregroundStyle(Color.appBrownText)
                 .padding(24).frame(maxWidth: 680).frame(maxWidth: .infinity)
@@ -38,7 +39,7 @@ struct ProgressTabView: View {
         }
     }
 
-    private func header(_ insights: ProgressInsights) -> some View {
+    private func memorizedSummary(_ insights: ProgressInsights) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("\(insights.memorizedCount)")
                 .font(.system(size: 56, weight: .medium, design: .serif)).monospacedDigit()
@@ -90,14 +91,14 @@ struct ProgressTabView: View {
     }
 
     private var surahs: [Surah] {
-        environment.quran.surahs.filter {
+        order.arranged(environment.quran.surahs).filter {
             search.isEmpty || "\($0.number) \($0.englishName) \($0.arabicName) \($0.translation) \($0.aliases.joined(separator: " "))"
                 .localizedCaseInsensitiveContains(search)
         }
     }
 
     private var juzs: [JuzSection] {
-        environment.quran.juzs.filter { search.isEmpty || "Juz \($0.number) \($0.number == 30 ? "Amma" : "")".localizedCaseInsensitiveContains(search) }
+        order.arranged(environment.quran.juzs).filter { search.isEmpty || "Juz \($0.number) \($0.number == 30 ? "Amma" : "")".localizedCaseInsensitiveContains(search) }
     }
 
     private func map(_ index: ProgressIndex) -> some View {
@@ -116,6 +117,15 @@ struct ProgressTabView: View {
             Picker("Browse", selection: $browse) {
                 ForEach(PlanBrowse.allCases) { Text($0.title).tag($0) }
             }.pickerStyle(.segmented)
+            HStack(spacing: 12) {
+                Text("Start from").font(.subheadline).foregroundStyle(Color.secondaryWarm)
+                Spacer()
+                Picker("Start from", selection: $order.animation(.snappy)) {
+                    ForEach(ProgressOrder.allCases) { Text($0.title).tag($0) }
+                }
+                .pickerStyle(.segmented).fixedSize()
+                .accessibilityIdentifier("progress.order")
+            }
             if !showsList { MapLegend() }
             // Surahs and juz share ids 1–30, so each browse mode needs its own identity
             // or SwiftUI keeps the surah buttons when showing juz.
@@ -123,29 +133,14 @@ struct ProgressTabView: View {
         }
     }
 
+    @ViewBuilder
     private func grid(_ index: ProgressIndex) -> some View {
-        let minimum: CGFloat = browse == .surahs ? 44 : 56
-        // Matches how the adaptive grid fits columns, so each surah knows whether it starts or ends a row.
-        let columns = max(1, Int((gridWidth + Self.gridSpacing) / (minimum + Self.gridSpacing)))
-        let reach = Self.gridSpacing / 2
-        return LazyVGrid(columns: [GridItem(.adaptive(minimum: minimum), spacing: Self.gridSpacing)], spacing: Self.gridSpacing) {
-            switch browse {
-            case .surahs:
-                ForEach(environment.quran.surahs) { surah in
-                    let spans = JuzSpan.spans(of: surah.range, in: environment.quran.juzs)
-                    let column = (surah.number - 1) % columns
-                    let endsRow = column == columns - 1 || surah.number == environment.quran.surahs.count
-                    Button { open(.surah(number: surah.number)) } label: {
-                        VStack(spacing: 4) {
-                            MapTile(number: surah.number, range: surah.range, index: index, cycle: cycle)
-                            JuzBar(spans: spans, leading: column == 0 ? 0 : reach, trailing: endsRow ? 0 : reach)
-                        }
-                    }.buttonStyle(.plain)
-                        .accessibilityLabel("\(surah.englishName), \(juzLabel(spans)), \(SurahProgressSummary(surah: surah, index: index, cycle: cycle).text)")
-                        .accessibilityIdentifier("progress.surah.\(surah.number)")
-                }
-            case .juz:
-                ForEach(environment.quran.juzs) { juz in
+        switch browse {
+        case .surahs:
+            juzMap(index)
+        case .juz:
+            LazyVGrid(columns: [GridItem(.adaptive(minimum: 56), spacing: Self.gridSpacing)], spacing: Self.gridSpacing) {
+                ForEach(order.arranged(environment.quran.juzs)) { juz in
                     Button { open(.juz(juz.number)) } label: {
                         MapTile(number: juz.number, range: juz.range, index: index, cycle: cycle)
                     }.buttonStyle(.plain)
@@ -153,7 +148,62 @@ struct ProgressTabView: View {
                 }
             }
         }
-        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { gridWidth = $0 }
+    }
+
+    /// Surahs grouped by juz, with the juz not started yet folded out of the way so the user's own progress is near the top.
+    private func juzMap(_ index: ProgressIndex) -> some View {
+        let rows = ProgressMap.rows(environment.quran.juzs, order: order, revealed: revealedJuz) { index.status(of: $0.range) != .notStarted }
+        return LazyVStack(alignment: .leading, spacing: 10) {
+            ForEach(rows) { row in
+                switch row {
+                case .juz(let juz): juzSection(juz, index: index)
+                case .unstarted(let numbers): unstartedRow(numbers)
+                }
+            }
+        }
+    }
+
+    private func juzSection(_ juz: JuzSection, index: ProgressIndex) -> some View {
+        let isOpen = juzOpen[juz.number] ?? true
+        return VStack(alignment: .leading, spacing: 8) {
+            Button { withAnimation(.snappy) { juzOpen[juz.number] = !isOpen } } label: {
+                JuzHeader(juz: juz, index: index, cycle: cycle, isOpen: isOpen)
+            }.buttonStyle(.plain)
+            if isOpen {
+                LazyVGrid(columns: [GridItem(.adaptive(minimum: 44), spacing: Self.gridSpacing)], spacing: Self.gridSpacing) {
+                    ForEach(order.arranged(ProgressMap.surahs(in: juz, from: environment.quran.surahs))) { part in
+                        Button { open(.surah(number: part.surah.number)) } label: {
+                            MapTile(number: part.surah.number, range: part.range, index: index, cycle: cycle)
+                        }.buttonStyle(.plain)
+                            .accessibilityLabel("\(part.surah.englishName), \(SurahProgressSummary(surah: part.surah, index: index, cycle: cycle).text)")
+                            // A surah that runs across juz shows in each; only the juz it begins in carries its plain identifier.
+                            .accessibilityIdentifier(part.startsHere ? "progress.surah.\(part.surah.number)" : "progress.surah.\(part.surah.number).juz.\(juz.number)")
+                    }
+                }
+                .padding(.bottom, 6)
+            }
+        }
+    }
+
+    /// A quiet divider standing in for a run of juz not started yet, so it reads as a gap in the map; tapping it lays them out.
+    private func unstartedRow(_ numbers: ClosedRange<Int>) -> some View {
+        Button { withAnimation(.snappy) { revealedJuz.formUnion(numbers) } } label: {
+            HStack(spacing: 10) {
+                Rectangle().fill(Color.warmBorder).frame(height: 1)
+                HStack(spacing: 4) {
+                    Text(numbers.count == 1 ? "Juz \(numbers.lowerBound) · not started" : "Juz \(numbers.lowerBound)–\(numbers.upperBound) · not started")
+                    Image(systemName: "chevron.right").font(.caption2.weight(.semibold))
+                }
+                .font(.footnote).foregroundStyle(Color.secondaryWarm).fixedSize()
+                Rectangle().fill(Color.warmBorder).frame(height: 1)
+            }
+            .frame(minHeight: 44)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel(numbers.count == 1 ? "Juz \(numbers.lowerBound), not started" : "Juz \(numbers.lowerBound) to \(numbers.upperBound), not started")
+        .accessibilityHint("Shows their surahs")
+        .accessibilityIdentifier("progress.unstarted.\(numbers.lowerBound)")
     }
 
     @ViewBuilder
@@ -191,11 +241,6 @@ struct ProgressTabView: View {
     /// Opens the surah screen with its overview up, so progress and pieces are the first thing seen.
     private func open(_ destination: QuranDestination) {
         environment.openReader(destination, sheet: .half)
-    }
-
-    private func juzLabel(_ spans: [JuzSpan]) -> String {
-        guard let first = spans.first?.juz, let last = spans.last?.juz else { return "" }
-        return first == last ? String(localized: "Juz \(first)") : String(localized: "Juz \(first) to \(last)")
     }
 }
 
@@ -269,50 +314,30 @@ private struct MapTile: View {
     }
 }
 
-/// A thin line under a surah tile, split where a new juz begins, with the juz number at each start.
-/// It reaches into the gaps beside the tile so a row of surahs reads as one line,
-/// broken only where a juz begins.
-private struct JuzBar: View {
-    let spans: [JuzSpan]
-    /// How far the line reaches into the gap on each side; zero at the ends of a row.
-    let leading: CGFloat
-    let trailing: CGFloat
-    @ScaledMetric(relativeTo: .caption2) private var labelHeight: CGFloat = 12
-    private static let barHeight: CGFloat = 3
-    private static let labelGap: CGFloat = 2
-    private static let labelSpacing: CGFloat = 2
-    /// The break inside a tile matches the one a juz starting at a tile's edge leaves in the half gap before it.
-    private static let breakWidth: CGFloat = 4
+/// A juz's name and a bar of how much of it is memorized; tapping it shows or hides its surahs.
+private struct JuzHeader: View {
+    let juz: JuzSection
+    let index: ProgressIndex
+    let cycle: RevisionCycle
+    let isOpen: Bool
+    /// Keeps a sliver of the bar visible once anything is memorized, even a few ayahs of a long juz.
+    private static let minimumVisibleFraction = 0.03
 
     var body: some View {
-        Canvas { context, size in
-            let tileWidth = size.width - leading - trailing
-            let segments = spans.reduce(into: [(span: JuzSpan, x: CGFloat, width: CGFloat)]()) { result, span in
-                result.append((span, result.last.map { $0.x + $0.width } ?? leading, tileWidth * span.fraction))
-            }
-            for (offset, segment) in segments.enumerated() {
-                // The line runs on into the gaps beside the tile, except before a juz that begins with this surah.
-                let start = offset > 0 ? segment.x + Self.breakWidth / 2 : (segment.span.startsHere ? leading : 0)
-                let end = offset < segments.count - 1 ? segment.x + segment.width - Self.breakWidth / 2 : size.width
-                context.fill(Path(CGRect(x: start, y: 0, width: end - start, height: Self.barHeight)),
-                             with: .color(Color.bronze.opacity(0.6)))
-            }
-            // A juz starting near the tile's end is pulled back inside it; one that would overlap the previous number is skipped.
-            var labelEnd = -CGFloat.infinity
-            for segment in segments where segment.span.startsHere {
-                let label = context.resolve(Text("\(segment.span.juz)").font(.caption2.weight(.semibold)).monospacedDigit()
-                    .foregroundStyle(Color.secondaryWarm))
-                let width = label.measure(in: size).width
-                let x = max(leading, min(segment.x, leading + tileWidth - width))
-                guard x >= labelEnd else { continue }
-                context.draw(label, at: CGPoint(x: x, y: Self.barHeight + Self.labelGap), anchor: .topLeading)
-                labelEnd = x + width + Self.labelSpacing
-            }
+        let memorized = index.count(.memorized, in: juz.range)
+        let fraction = memorized == 0 ? 0 : max(Double(memorized) / Double(max(juz.range.count, 1)), Self.minimumVisibleFraction)
+        HStack(spacing: 12) {
+            Text("Juz \(juz.number)").font(.headline).frame(minWidth: 64, alignment: .leading)
+            ProgressView(value: fraction).tint(index.freshness(of: juz.range, cycle: cycle)?.color ?? Color.olive)
+            Image(systemName: "chevron.down").font(.footnote.weight(.semibold)).foregroundStyle(Color.secondaryWarm)
+                .rotationEffect(.degrees(isOpen ? 0 : -90))
         }
-        .frame(height: Self.barHeight + Self.labelGap + labelHeight)
-        .padding(.leading, -leading)
-        .padding(.trailing, -trailing)
-        .accessibilityHidden(true)
+        .frame(minHeight: 44)
+        .contentShape(Rectangle())
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Juz \(juz.number), \(memorized) of \(juz.range.count) ayahs memorized")
+        .accessibilityValue(isOpen ? "Shown" : "Hidden")
+        .accessibilityIdentifier("progress.juz.\(juz.number)")
     }
 }
 

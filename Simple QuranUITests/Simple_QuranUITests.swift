@@ -9,7 +9,7 @@ final class Simple_QuranUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-ui-testing", "-ui-testing-reset-focus", "-ui-testing-skip-onboarding",
                                "-settings.appearance", appearance, "-settings.quranReadingLayout", "ayahByAyah",
-                               "-settings.startTab", "memorize",
+                               "-settings.startTab", "memorize", "-progress.order", "fromAlFatiha",
                                "-learning.start", "0", "-learning.end", "0", "-reading.ayah", "0", "-learning.pieceSize", "halfPage"] + extra
         app.launch()
         return app
