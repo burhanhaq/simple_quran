@@ -2,6 +2,7 @@ import SwiftUI
 
 struct AppRootView: View {
     @Environment(AppEnvironment.self) private var environment
+    @Environment(\.colorScheme) private var colorScheme
 
     var body: some View {
         if let error = environment.persistenceLoadError {
@@ -17,9 +18,9 @@ struct AppRootView: View {
     private var tabs: some View {
         @Bindable var environment = environment
         return TabView(selection: $environment.selectedTab) {
-            Tab(AppTab.memorize.title, systemImage: AppTab.memorize.systemImage, value: AppTab.memorize) { MemorizeView() }
-            Tab(AppTab.progress.title, systemImage: AppTab.progress.systemImage, value: AppTab.progress) { ProgressTabView() }
-            Tab(AppTab.quran.title, systemImage: AppTab.quran.systemImage, value: AppTab.quran) { QuranBrowserView() }
+            Tab(value: AppTab.memorize) { MemorizeView() } label: { tabLabel(.memorize) }
+            Tab(value: AppTab.progress) { ProgressTabView() } label: { tabLabel(.progress) }
+            Tab(value: AppTab.quran) { QuranBrowserView() } label: { tabLabel(.quran) }
         }
         .tint(Color.bronze)
         .tabViewBottomAccessory(isEnabled: environment.playback.snapshot.currentGlobalAyah != nil) {
@@ -28,6 +29,26 @@ struct AppRootView: View {
         .fullScreenCover(item: $environment.route) { route in
             SurahScreen(route: route, environment: environment)
         }
+    }
+
+    private func tabLabel(_ tab: AppTab) -> some View {
+        let color = unselectedTabColor(tab)
+        return Label {
+            Text(tab.title).foregroundStyle(color.map(Color.init(uiColor:)) ?? .primary)
+        } icon: {
+            if let color, let symbol = UIImage(systemName: tab.systemImage + ".fill") ?? UIImage(systemName: tab.systemImage) {
+                Image(uiImage: symbol.withTintColor(color, renderingMode: .alwaysOriginal))
+            } else {
+                Image(systemName: tab.systemImage)
+            }
+        }
+    }
+
+    /// The glass tab bar ignores UIKit's unselected tint and draws other tabs in plain black in light mode,
+    /// so they're pre-colored there. Dark mode keeps the system's light icons.
+    private func unselectedTabColor(_ tab: AppTab) -> UIColor? {
+        guard colorScheme == .light, environment.selectedTab != tab else { return nil }
+        return UIColor(named: "SecondaryText")?.resolvedColor(with: UITraitCollection(userInterfaceStyle: .light))
     }
 }
 

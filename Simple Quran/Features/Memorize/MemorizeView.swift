@@ -6,7 +6,6 @@ struct MemorizeView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.colorScheme) private var colorScheme
     @Query private var verseProgress: [VerseProgress]
-    @Query private var sessions: [PracticeSession]
     @Query(filter: #Predicate<PracticeSet> { $0.deletedAt == nil && $0.archivedAt == nil }) private var sets: [PracticeSet]
     @State private var showSettings = false
     @State private var picker: PlanPickerPurpose?
@@ -51,7 +50,6 @@ struct MemorizeView: View {
                         Label("Memorize something else", systemImage: "plus.circle")
                             .font(.subheadline.weight(.semibold)).frame(maxWidth: .infinity, minHeight: 44)
                     }.buttonStyle(WarmButtonStyle(emphasis: .secondary)).accessibilityIdentifier("memorize.other")
-                    activityLine
                 }
                 .foregroundStyle(Color.appBrownText)
                 .padding(24).frame(maxWidth: 680).frame(maxWidth: .infinity)
@@ -190,18 +188,6 @@ struct MemorizeView: View {
                 }
             }
         }.buttonStyle(.plain).accessibilityIdentifier("memorize.revise")
-    }
-
-    @ViewBuilder
-    private var activityLine: some View {
-        let insights = ProgressInsights.make(snapshots: [], activityDates: sessions.compactMap(\.endedAt) + snapshots.compactMap(\.lastPractisedAt),
-                                             surahs: [], now: .now, calendar: .current)
-        if insights.practicedToday {
-            Label("You made time today.", systemImage: "checkmark.circle").font(.subheadline).foregroundStyle(Color.olive)
-        } else if insights.daysPracticedThisWeek > 0 {
-            Label("You practiced \(insights.daysPracticedThisWeek) of the last 7 days.", systemImage: "calendar")
-                .font(.subheadline).foregroundStyle(Color.secondaryWarm)
-        }
     }
 
     /// A one-off passage the user started recently and hasn't memorized yet.

@@ -5,7 +5,6 @@ import SwiftUI
 struct ProgressTabView: View {
     @Environment(AppEnvironment.self) private var environment
     @Query private var progress: [VerseProgress]
-    @Query private var sessions: [PracticeSession]
     @State private var browse = PlanBrowse.surahs
     @State private var search = ""
     @AppStorage(ProgressLayout.storageKey) private var layout = ProgressLayout.map
@@ -18,8 +17,7 @@ struct ProgressTabView: View {
     var body: some View {
         let snapshots = progress.map(\.snapshot)
         let index = ProgressIndex(snapshots)
-        let insights = ProgressInsights.make(snapshots: snapshots, activityDates: sessions.compactMap(\.endedAt),
-                                             surahs: environment.quran.surahs, cycle: environment.settings.revisionCycle,
+        let insights = ProgressInsights.make(snapshots: snapshots, surahs: environment.quran.surahs, cycle: environment.settings.revisionCycle,
                                              now: .now, calendar: .current)
         NavigationStack {
             ScrollView {
@@ -30,7 +28,6 @@ struct ProgressTabView: View {
                         NavigationLink { PlanDetailView() } label: { PlanCard(plan: plan, index: index) }.buttonStyle(.plain)
                     }
                     map(index)
-                    activity(insights)
                 }
                 .foregroundStyle(Color.appBrownText)
                 .padding(24).frame(maxWidth: 680).frame(maxWidth: .infinity)
@@ -199,29 +196,6 @@ struct ProgressTabView: View {
     private func juzLabel(_ spans: [JuzSpan]) -> String {
         guard let first = spans.first?.juz, let last = spans.last?.juz else { return "" }
         return first == last ? String(localized: "Juz \(first)") : String(localized: "Juz \(first) to \(last)")
-    }
-
-    private func activity(_ insights: ProgressInsights) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Days you practiced").font(.title3.weight(.semibold))
-            HStack(spacing: 10) {
-                ForEach(Array(insights.lastSevenDays.enumerated()), id: \.offset) { offset, practiced in
-                    VStack(spacing: 6) {
-                        Circle().fill(practiced ? Color.olive : Color.warmBorder.opacity(0.5)).frame(width: 18, height: 18)
-                        Text(weekdayInitial(daysAgo: 6 - offset)).font(.caption2).foregroundStyle(Color.secondaryWarm)
-                    }.frame(maxWidth: .infinity)
-                }
-            }
-            .accessibilityElement(children: .ignore)
-            .accessibilityLabel("Practiced \(insights.daysPracticedThisWeek) of the last 7 days")
-            Text("Practice time is shown here. It doesn’t change what counts as memorized.")
-                .font(.caption).foregroundStyle(Color.secondaryWarm)
-        }
-    }
-
-    private func weekdayInitial(daysAgo: Int) -> String {
-        let day = Calendar.current.date(byAdding: .day, value: -daysAgo, to: .now) ?? .now
-        return day.formatted(.dateTime.weekday(.narrow))
     }
 }
 
