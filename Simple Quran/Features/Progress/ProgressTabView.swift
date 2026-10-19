@@ -9,6 +9,8 @@ struct ProgressTabView: View {
     @State private var browse = PlanBrowse.surahs
     @State private var search = ""
     @AppStorage(ProgressLayout.storageKey) private var layout = ProgressLayout.map
+    @State private var gridWidth: CGFloat = 0
+    private static let gridSpacing: CGFloat = 8
 
     /// Searching always shows names, whichever layout is chosen.
     private var showsList: Bool { layout == .list || !search.isEmpty }
@@ -125,15 +127,21 @@ struct ProgressTabView: View {
     }
 
     private func grid(_ index: ProgressIndex) -> some View {
-        LazyVGrid(columns: [GridItem(.adaptive(minimum: browse == .surahs ? 44 : 56), spacing: 8)], spacing: 8) {
+        let minimum: CGFloat = browse == .surahs ? 44 : 56
+        // Matches how the adaptive grid fits columns, so each surah knows whether it starts or ends a row.
+        let columns = max(1, Int((gridWidth + Self.gridSpacing) / (minimum + Self.gridSpacing)))
+        let reach = Self.gridSpacing / 2
+        return LazyVGrid(columns: [GridItem(.adaptive(minimum: minimum), spacing: Self.gridSpacing)], spacing: Self.gridSpacing) {
             switch browse {
             case .surahs:
                 ForEach(environment.quran.surahs) { surah in
                     let spans = JuzSpan.spans(of: surah.range, in: environment.quran.juzs)
+                    let column = (surah.number - 1) % columns
+                    let endsRow = column == columns - 1 || surah.number == environment.quran.surahs.count
                     Button { open(.surah(number: surah.number)) } label: {
                         VStack(spacing: 4) {
                             MapTile(number: surah.number, range: surah.range, index: index, cycle: cycle)
-                            JuzBar(spans: spans)
+                            JuzBar(spans: spans, leading: column == 0 ? 0 : reach, trailing: endsRow ? 0 : reach)
                         }
                     }.buttonStyle(.plain)
                         .accessibilityLabel("\(surah.englishName), \(juzLabel(spans)), \(SurahProgressSummary(surah: surah, index: index, cycle: cycle).text)")
@@ -148,6 +156,7 @@ struct ProgressTabView: View {
                 }
             }
         }
+        .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { gridWidth = $0 }
     }
 
     @ViewBuilder
@@ -287,26 +296,32 @@ private struct MapTile: View {
 }
 
 /// A thin line under a surah tile, split where a new juz begins, with the juz number at each start.
-/// Neighbouring juz alternate tones so the boundary shows even mid-surah.
+/// It reaches into the gaps beside the tile so a row of surahs reads as one line,
+/// broken only where a juz begins.
 private struct JuzBar: View {
     let spans: [JuzSpan]
+    /// How far the line reaches into the gap on each side; zero at the ends of a row.
+    let leading: CGFloat
+    let trailing: CGFloat
     @ScaledMetric(relativeTo: .caption2) private var labelHeight: CGFloat = 12
     private static let barHeight: CGFloat = 3
     private static let labelGap: CGFloat = 2
     private static let labelSpacing: CGFloat = 2
+    /// The break inside a tile matches the one a juz starting at a tile's edge leaves in the half gap before it.
+    private static let breakWidth: CGFloat = 4
 
     var body: some View {
         Canvas { context, size in
+            let tileWidth = size.width - leading - trailing
             let segments = spans.reduce(into: [(span: JuzSpan, x: CGFloat, width: CGFloat)]()) { result, span in
-                result.append((span, result.last.map { $0.x + $0.width } ?? 0, size.width * span.fraction))
+                result.append((span, result.last.map { $0.x + $0.width } ?? leading, tileWidth * span.fraction))
             }
-            context.drawLayer { bar in
-                bar.clip(to: Path(roundedRect: CGRect(x: 0, y: 0, width: size.width, height: Self.barHeight),
-                                  cornerRadius: Self.barHeight / 2))
-                for segment in segments {
-                    let tone = Color.bronze.opacity(segment.span.juz.isMultiple(of: 2) ? 0.3 : 0.7)
-                    bar.fill(Path(CGRect(x: segment.x, y: 0, width: segment.width, height: Self.barHeight)), with: .color(tone))
-                }
+            for (offset, segment) in segments.enumerated() {
+                // The line runs on into the gaps beside the tile, except before a juz that begins with this surah.
+                let start = offset > 0 ? segment.x + Self.breakWidth / 2 : (segment.span.startsHere ? leading : 0)
+                let end = offset < segments.count - 1 ? segment.x + segment.width - Self.breakWidth / 2 : size.width
+                context.fill(Path(CGRect(x: start, y: 0, width: end - start, height: Self.barHeight)),
+                             with: .color(Color.bronze.opacity(0.6)))
             }
             // A juz starting near the tile's end is pulled back inside it; one that would overlap the previous number is skipped.
             var labelEnd = -CGFloat.infinity
@@ -314,13 +329,15 @@ private struct JuzBar: View {
                 let label = context.resolve(Text("\(segment.span.juz)").font(.caption2.weight(.semibold)).monospacedDigit()
                     .foregroundStyle(Color.secondaryWarm))
                 let width = label.measure(in: size).width
-                let x = max(0, min(segment.x, size.width - width))
+                let x = max(leading, min(segment.x, leading + tileWidth - width))
                 guard x >= labelEnd else { continue }
                 context.draw(label, at: CGPoint(x: x, y: Self.barHeight + Self.labelGap), anchor: .topLeading)
                 labelEnd = x + width + Self.labelSpacing
             }
         }
         .frame(height: Self.barHeight + Self.labelGap + labelHeight)
+        .padding(.leading, -leading)
+        .padding(.trailing, -trailing)
         .accessibilityHidden(true)
     }
 }
