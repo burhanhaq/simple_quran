@@ -48,6 +48,7 @@ final class AppSettings {
         static let downloadWhilePlaying = "settings.downloadWhilePlaying"
         static let lastTab = "settings.lastTab"
         static let quranReadingLayout = "settings.quranReadingLayout"
+        static let showsTranslation = "settings.showsTranslation"
         static let hasSeenQuranHint = "settings.hasSeenQuranHint"
         static let appearance = "settings.appearance"
         static let showsStatusChangeNote = "settings.showsStatusChangeNote"
@@ -170,6 +171,11 @@ final class AppSettings {
         didSet { defaults.set(quranReadingLayout.rawValue, forKey: Key.quranReadingLayout) }
     }
 
+    /// Shows the translation under each ayah in Ayah by Ayah layout, reading or memorizing.
+    var showsTranslation: Bool {
+        didSet { defaults.set(showsTranslation, forKey: Key.showsTranslation) }
+    }
+
     var hasSeenQuranHint: Bool {
         didSet { defaults.set(hasSeenQuranHint, forKey: Key.hasSeenQuranHint) }
     }
@@ -210,6 +216,7 @@ final class AppSettings {
         self.downloadWhilePlaying = defaults.object(forKey: Key.downloadWhilePlaying) as? Bool ?? true
         self.quranReadingLayout = defaults.string(forKey: Key.quranReadingLayout)
             .flatMap(QuranReadingLayout.init(rawValue:)) ?? .ayahByAyah
+        self.showsTranslation = defaults.bool(forKey: Key.showsTranslation)
         self.hasSeenQuranHint = defaults.bool(forKey: Key.hasSeenQuranHint)
         self.appearance = defaults.string(forKey: Key.appearance)
             .flatMap(AppAppearance.init(rawValue:)) ?? .system
@@ -229,6 +236,7 @@ final class AppEnvironment {
     let playback: PlaybackCoordinator
     let recorder: RecitationRecordingController
     let settings: AppSettings
+    let translations = TranslationLibrary()
     var selectedTab: AppTab
     var route: AppRoute?
     /// The session behind the current practice playback, so the mini player can return to it.

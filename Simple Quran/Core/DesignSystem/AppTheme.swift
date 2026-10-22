@@ -185,6 +185,8 @@ struct QuranAyahText: View {
     var hidden: Bool
     /// Marked as slipped while testing; underlined in the danger color.
     var marked = false
+    /// Shown under the Arabic, and hidden with it while testing.
+    var translation: String? = nil
 
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
@@ -198,6 +200,14 @@ struct QuranAyahText: View {
                 .environment(\.layoutDirection, .rightToLeft)
                 .accessibilityLabel(hidden ? String(localized: "Arabic hidden for recall") : verse.text)
                 .accessibilityValue(marked ? String(localized: "Marked as slipped") : "")
+            if let translation, !hidden {
+                Text(translation)
+                    .font(.callout)
+                    .foregroundStyle(Color.secondaryWarm)
+                    .multilineTextAlignment(.leading)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .environment(\.layoutDirection, .leftToRight)
+            }
             HStack {
                 if verse.sajdah != .none {
                     StatusChip(title: String(localized: "Sajdah"), tint: .olive)

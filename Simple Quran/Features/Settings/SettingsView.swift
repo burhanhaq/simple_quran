@@ -141,6 +141,9 @@ struct SettingsView: View {
 }
 
 struct AcknowledgementsView: View {
+    @Environment(AppEnvironment.self) private var environment
+    private let edition = TranslationEdition.default
+
     var body: some View {
         NavigationStack {
             ScrollView {
@@ -151,6 +154,11 @@ struct AcknowledgementsView: View {
                     Text(String(localized: "Typography"))
                         .font(.headline)
                     Text("KFGQPC HAFS Uthmanic Script font © King Fahd Glorious Quran Printing Complex, used free of charge under its license and bundled unmodified.")
+                    Text(String(localized: "Translation"))
+                        .font(.headline)
+                    Text("\(edition.title) English translation, issued by \(edition.publisher), from QuranEnc.com\(translationVersion). Bundled unchanged; footnotes are not shown.")
+                    Link(edition.sourceURL.absoluteString, destination: edition.sourceURL)
+                        .tint(Color.bronze)
                     Text(String(localized: "Audio"))
                         .font(.headline)
                     Text("Abdul Rahman Al-Sudais recitations are streamed or downloaded from Al Quran Cloud / islamic.network for personal and educational use. Copyright remains with the reciter.")
@@ -161,7 +169,13 @@ struct AcknowledgementsView: View {
             .background(Color.parchment)
             .parchmentNavigationBar()
             .navigationTitle(String(localized: "Acknowledgements"))
+            .task { await environment.translations.loadIfNeeded(edition) }
         }
+    }
+
+    private var translationVersion: String {
+        guard let version = environment.translations.current?.version else { return "" }
+        return ", version \(version)"
     }
 }
 

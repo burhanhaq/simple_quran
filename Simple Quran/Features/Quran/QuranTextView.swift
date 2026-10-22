@@ -24,6 +24,11 @@ struct QuranTextView<AyahMenu: View>: View {
     @State private var listPosition: Int?
     @State private var seededListPosition = false
 
+    /// Translations show only in ayah-by-ayah layout; continuous text stays Arabic only.
+    private var translation: BundledTranslation? {
+        environment.settings.showsTranslation ? environment.translations.current : nil
+    }
+
     /// Playback moves within this many ayahs scroll with animation; longer jumps go straight
     /// there, since animating through hundreds of lazy rows stutters.
     private static var animatedFollowDistance: Int { 3 }
@@ -60,7 +65,8 @@ struct QuranTextView<AyahMenu: View>: View {
                             if verse.showsBasmalaBefore { BasmalaHeader() }
                             QuranAyahText(verse: verse, isCurrent: verse.globalAyah == currentAyah,
                                           hidden: hiddenAyahs.contains(verse.globalAyah),
-                                          marked: markedAyahs.contains(verse.globalAyah))
+                                          marked: markedAyahs.contains(verse.globalAyah),
+                                          translation: translation?.text(globalAyah: verse.globalAyah))
                         }
                         .opacity(focusRange.map { $0.contains(verse.globalAyah) ? 1 : MushafTextBuilder.dimmedAlpha } ?? 1)
                     }
@@ -79,6 +85,9 @@ struct QuranTextView<AyahMenu: View>: View {
         .animation(.easeInOut(duration: 0.25), value: focusRange)
         .scrollPosition(id: $listPosition, anchor: .center)
         .onAppear(perform: seedListPosition)
+        .task(id: environment.settings.showsTranslation) {
+            if environment.settings.showsTranslation { await environment.translations.loadIfNeeded() }
+        }
         .onChange(of: currentAyah) { previous, ayah in
             guard let ayah else { return }
             let distance = previous.map { abs($0 - ayah) } ?? .max

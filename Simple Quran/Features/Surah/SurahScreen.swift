@@ -132,12 +132,22 @@ struct SurahScreen: View {
 
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
+        @Bindable var settings = environment.settings
         ToolbarItem(placement: .topBarLeading) {
             Button {
                 model.close(index: index)
                 dismiss()
             } label: { Image(systemName: "chevron.down").frame(width: 32, height: 32) }
                 .accessibilityLabel("Close").accessibilityIdentifier("surah.close").disabled(model.recordingBusy)
+        }
+        if settings.quranReadingLayout == .ayahByAyah {
+            ToolbarItem(placement: .topBarTrailing) {
+                Toggle(isOn: $settings.showsTranslation) {
+                    Label(String(localized: "Translation"), systemImage: "translate")
+                }
+                .toggleStyle(.button)
+                .accessibilityIdentifier("surah.translation")
+            }
         }
         ToolbarItem(placement: .topBarTrailing) {
             Menu {
