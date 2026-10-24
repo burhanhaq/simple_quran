@@ -89,8 +89,8 @@ struct SurahScreen: View {
             verses: model.verses,
             currentAyah: model.currentAyah,
             hiddenAyahs: model.hiddenAyahs,
-            // Testing, a peek while recording is exactly when it's needed.
-            selectionEnabled: !model.recordingBusy || model.focus?.mode == .test,
+            // Reciting, a peek while recording is exactly when it's needed.
+            selectionEnabled: !model.recordingBusy || model.focus?.step == .recite,
             focusedAyah: model.selectedAyah,
             scrollToAyah: model.destination.scrollToAyah,
             focusRange: model.focus?.range,

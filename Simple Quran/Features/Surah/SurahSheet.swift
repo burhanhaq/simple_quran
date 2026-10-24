@@ -463,94 +463,57 @@ private extension View {
 
 // MARK: - Memorizing a piece
 
-/// Coaches one piece in place: Learn with the player and repeat count, or Test with the text
-/// hidden, the recorder, and the optional check. Answering is one tap; skipping it is just Done or Next.
+/// Coaches one piece in place, a step at a time: Listen with the player and repeat count, Recite
+/// with the text hidden and the recorder, then Check with the text back and the answers. Every step
+/// has the same rows, so the sheet keeps its height. Answering stays optional: Done or Next skips it.
 private struct FocusCoach: View {
     @Environment(AppEnvironment.self) private var environment
     let model: SurahScreenModel
     let focus: MemorizeFocus
     let index: ProgressIndex
-    @State private var autoHintModes: Set<CoachMode> = []
-    @State private var hintRequested = false
+
+    /// Every step's tools get the recorder's height, so the steps line up.
+    private static let toolsHeight: CGFloat = 56
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 header
-                modeRow
-                if showsHint {
-                    Text(focus.mode.hint).font(.footnote).foregroundStyle(Color.secondaryWarm)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .transition(.opacity)
-                }
-                if focus.mode == .test {
-                    RecitationBar(model: model)
-                    checkCard
-                }
+                promptRow
+                tools.frame(maxWidth: .infinity, minHeight: Self.toolsHeight)
+                footer
             }
             .padding(.horizontal, 22).padding(.top, 20).padding(.bottom, 4)
             .frame(maxWidth: 680).frame(maxWidth: .infinity)
             .fitsSheet(model, model.sheetContent)
         }
         .scrollBounceBehavior(.basedOnSize)
-        .animation(.snappy, value: focus.mode)
-        .animation(.snappy, value: showsHint)
-        .onAppear { takeHint(for: focus.mode) }
-        .onChange(of: focus.mode) { _, mode in
-            hintRequested = false
-            takeHint(for: mode)
-        }
+        .animation(.snappy, value: focus.step)
     }
 
-    /// Each mode explains itself the first few times; after that the hint is behind the info button.
-    private var showsHint: Bool { hintRequested || autoHintModes.contains(focus.mode) }
-
-    private func takeHint(for mode: CoachMode) {
-        if environment.settings.takeCoachHint(mode) { autoHintModes.insert(mode) }
-    }
-
-    /// One row when it fits; with large text the buttons move under the passage name.
+    /// The passage name opens the picker, so it never competes with Done for the row.
     private var header: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(alignment: .center, spacing: 12) {
-                passageName
-                Spacer(minLength: 0)
-                headerButtons
-            }
-            VStack(alignment: .leading, spacing: 4) {
-                passageName
-                HStack(spacing: 20) { headerButtons }
-            }
-        }
-    }
-
-    private var passageName: some View {
-        VStack(alignment: .leading, spacing: 3) {
-            Text(label).font(.caption2.weight(.semibold)).tracking(1.4).foregroundStyle(Color.bronze)
-            HStack(spacing: 6) {
-                Text(LearningPassage.referenceLabel(focus.range, catalog: environment.quran))
-                    .font(.subheadline.weight(.medium))
-                if !autoHintModes.contains(focus.mode) {
-                    Button { hintRequested.toggle() } label: {
-                        Image(systemName: hintRequested ? "info.circle.fill" : "info.circle")
-                            .font(.footnote).frame(width: 28, height: 28).contentShape(Rectangle())
+        HStack(alignment: .center, spacing: 12) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(label).font(.caption2.weight(.semibold)).tracking(1.4).foregroundStyle(Color.bronze)
+                Button { model.showsPassagePicker = true } label: {
+                    HStack(spacing: 4) {
+                        Text(LearningPassage.referenceLabel(focus.range, catalog: environment.quran))
+                            .font(.subheadline.weight(.medium)).multilineTextAlignment(.leading)
+                        Image(systemName: "chevron.down").font(.caption2.weight(.bold)).foregroundStyle(Color.bronze)
                     }
-                    .buttonStyle(.plain).foregroundStyle(Color.secondaryWarm)
-                    .accessibilityLabel(hintRequested ? "Hide tip" : "Show tip")
-                    .accessibilityIdentifier("session.hint")
+                    .frame(minHeight: 28).contentShape(Rectangle())
                 }
+                .buttonStyle(.plain)
+                .accessibilityHint("Choose another passage")
+                .accessibilityIdentifier("session.change")
             }
+            Spacer(minLength: 0)
+            Button("Done") { model.finishFocus(index: index) }
+                .font(.subheadline.weight(.semibold)).frame(minHeight: 44)
+                .accessibilityIdentifier("session.done")
         }
-    }
-
-    @ViewBuilder
-    private var headerButtons: some View {
-        Button("Change") { model.showsPassagePicker = true }
-            .font(.subheadline).frame(minHeight: 44)
-            .disabled(model.recordingBusy).accessibilityIdentifier("session.change")
-        Button("Done") { model.finishFocus(index: index) }
-            .font(.subheadline.weight(.semibold)).frame(minHeight: 44)
-            .disabled(model.recordingBusy).accessibilityIdentifier("session.done")
+        .disabled(model.recordingBusy)
     }
 
     private var label: String {
@@ -565,52 +528,40 @@ private struct FocusCoach: View {
         return String(localized: "MEMORIZE")
     }
 
-    /// The mode and what it needs on one row: the player to learn, the text toggle to test.
-    /// With large text the two stack.
-    private var modeRow: some View {
-        ViewThatFits(in: .horizontal) {
-            HStack(spacing: 12) {
-                modePicker.fixedSize()
-                Spacer(minLength: 0)
-                modeControls
+    /// What the step asks, with the ayahs marked so far. Checking, it says how to mark one.
+    private var promptRow: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 12) {
+            Text(focus.step.prompt).foregroundStyle(Color.secondaryWarm)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+            if focus.step == .check || !focus.slipped.isEmpty {
+                Text(markedSummary)
+                    .foregroundStyle(focus.slipped.isEmpty ? Color.secondaryWarm : Color.dangerWarm)
+                    .multilineTextAlignment(.trailing)
+                    .accessibilityIdentifier("session.marked")
             }
-            VStack(alignment: .leading, spacing: 12) {
-                modePicker
-                modeControls.frame(maxWidth: .infinity)
-            }
+        }
+        .font(.footnote)
+    }
+
+    private var markedSummary: String {
+        switch focus.slipped.count {
+        case 0: String(localized: "Tap any ayah you slipped on")
+        case 1: String(localized: "1 ayah marked")
+        default: String(localized: "\(focus.slipped.count) ayahs marked")
         }
     }
 
     @ViewBuilder
-    private var modeControls: some View {
-        switch focus.mode {
-        case .learn: controls
-        case .test: textToggle
+    private var tools: some View {
+        switch focus.step {
+        case .listen: player
+        case .recite: RecitationBar(model: model)
+        case .check: answers
         }
     }
 
-    private var modePicker: some View {
-        Picker("Mode", selection: Binding(get: { focus.mode }, set: { model.setMode($0) })) {
-            ForEach(CoachMode.allCases) { Text($0.title).tag($0) }
-        }
-        .pickerStyle(.segmented)
-        .disabled(model.recordingBusy)
-        .accessibilityIdentifier("session.mode")
-    }
-
-    /// Shows the whole piece, then hides it again, ayahs opened by tapping included.
-    private var textToggle: some View {
-        let shows = focus.showsWholePiece
-        return Button { withAnimation(.snappy) { model.setShowsAllText(!shows) } } label: {
-            Label(shows ? "Hide text" : "Show text", systemImage: shows ? "eye.slash" : "eye")
-                .contentTransition(.symbolEffect(.replace))
-                .font(.footnote.weight(.semibold))
-                .frame(minHeight: 44)
-        }
-        .accessibilityIdentifier("session.showText")
-    }
-
-    private var controls: some View {
+    private var player: some View {
         HStack(spacing: 6) {
             Button { model.step(by: -1) } label: {
                 Image(systemName: "backward.end.fill").font(.body).frame(width: 36, height: 44)
@@ -619,7 +570,7 @@ private struct FocusCoach: View {
             .disabled(!model.canStepBack)
             Button { model.togglePlayback() } label: {
                 ZStack {
-                    PlayGlyph(systemName: model.isPlaying ? "pause.fill" : "play.fill", size: 44)
+                    PlayGlyph(systemName: model.isPlaying ? "pause.fill" : "play.fill", size: 48)
                     if model.isLoading { ProgressView().tint(Color.goldButtonText) }
                 }
             }
@@ -634,62 +585,99 @@ private struct FocusCoach: View {
         .buttonStyle(.plain).foregroundStyle(Color.bronze)
     }
 
-    private var checkCard: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            Text("How did it go?").font(.subheadline.weight(.semibold))
-            HStack(spacing: 8) {
-                ForEach(CheckAnswer.choices(for: focus.kind)) { choice in
-                    let selected = focus.answer == choice
-                    let tint = choice.rating.color
-                    Button { model.answer(choice) } label: {
-                        // The icon drops out when the three don't fit with it.
-                        ViewThatFits(in: .horizontal) {
-                            Label {
-                                Text(choice.title)
-                            } icon: {
-                                Image(systemName: choice.systemImage)
-                                    .symbolVariant(selected ? .fill : .none)
-                                    .foregroundStyle(selected ? Color.appWarmSurface : tint)
-                            }
-                            .labelStyle(.titleAndIcon)
+    private var answers: some View {
+        HStack(spacing: 8) {
+            ForEach(CheckAnswer.choices(for: focus.kind)) { choice in
+                let selected = focus.answer == choice
+                let tint = choice.rating.color
+                Button { model.answer(choice) } label: {
+                    // The icon drops out when the three don't fit with it.
+                    ViewThatFits(in: .horizontal) {
+                        Label {
                             Text(choice.title)
+                        } icon: {
+                            Image(systemName: choice.systemImage)
+                                .symbolVariant(selected ? .fill : .none)
+                                .foregroundStyle(selected ? Color.appWarmSurface : tint)
                         }
-                        .font(.footnote.weight(.semibold)).lineLimit(1)
-                        .padding(.horizontal, 6)
-                        .frame(maxWidth: .infinity, minHeight: 44)
-                        .background(selected ? tint : tint.opacity(0.14), in: Capsule())
-                        .overlay { Capsule().strokeBorder(tint.opacity(selected ? 0 : 0.35)) }
-                        .foregroundStyle(selected ? Color.appWarmSurface : Color.appBrownText)
+                        .labelStyle(.titleAndIcon)
+                        Text(choice.title)
                     }
-                    .buttonStyle(.plain)
-                    .sensoryFeedback(.selection, trigger: selected)
-                    .accessibilityAddTraits(selected ? .isSelected : [])
-                    .accessibilityIdentifier("session.answer.\(choice.rawValue)")
+                    .font(.footnote.weight(.semibold)).lineLimit(1)
+                    .padding(.horizontal, 6)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .background(selected ? tint : tint.opacity(0.14), in: Capsule())
+                    .overlay { Capsule().strokeBorder(tint.opacity(selected ? 0 : 0.35)) }
+                    .foregroundStyle(selected ? Color.appWarmSurface : Color.appBrownText)
                 }
+                .buttonStyle(.plain)
+                .sensoryFeedback(.selection, trigger: selected)
+                .accessibilityAddTraits(selected ? .isSelected : [])
+                .accessibilityIdentifier("session.answer.\(choice.rawValue)")
             }
-            HStack {
-                Text(markedSummary)
-                    .font(.footnote).foregroundStyle(focus.slipped.isEmpty ? Color.secondaryWarm : Color.dangerWarm)
-                    .accessibilityIdentifier("session.marked")
-                Spacer()
-                if let next = model.nextPassage(index: index) {
-                    Button { model.advance(to: next, index: index) } label: {
-                        Label(focus.kind == .review ? "Next to revise" : "Next piece", systemImage: "arrow.right")
-                            .font(.footnote.weight(.semibold))
-                    }
-                    .frame(minHeight: 36).accessibilityIdentifier("session.nextPassage")
-                    .accessibilityHint(LearningPassage.referenceLabel(next, catalog: environment.quran))
-                }
-            }
+        }
+    }
+
+    /// Back a step beside the way on: the next step, then the next passage, or finishing.
+    /// With large text the two stack.
+    private var footer: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 10) { footerButtons }
+            VStack(spacing: 10) { footerButtons }
         }
         .disabled(model.recordingBusy)
     }
 
-    private var markedSummary: String {
-        switch focus.slipped.count {
-        case 0: String(localized: "Tap any ayah you slipped on")
-        case 1: String(localized: "1 ayah marked")
-        default: String(localized: "\(focus.slipped.count) ayahs marked")
+    @ViewBuilder
+    private var footerButtons: some View {
+        if let previous = focus.step.previous {
+            Button { model.setStep(previous) } label: {
+                Label(backTitle(to: previous), systemImage: previous == .listen ? "headphones" : "arrow.counterclockwise")
+                    .lineLimit(1)
+            }
+            .buttonStyle(WarmButtonStyle(emphasis: .secondary))
+            .accessibilityIdentifier("session.back")
+        }
+        onButton
+    }
+
+    @ViewBuilder
+    private var onButton: some View {
+        if let next = focus.step.next {
+            Button { model.setStep(next) } label: {
+                Text(onTitle(to: next)).lineLimit(1).frame(maxWidth: .infinity)
+            }
+            .buttonStyle(WarmButtonStyle())
+            .accessibilityIdentifier("session.\(next.rawValue)")
+        } else if let passage = model.nextPassage(index: index) {
+            Button { model.advance(to: passage, index: index) } label: {
+                Text(focus.kind == .review ? "Next to revise" : "Next piece").lineLimit(1).frame(maxWidth: .infinity)
+            }
+            .buttonStyle(WarmButtonStyle())
+            .accessibilityHint(LearningPassage.referenceLabel(passage, catalog: environment.quran))
+            .accessibilityIdentifier("session.nextPassage")
+        } else {
+            Button { model.finishFocus(index: index) } label: {
+                Text("Finish").frame(maxWidth: .infinity)
+            }
+            .buttonStyle(WarmButtonStyle())
+            .accessibilityIdentifier("session.finish")
+        }
+    }
+
+    private func onTitle(to step: CoachStep) -> String {
+        switch step {
+        case .listen: String(localized: "Listen")
+        case .recite: String(localized: "Recite from memory")
+        case .check: String(localized: "Check")
+        }
+    }
+
+    private func backTitle(to step: CoachStep) -> String {
+        switch step {
+        case .listen: String(localized: "Listen")
+        case .recite: String(localized: "Recite again")
+        case .check: String(localized: "Check")
         }
     }
 }

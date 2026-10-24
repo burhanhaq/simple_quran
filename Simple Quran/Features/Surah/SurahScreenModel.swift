@@ -19,18 +19,17 @@ enum SurahSheetDetent {
     static func rounded(_ height: CGFloat) -> CGFloat { (height / fitStep).rounded(.up) * fitStep }
 }
 
-/// What the sheet shows, each fitted to its own measured height.
+/// What the sheet shows, each fitted to its own measured height. The coach keeps one height
+/// across its steps, so moving through them never moves the text.
 enum SurahSheetContent: Hashable {
     case overview
-    case learn
-    case test
+    case coach
 
     /// Used until the content has been measured once.
     var estimatedHeight: CGFloat {
         switch self {
         case .overview: 400
-        case .learn: 170
-        case .test: 330
+        case .coach: 250
         }
     }
 }
@@ -212,7 +211,7 @@ final class SurahScreenModel {
         case .session(let session):
             let surah = environment.quran.verse(globalAyah: session.range.startGlobalAyah)?.surahNumber ?? 1
             destination = .surah(number: surah, scrollToAyah: session.range.startGlobalAyah)
-            let content = session.kind == .review ? SurahSheetContent.test : .learn
+            let content = SurahSheetContent.coach
             detent = SurahSheetDetent.fitted(Self.rememberedHeights[content] ?? content.estimatedHeight)
         }
         if detent == SurahSheetDetent.half { detent = middleDetent }
@@ -239,10 +238,7 @@ final class SurahScreenModel {
 
     // MARK: - Sheet heights
 
-    var sheetContent: SurahSheetContent {
-        guard let focus else { return .overview }
-        return focus.mode == .test ? .test : .learn
-    }
+    var sheetContent: SurahSheetContent { focus == nil ? .overview : .coach }
 
     /// A short surah is one piece, so its overview has no parts list and fits its content.
     var fitsOverview: Bool { pieces.count <= 1 }
@@ -368,8 +364,9 @@ final class SurahScreenModel {
         followRequest += 1
         if let focus {
             // Only the piece answers taps while memorizing; the rest is context.
+            // Past listening, a tap opens or marks an ayah instead of moving playback.
             guard focus.range.contains(ayah) else { return }
-            if focus.mode == .test {
+            if focus.step != .listen {
                 self.focus?.tap(ayah)
                 return
             }
@@ -481,25 +478,20 @@ final class SurahScreenModel {
         return fittedDetent(sheetContent)
     }
 
-    /// The text in view hides while testing, except while the user hears their recording back,
+    /// The text in view hides while reciting, except while the user hears their recording back,
     /// so they can follow it and mark where they slipped.
     var hiddenAyahs: Set<Int> {
         guard let focus, !environment.recorder.isPlayingComparison else { return [] }
         return focus.hiddenAyahs
     }
 
-    /// Switching modes keeps the marks; only moving to another piece clears them.
-    func setMode(_ mode: CoachMode) {
-        guard focus != nil, focus?.mode != mode else { return }
-        focus?.mode = mode
+    /// Moving between steps keeps the marks; only moving to another piece clears them.
+    /// The reciter is for listening, so it pauses once the user recites.
+    func setStep(_ step: CoachStep) {
+        guard focus != nil, focus?.step != step else { return }
+        focus?.go(to: step)
         focus?.engaged = true
-        if mode == .test { playback.pause() } else { environment.recorder.cancelComparisonPlayback() }
-        if detent != SurahSheetDetent.full { withAnimation(.snappy) { detent = coachDetent } }
-    }
-
-    func setShowsAllText(_ shows: Bool) {
-        if shows { focus?.showsAllText = true } else { focus?.hideAllText() }
-        focus?.engaged = true
+        if step == .listen { environment.recorder.cancelComparisonPlayback() } else { playback.pause() }
     }
 
     func answer(_ choice: CheckAnswer) {

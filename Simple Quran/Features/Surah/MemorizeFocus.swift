@@ -1,26 +1,39 @@
 import Foundation
 
-/// The two ways to work on a piece: learn it with the text in view, then test yourself with it hidden.
-enum CoachMode: String, CaseIterable, Identifiable {
-    case learn
-    case test
+/// The steps of working on a piece: listen with the text in view, recite it from memory with the
+/// text hidden, then check it with the text back. Memorizing opens on Listen, revising on Recite.
+enum CoachStep: String {
+    case listen
+    case recite
+    case check
 
-    var id: String { rawValue }
+    static func first(for kind: SessionKind) -> CoachStep {
+        kind == .review ? .recite : .listen
+    }
 
-    /// How many times each mode's hint shows before it moves behind the info button.
-    static let hintShowCount = 3
-
-    var title: String {
+    /// What the step asks of the user.
+    var prompt: String {
         switch self {
-        case .learn: String(localized: "Learn")
-        case .test: String(localized: "Test")
+        case .listen: String(localized: "Listen and repeat after the reciter.")
+        case .recite: String(localized: "Recite from memory. Tap an ayah if you need to see it.")
+        case .check: String(localized: "How did it go?")
         }
     }
 
-    var hint: String {
+    /// Where the step's main button leads; Check leads on to the next passage instead.
+    var next: CoachStep? {
         switch self {
-        case .learn: String(localized: "Listen and repeat after the reciter.")
-        case .test: String(localized: "Recite from memory. Tap an ayah if you need to see it.")
+        case .listen: .recite
+        case .recite: .check
+        case .check: nil
+        }
+    }
+
+    var previous: CoachStep? {
+        switch self {
+        case .listen: nil
+        case .recite: .listen
+        case .check: .recite
         }
     }
 }
@@ -97,13 +110,12 @@ struct MemorizeFocus {
     /// Review passages still waiting after this one.
     var queue: [VerseRange]
     var reviewsDone = 0
-    var mode: CoachMode
+    private(set) var step: CoachStep
     var practice: PracticeSet?
-    /// Ayahs the user tapped open while testing.
+    /// Ayahs the user tapped open while reciting.
     var revealed: Set<Int> = []
     /// Ayahs the user marked as slipped. They get a weaker answer than the rest of the piece.
     var slipped: Set<Int> = []
-    var showsAllText = false
     var answer: CheckAnswer?
     var engaged = false
     /// Listening time already saved for this piece, so moving on never records it twice.
@@ -115,7 +127,7 @@ struct MemorizeFocus {
         planID = route.planID
         scope = route.scope
         queue = route.reviewQueue
-        mode = Self.startingMode(for: route.kind)
+        step = .first(for: route.kind)
         practice = route.savedPractice
     }
 
@@ -124,10 +136,17 @@ struct MemorizeFocus {
     }
 
     var hiddenAyahs: Set<Int> {
-        mode == .test && !showsAllText ? Set(range.globalAyahs).subtracting(revealed) : []
+        step == .recite ? Set(range.globalAyahs).subtracting(revealed) : []
     }
 
-    /// Testing, a hidden ayah opens and counts as slipped, since the user needed to see it.
+    /// Reciting again hides the whole piece, ayahs opened last time included. Marks stay,
+    /// since they're the record of the attempt.
+    mutating func go(to newStep: CoachStep) {
+        if newStep == .recite { revealed = [] }
+        step = newStep
+    }
+
+    /// Reciting, a hidden ayah opens and counts as slipped, since the user needed to see it.
     /// A visible ayah toggles its mark, so a peek that wasn't a slip can be taken back.
     mutating func tap(_ ayah: Int) {
         guard range.contains(ayah) else { return }
@@ -142,16 +161,6 @@ struct MemorizeFocus {
         }
     }
 
-    /// Testing, everything in the piece is in view: shown all at once or opened one by one.
-    var showsWholePiece: Bool { mode == .test && hiddenAyahs.isEmpty }
-
-    /// Hides the whole piece again, including ayahs opened by tapping. Marks stay, since
-    /// they're the record of the attempt.
-    mutating func hideAllText() {
-        showsAllText = false
-        revealed = []
-    }
-
     /// The answer each ayah gets: slipped ayahs the weaker one, the rest the piece's answer.
     /// With no answer nothing changes, and a review only speaks for ayahs memorized going in.
     func ratings(isMemorized: (Int) -> Bool) -> [CheckAnswer: [Int]] {
@@ -164,20 +173,15 @@ struct MemorizeFocus {
         return result
     }
 
-    /// Starts the piece over in its first mode, keeping where it sits in a plan or review queue.
+    /// Starts the piece over on its first step, keeping where it sits in a plan or review queue.
     mutating func move(to newRange: VerseRange) {
         range = newRange
-        mode = Self.startingMode(for: kind)
+        step = .first(for: kind)
         revealed = []
         slipped = []
-        showsAllText = false
         answer = nil
         engaged = false
         practice = nil
         committedSeconds = 0
-    }
-
-    private static func startingMode(for kind: SessionKind) -> CoachMode {
-        kind == .review ? .test : .learn
     }
 }

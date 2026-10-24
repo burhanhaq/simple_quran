@@ -44,7 +44,6 @@ final class AppSettings {
         static let showsTranslation = "settings.showsTranslation"
         static let hasSeenTranslationLayoutNote = "settings.hasSeenTranslationLayoutNote"
         static let hasSeenQuranHint = "settings.hasSeenQuranHint"
-        static let coachHintCounts = "learning.coachHintCounts"
         static let appearance = "settings.appearance"
         static let showsStatusChangeNote = "settings.showsStatusChangeNote"
         static let startTab = "settings.startTab"
@@ -196,19 +195,6 @@ final class AppSettings {
         didSet { defaults.set(hasSeenQuranHint, forKey: Key.hasSeenQuranHint) }
     }
 
-    /// How many times each memorize mode has explained itself, by mode.
-    private var coachHintCounts: [String: Int] {
-        didSet { defaults.set(coachHintCounts, forKey: Key.coachHintCounts) }
-    }
-
-    /// True the first few times a mode opens, counting this one; after that its hint waits behind a button.
-    func takeCoachHint(_ mode: CoachMode) -> Bool {
-        let shown = coachHintCounts[mode.rawValue, default: 0]
-        guard shown < CoachMode.hintShowCount else { return false }
-        coachHintCounts[mode.rawValue] = shown + 1
-        return true
-    }
-
     var appearance: AppAppearance {
         didSet { defaults.set(appearance.rawValue, forKey: Key.appearance) }
     }
@@ -248,7 +234,6 @@ final class AppSettings {
         self.showsTranslation = defaults.bool(forKey: Key.showsTranslation)
         self.hasSeenTranslationLayoutNote = defaults.bool(forKey: Key.hasSeenTranslationLayoutNote)
         self.hasSeenQuranHint = defaults.bool(forKey: Key.hasSeenQuranHint)
-        self.coachHintCounts = defaults.dictionary(forKey: Key.coachHintCounts) as? [String: Int] ?? [:]
         self.appearance = defaults.string(forKey: Key.appearance)
             .flatMap(AppAppearance.init(rawValue:)) ?? .system
         self.showsStatusChangeNote = defaults.bool(forKey: Key.showsStatusChangeNote)

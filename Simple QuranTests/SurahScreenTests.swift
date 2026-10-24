@@ -26,11 +26,11 @@ struct SurahScreenTests {
         #expect(SurahAction.make(pieces: [], index: allDone) == nil)
     }
 
-    @Test @MainActor func testingHidesTheTextAndTappingRevealsAndMarks() {
+    @Test @MainActor func recitingHidesTheTextAndTappingRevealsAndMarks() {
         var focus = MemorizeFocus(route: SessionRoute(range: .clamped(start: 8, end: 12)))
-        #expect(focus.mode == .learn)
+        #expect(focus.step == .listen)
         #expect(focus.hiddenAyahs.isEmpty)
-        focus.mode = .test
+        focus.go(to: .recite)
         #expect(focus.hiddenAyahs == [8, 9, 10, 11, 12])
 
         // A hidden ayah opens and is marked; tapping it again only takes the mark back.
@@ -43,43 +43,46 @@ struct SurahScreenTests {
         focus.tap(20)
         #expect(focus.slipped.isEmpty)
 
-        // Showing all the text keeps the marks; switching back to Learn keeps them too.
+        // Checking shows the whole piece and keeps the marks; a tap there marks a slip.
         focus.tap(10)
-        focus.showsAllText = true
+        focus.go(to: .check)
         #expect(focus.hiddenAyahs.isEmpty)
         focus.tap(11)
         #expect(focus.slipped == [10, 11])
-        #expect(focus.showsWholePiece)
 
-        // Hiding brings back every ayah, tapped ones too, and keeps the marks.
-        focus.hideAllText()
+        // Reciting again hides every ayah, tapped ones too, and keeps the marks.
+        focus.go(to: .recite)
         #expect(focus.hiddenAyahs == [8, 9, 10, 11, 12])
-        #expect(!focus.showsWholePiece)
         #expect(focus.slipped == [10, 11])
 
-        focus.mode = .learn
-        #expect(!focus.showsWholePiece)
+        focus.go(to: .listen)
+        #expect(focus.hiddenAyahs.isEmpty)
         #expect(focus.slipped == [10, 11])
 
         focus.answer = .almost
         focus.move(to: .clamped(start: 13, end: 16))
-        #expect(focus.mode == .learn)
-        #expect(focus.slipped.isEmpty && focus.revealed.isEmpty && !focus.showsAllText)
+        #expect(focus.step == .listen)
+        #expect(focus.slipped.isEmpty && focus.revealed.isEmpty)
         #expect(focus.answer == nil)
         #expect(focus.range == .clamped(start: 13, end: 16))
 
         let review = MemorizeFocus(route: SessionRoute(range: .clamped(start: 1, end: 7), kind: .review,
                                                        reviewQueue: [.clamped(start: 8, end: 9)]))
-        #expect(review.mode == .test)
+        #expect(review.step == .recite)
         #expect(review.route.reviewQueue == [.clamped(start: 8, end: 9)])
     }
 
-    @Test @MainActor func openingEveryAyahShowsTheWholePiece() {
+    @Test @MainActor func stepsRunListenReciteCheck() {
+        #expect(CoachStep.listen.next == .recite && CoachStep.recite.next == .check && CoachStep.check.next == nil)
+        #expect(CoachStep.listen.previous == nil && CoachStep.recite.previous == .listen && CoachStep.check.previous == .recite)
+    }
+
+    @Test @MainActor func openingEveryAyahShowsTheWholePieceUntilRecitingAgain() {
         var focus = MemorizeFocus(route: SessionRoute(range: .clamped(start: 1, end: 3), kind: .review))
-        #expect(!focus.showsWholePiece)
         for ayah in 1...3 { focus.tap(ayah) }
-        #expect(focus.showsWholePiece)
-        focus.hideAllText()
+        #expect(focus.hiddenAyahs.isEmpty)
+        focus.go(to: .check)
+        focus.go(to: .recite)
         #expect(focus.hiddenAyahs == [1, 2, 3])
         #expect(focus.slipped == [1, 2, 3])
     }
