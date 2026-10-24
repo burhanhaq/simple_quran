@@ -24,7 +24,7 @@ struct QuranTextView<AyahMenu: View>: View {
     @State private var listPosition: Int?
     @State private var seededListPosition = false
 
-    /// Translations show only in ayah-by-ayah layout; continuous text stays Arabic only.
+    /// Translation always shows ayah by ayah; continuous text stays Arabic only.
     private var translation: BundledTranslation? {
         environment.settings.showsTranslation ? environment.translations.current : nil
     }
@@ -34,19 +34,23 @@ struct QuranTextView<AyahMenu: View>: View {
     private static var animatedFollowDistance: Int { 3 }
 
     var body: some View {
-        if environment.settings.quranReadingLayout == .mushaf {
-            MushafFlowView(
-                verses: verses,
-                currentGlobalAyah: currentAyah,
-                hiddenAyahs: hiddenAyahs,
-                basmala: environment.quran.basmala,
-                selectionEnabled: selectionEnabled,
-                focusedAyah: focusedAyah,
-                focusRange: focusRange,
-                markedAyahs: markedAyahs,
-                onSelect: onSelect
-            )
-        } else { ayahList }
+        Group {
+            if environment.settings.displayedReadingLayout == .mushaf {
+                MushafFlowView(
+                    verses: verses,
+                    currentGlobalAyah: currentAyah,
+                    hiddenAyahs: hiddenAyahs,
+                    basmala: environment.quran.basmala,
+                    selectionEnabled: selectionEnabled,
+                    focusedAyah: focusedAyah,
+                    focusRange: focusRange,
+                    markedAyahs: markedAyahs,
+                    onSelect: onSelect
+                )
+            } else { ayahList }
+        }
+        // Switching layouts, such as turning translation on, keeps the place instead of reopening the surah.
+        .onChange(of: environment.settings.displayedReadingLayout) { _, _ in seededListPosition = true }
     }
 
     private var ayahList: some View {
@@ -99,11 +103,13 @@ struct QuranTextView<AyahMenu: View>: View {
         }
     }
 
+    /// Opens at the requested ayah. After a switch from continuous text it keeps the ayah being
+    /// played or memorized in view, the way continuous text does.
     private func seedListPosition() {
-        guard !seededListPosition else { return }
+        let target = seededListPosition ? currentAyah ?? focusedAyah : scrollToAyah
         seededListPosition = true
         // The first ayah is already at the top; centering it would hide the surah banner.
-        guard let target = scrollToAyah, target != verses.first?.globalAyah else { return }
+        guard let target, target != verses.first?.globalAyah else { return }
         listPosition = target
     }
 }

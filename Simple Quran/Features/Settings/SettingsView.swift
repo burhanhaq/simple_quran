@@ -26,12 +26,15 @@ struct SettingsView: View {
                     }
                     .accessibilityIdentifier("settings.appearance")
                     .warmListRow()
-                    Picker(String(localized: "Reading layout"), selection: Bindable(environment.settings).quranReadingLayout) {
+                    Picker(String(localized: "Reading layout"), selection: Bindable(environment.settings).displayedReadingLayout) {
                         ForEach(QuranReadingLayout.allCases) { layout in
                             Text(layout.title).tag(layout)
                         }
                     }
                     .warmListRow()
+                    Toggle(String(localized: "Show translation"), isOn: Bindable(environment.settings).showsTranslation)
+                        .accessibilityIdentifier("settings.translation")
+                        .warmListRow()
                 }
                 Section(String(localized: "Audio")) {
                     Toggle(String(localized: "Wi-Fi only downloads"), isOn: Bindable(environment.settings).wifiOnly)

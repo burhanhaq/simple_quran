@@ -253,11 +253,11 @@ struct ReadingLayoutMenu: View {
         Section(String(localized: "Reading Layout")) {
             ForEach(QuranReadingLayout.allCases) { layout in
                 Button {
-                    environment.settings.quranReadingLayout = layout
+                    environment.settings.displayedReadingLayout = layout
                 } label: {
                     Label(
                         layout.title,
-                        systemImage: environment.settings.quranReadingLayout == layout
+                        systemImage: environment.settings.displayedReadingLayout == layout
                             ? "checkmark"
                             : layout.systemImage
                     )

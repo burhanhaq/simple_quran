@@ -49,6 +49,7 @@ final class AppSettings {
         static let lastTab = "settings.lastTab"
         static let quranReadingLayout = "settings.quranReadingLayout"
         static let showsTranslation = "settings.showsTranslation"
+        static let hasSeenTranslationLayoutNote = "settings.hasSeenTranslationLayoutNote"
         static let hasSeenQuranHint = "settings.hasSeenQuranHint"
         static let appearance = "settings.appearance"
         static let showsStatusChangeNote = "settings.showsStatusChangeNote"
@@ -167,13 +168,34 @@ final class AppSettings {
         didSet { defaults.set(downloadWhilePlaying, forKey: Key.downloadWhilePlaying) }
     }
 
+    /// The layout the user chose. Translation shows ayah by ayah without changing it.
     var quranReadingLayout: QuranReadingLayout {
-        didSet { defaults.set(quranReadingLayout.rawValue, forKey: Key.quranReadingLayout) }
+        didSet {
+            defaults.set(quranReadingLayout.rawValue, forKey: Key.quranReadingLayout)
+            // Continuous text can't show translations, so choosing it turns them off.
+            if quranReadingLayout == .mushaf { showsTranslation = false }
+        }
     }
 
-    /// Shows the translation under each ayah in Ayah by Ayah layout, reading or memorizing.
+    /// What the reader shows: ayah by ayah while translation is on, otherwise the chosen layout.
+    /// Choosing a layout here saves it.
+    var displayedReadingLayout: QuranReadingLayout {
+        get { showsTranslation ? .ayahByAyah : quranReadingLayout }
+        set { quranReadingLayout = newValue }
+    }
+
+    /// Shows the translation under each ayah, reading or memorizing.
     var showsTranslation: Bool {
         didSet { defaults.set(showsTranslation, forKey: Key.showsTranslation) }
+    }
+
+    var hasSeenTranslationLayoutNote: Bool {
+        didSet { defaults.set(hasSeenTranslationLayoutNote, forKey: Key.hasSeenTranslationLayoutNote) }
+    }
+
+    /// Translation just took continuous text to ayah by ayah, which is explained once.
+    var needsTranslationLayoutNote: Bool {
+        showsTranslation && quranReadingLayout == .mushaf && !hasSeenTranslationLayoutNote
     }
 
     var hasSeenQuranHint: Bool {
@@ -217,6 +239,7 @@ final class AppSettings {
         self.quranReadingLayout = defaults.string(forKey: Key.quranReadingLayout)
             .flatMap(QuranReadingLayout.init(rawValue:)) ?? .ayahByAyah
         self.showsTranslation = defaults.bool(forKey: Key.showsTranslation)
+        self.hasSeenTranslationLayoutNote = defaults.bool(forKey: Key.hasSeenTranslationLayoutNote)
         self.hasSeenQuranHint = defaults.bool(forKey: Key.hasSeenQuranHint)
         self.appearance = defaults.string(forKey: Key.appearance)
             .flatMap(AppAppearance.init(rawValue:)) ?? .system

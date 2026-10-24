@@ -11,6 +11,7 @@ struct SurahScreen: View {
     @Query private var progress: [VerseProgress]
     @State private var model: SurahScreenModel
     @State private var showsSheet = true
+    @State private var showsTranslationNote = false
     /// Checking files is a filesystem call per ayah, so it runs when downloads finish, not on every render.
     @State private var audioDownloaded = false
 
@@ -37,6 +38,13 @@ struct SurahScreen: View {
                     .overlay(alignment: .bottom) { fade.offset(y: -halfSheetTop(in: geometry)) }
                     .animation(.snappy, value: textInset)
             }
+            .overlay(alignment: .top) {
+                if showsTranslationNote {
+                    TranslationLayoutNote { showsTranslationNote = false }
+                        .transition(.move(edge: .top).combined(with: .opacity))
+                }
+            }
+            .animation(.snappy, value: showsTranslationNote)
             .background(Color.parchment.ignoresSafeArea())
             .navigationTitle(model.title)
             .navigationBarTitleDisplayMode(.inline)
@@ -56,6 +64,14 @@ struct SurahScreen: View {
                 model.start()
             }
             .onChange(of: prefersFullCoach) { _, full in model.prefersFullCoach = full }
+            .onChange(of: environment.settings.showsTranslation) { _, shows in
+                if environment.settings.needsTranslationLayoutNote {
+                    environment.settings.hasSeenTranslationLayoutNote = true
+                    showsTranslationNote = true
+                } else if !shows {
+                    showsTranslationNote = false
+                }
+            }
             .onDisappear {
                 model.savePosition()
                 environment.recorder.stopRecording()
@@ -140,14 +156,13 @@ struct SurahScreen: View {
             } label: { Image(systemName: "chevron.down").frame(width: 32, height: 32) }
                 .accessibilityLabel("Close").accessibilityIdentifier("surah.close").disabled(model.recordingBusy)
         }
-        if settings.quranReadingLayout == .ayahByAyah {
-            ToolbarItem(placement: .topBarTrailing) {
-                Toggle(isOn: $settings.showsTranslation) {
-                    Label(String(localized: "Translation"), systemImage: "translate")
-                }
-                .toggleStyle(.button)
-                .accessibilityIdentifier("surah.translation")
+        // Shown in both layouts: turning it on in continuous text shows ayah by ayah.
+        ToolbarItem(placement: .topBarTrailing) {
+            Toggle(isOn: $settings.showsTranslation) {
+                Label(String(localized: "Translation"), systemImage: "translate")
             }
+            .toggleStyle(.button)
+            .accessibilityIdentifier("surah.translation")
         }
         ToolbarItem(placement: .topBarTrailing) {
             Menu {
@@ -168,6 +183,43 @@ struct SurahScreen: View {
     private func refreshAudioDownloaded() {
         let ids = model.passage.ayahIDs
         audioDownloaded = !ids.isEmpty && environment.downloads.downloadedCount(in: ids) == ids.count
+    }
+}
+
+/// Shown once, when translation first switches continuous text to ayah by ayah.
+private struct TranslationLayoutNote: View {
+    var onDismiss: () -> Void
+
+    private static var visibleDuration: Duration { .seconds(6) }
+    private var message: String {
+        String(localized: "Translations show ayah by ayah. Turn translation off to go back to continuous text.")
+    }
+
+    var body: some View {
+        Button(action: onDismiss) {
+            Label {
+                Text(message).multilineTextAlignment(.leading)
+            } icon: {
+                Image(systemName: "translate").foregroundStyle(Color.bronze)
+            }
+            .font(.footnote)
+            .foregroundStyle(Color.appBrownText)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .frame(maxWidth: 520, alignment: .leading)
+            .background(Color.appWarmSurface, in: RoundedRectangle(cornerRadius: AppTheme.tightRadius, style: .continuous))
+            .shadow(color: .black.opacity(0.12), radius: 10, y: 3)
+        }
+        .buttonStyle(.plain)
+        .padding(.horizontal, 16)
+        .padding(.top, 8)
+        .accessibilityHint(String(localized: "Dismiss"))
+        .accessibilityIdentifier("surah.translationNote")
+        .onAppear { AccessibilityNotification.Announcement(message).post() }
+        .task {
+            guard (try? await Task.sleep(for: Self.visibleDuration)) != nil else { return }
+            onDismiss()
+        }
     }
 }
 
