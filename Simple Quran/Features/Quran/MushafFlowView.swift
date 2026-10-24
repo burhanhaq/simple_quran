@@ -233,9 +233,14 @@ struct MushafFlowView: View {
     /// The piece being memorized; everything else fades back.
     var focusRange: VerseRange? = nil
     var markedAyahs: Set<Int> = []
+    /// False while the user has scrolled away during playback; the text then stays where they put it.
+    var isFollowing = true
     var onSelect: (Int) -> Void
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @State private var glyphScrolledAyah: Int?
+    /// Whether the scroll under way glides: a move to the same or the next page does, a longer jump doesn't.
+    @State private var animatesFollow = false
     @State private var followedPlacement: MushafAnchorPlacement?
     @State private var placedAnchor: MushafAnchorPlacement?
 
@@ -243,6 +248,7 @@ struct MushafFlowView: View {
     /// not a regrouping of the whole passage for every page on every render.
     private let blocks: [MushafPageBlock]
     private let blockIDByAyah: [Int: Int]
+    private let blockOrder: [Int: Int]
 
     init(
         verses: [QuranVerse],
@@ -254,6 +260,7 @@ struct MushafFlowView: View {
         focusedAyah: Int? = nil,
         focusRange: VerseRange? = nil,
         markedAyahs: Set<Int> = [],
+        isFollowing: Bool = true,
         onSelect: @escaping (Int) -> Void
     ) {
         self.verses = verses
@@ -265,10 +272,12 @@ struct MushafFlowView: View {
         self.focusedAyah = focusedAyah
         self.focusRange = focusRange
         self.markedAyahs = markedAyahs
+        self.isFollowing = isFollowing
         self.onSelect = onSelect
         let blocks = MushafPageBlocks.make(from: verses)
         self.blocks = blocks
         self.blockIDByAyah = MushafPageBlocks.blockIDs(for: blocks)
+        self.blockOrder = Dictionary(uniqueKeysWithValues: blocks.enumerated().map { ($1.id, $0) })
     }
 
     private var passageID: String {
@@ -320,10 +329,17 @@ struct MushafFlowView: View {
                 followedPlacement = nil
             }
             .onChange(of: target, initial: true) { _, target in
+                guard isFollowing else { return }
+                animatesFollow = !reduceMotion && isNearby(target, from: glyphScrolledAyah)
                 scrollToPageIfNeeded(target, proxy: proxy)
             }
             .onChange(of: placedAnchor) { _, placement in
+                guard isFollowing else { return }
                 scrollToAyahIfNeeded(placement, proxy: proxy)
+            }
+            .onChange(of: isFollowing) { _, following in
+                guard following else { return }
+                resumeFollowing(proxy: proxy)
             }
         }
     }
@@ -345,12 +361,42 @@ struct MushafFlowView: View {
         return ayahs.filter { blockIDByAyah[$0] == block.id }
     }
 
+    /// Same page or the next one over, so the scroll can glide instead of jump.
+    private func isNearby(_ target: Int?, from followed: Int?) -> Bool {
+        guard let target, let followed,
+              let to = blockIDByAyah[target].flatMap({ blockOrder[$0] }),
+              let from = blockIDByAyah[followed].flatMap({ blockOrder[$0] }) else { return false }
+        return abs(to - from) <= 1
+    }
+
+    private func scroll(to target: MushafScrollTarget, proxy: ScrollViewProxy) {
+        if animatesFollow {
+            withAnimation(.easeInOut(duration: 0.35)) { proxy.scrollTo(target, anchor: .center) }
+        } else {
+            proxy.scrollTo(target, anchor: .center)
+        }
+    }
+
     private func scrollToPageIfNeeded(_ target: Int?, proxy: ScrollViewProxy) {
         guard let target, glyphScrolledAyah != target else { return }
         let targetBlock = blockIDByAyah[target]
         let followedBlock = glyphScrolledAyah.flatMap { blockIDByAyah[$0] }
         guard targetBlock != followedBlock, let targetBlock else { return }
-        proxy.scrollTo(MushafScrollTarget.page(targetBlock), anchor: .center)
+        scroll(to: .page(targetBlock), proxy: proxy)
+    }
+
+    /// Back from the user's own scrolling: straight to the ayah when its page has placed it,
+    /// otherwise to its page first, which then places it.
+    private func resumeFollowing(proxy: ScrollViewProxy) {
+        let target = scrollTarget
+        animatesFollow = !reduceMotion
+        followedPlacement = nil
+        if let placedAnchor, placedAnchor.ayah == target {
+            scrollToAyahIfNeeded(placedAnchor, proxy: proxy)
+        } else if let target, let block = blockIDByAyah[target] {
+            glyphScrolledAyah = nil
+            scroll(to: .page(block), proxy: proxy)
+        }
     }
 
     private func scrollToAyahIfNeeded(_ placement: MushafAnchorPlacement?, proxy: ScrollViewProxy) {
@@ -359,7 +405,7 @@ struct MushafFlowView: View {
               placement.ayah == scrollTarget,
               followedPlacement != placement
         else { return }
-        proxy.scrollTo(MushafScrollTarget.ayah(placement.ayah), anchor: .center)
+        scroll(to: .ayah(placement.ayah), proxy: proxy)
         followedPlacement = placement
         glyphScrolledAyah = placement.ayah
     }

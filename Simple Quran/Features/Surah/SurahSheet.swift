@@ -75,8 +75,9 @@ private struct ReadingOverview: View {
                 knownRow
                 if hasParts { piecesList }
             }
-            .padding(.horizontal, 22).padding(.top, 20).padding(.bottom, 28)
+            .padding(.horizontal, 22).padding(.top, 20).padding(.bottom, hasParts ? 28 : 4)
             .frame(maxWidth: 680).frame(maxWidth: .infinity)
+            .fitsSheet(model, .overview, when: !hasParts)
         }
         .scrollBounceBehavior(.basedOnSize)
         // At peek height a drag should open the sheet, not scroll what's hidden below the player.
@@ -430,35 +431,71 @@ private struct PageRow: View {
     }
 }
 
+/// Reports the content's natural height so the sheet can rest fitted to it.
+private struct SheetFit: ViewModifier {
+    let model: SurahScreenModel
+    let sheetContent: SurahSheetContent
+    let isActive: Bool
+
+    func body(content: Content) -> some View {
+        content.onGeometryChange(for: CGFloat.self) { $0.size.height } action: { height in
+            if isActive { model.fitSheet(sheetContent, to: height) }
+        }
+    }
+}
+
+private extension View {
+    func fitsSheet(_ model: SurahScreenModel, _ content: SurahSheetContent, when isActive: Bool = true) -> some View {
+        modifier(SheetFit(model: model, sheetContent: content, isActive: isActive))
+    }
+}
+
 // MARK: - Memorizing a piece
 
 /// Coaches one piece in place: Learn with the player and repeat count, or Test with the text
 /// hidden, the recorder, and the optional check. Answering is one tap; skipping it is just Done or Next.
 private struct FocusCoach: View {
     @Environment(AppEnvironment.self) private var environment
-    @Environment(\.verticalSizeClass) private var verticalSizeClass
     let model: SurahScreenModel
     let focus: MemorizeFocus
     let index: ProgressIndex
+    @State private var autoHintModes: Set<CoachMode> = []
+    @State private var hintRequested = false
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 header
-                modePicker
-                hintRow
-                switch focus.mode {
-                case .learn: controls
-                case .test:
+                modeRow
+                if showsHint {
+                    Text(focus.mode.hint).font(.footnote).foregroundStyle(Color.secondaryWarm)
+                        .fixedSize(horizontal: false, vertical: true)
+                        .transition(.opacity)
+                }
+                if focus.mode == .test {
                     RecitationBar(model: model)
                     checkCard
                 }
             }
-            .padding(.horizontal, 22).padding(.top, 20).padding(.bottom, 24)
+            .padding(.horizontal, 22).padding(.top, 20).padding(.bottom, 4)
             .frame(maxWidth: 680).frame(maxWidth: .infinity)
+            .fitsSheet(model, model.sheetContent)
         }
         .scrollBounceBehavior(.basedOnSize)
         .animation(.snappy, value: focus.mode)
+        .animation(.snappy, value: showsHint)
+        .onAppear { takeHint(for: focus.mode) }
+        .onChange(of: focus.mode) { _, mode in
+            hintRequested = false
+            takeHint(for: mode)
+        }
+    }
+
+    /// Each mode explains itself the first few times; after that the hint is behind the info button.
+    private var showsHint: Bool { hintRequested || autoHintModes.contains(focus.mode) }
+
+    private func takeHint(for mode: CoachMode) {
+        if environment.settings.takeCoachHint(mode) { autoHintModes.insert(mode) }
     }
 
     /// One row when it fits; with large text the buttons move under the passage name.
@@ -479,8 +516,19 @@ private struct FocusCoach: View {
     private var passageName: some View {
         VStack(alignment: .leading, spacing: 3) {
             Text(label).font(.caption2.weight(.semibold)).tracking(1.4).foregroundStyle(Color.bronze)
-            Text(LearningPassage.referenceLabel(focus.range, catalog: environment.quran))
-                .font(.subheadline.weight(.medium))
+            HStack(spacing: 6) {
+                Text(LearningPassage.referenceLabel(focus.range, catalog: environment.quran))
+                    .font(.subheadline.weight(.medium))
+                if !autoHintModes.contains(focus.mode) {
+                    Button { hintRequested.toggle() } label: {
+                        Image(systemName: hintRequested ? "info.circle.fill" : "info.circle")
+                            .font(.footnote).frame(width: 28, height: 28).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain).foregroundStyle(Color.secondaryWarm)
+                    .accessibilityLabel(hintRequested ? "Hide tip" : "Show tip")
+                    .accessibilityIdentifier("session.hint")
+                }
+            }
         }
     }
 
@@ -506,6 +554,30 @@ private struct FocusCoach: View {
         return String(localized: "MEMORIZE")
     }
 
+    /// The mode and what it needs on one row: the player to learn, the text toggle to test.
+    /// With large text the two stack.
+    private var modeRow: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: 12) {
+                modePicker.fixedSize()
+                Spacer(minLength: 0)
+                modeControls
+            }
+            VStack(alignment: .leading, spacing: 12) {
+                modePicker
+                modeControls.frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private var modeControls: some View {
+        switch focus.mode {
+        case .learn: controls
+        case .test: textToggle
+        }
+    }
+
     private var modePicker: some View {
         Picker("Mode", selection: Binding(get: { focus.mode }, set: { model.setMode($0) })) {
             ForEach(CoachMode.allCases) { Text($0.title).tag($0) }
@@ -515,42 +587,40 @@ private struct FocusCoach: View {
         .accessibilityIdentifier("session.mode")
     }
 
-    private var hintRow: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 12) {
-            Text(focus.mode.hint).font(.footnote).foregroundStyle(Color.secondaryWarm)
-                .fixedSize(horizontal: false, vertical: true)
-            Spacer(minLength: 0)
-            if focus.mode == .test, !focus.hiddenAyahs.isEmpty {
-                Button("Show text") { withAnimation(.snappy) { model.showAllText() } }
-                    .font(.footnote.weight(.semibold)).frame(minHeight: 36)
-                    .accessibilityIdentifier("session.showText")
-            }
+    /// Shows the whole piece, then hides it again, ayahs opened by tapping included.
+    private var textToggle: some View {
+        let shows = focus.showsWholePiece
+        return Button { withAnimation(.snappy) { model.setShowsAllText(!shows) } } label: {
+            Label(shows ? "Hide text" : "Show text", systemImage: shows ? "eye.slash" : "eye")
+                .contentTransition(.symbolEffect(.replace))
+                .font(.footnote.weight(.semibold))
+                .frame(minHeight: 44)
         }
+        .accessibilityIdentifier("session.showText")
     }
 
     private var controls: some View {
-        HStack(spacing: verticalSizeClass == .compact ? 10 : 18) {
+        HStack(spacing: 6) {
             Button { model.step(by: -1) } label: {
-                Image(systemName: "backward.end.fill").font(.title3).frame(width: 44, height: 44)
+                Image(systemName: "backward.end.fill").font(.body).frame(width: 36, height: 44)
             }
             .accessibilityLabel("Previous ayah").accessibilityIdentifier("session.previous")
             .disabled(!model.canStepBack)
             Button { model.togglePlayback() } label: {
                 ZStack {
-                    PlayGlyph(systemName: model.isPlaying ? "pause.fill" : "play.fill", size: 56)
+                    PlayGlyph(systemName: model.isPlaying ? "pause.fill" : "play.fill", size: 44)
                     if model.isLoading { ProgressView().tint(Color.goldButtonText) }
                 }
             }
             .accessibilityLabel(model.isPlaying ? "Pause" : "Play").accessibilityIdentifier("session.play")
             Button { model.step(by: 1) } label: {
-                Image(systemName: "forward.end.fill").font(.title3).frame(width: 44, height: 44)
+                Image(systemName: "forward.end.fill").font(.body).frame(width: 36, height: 44)
             }
             .accessibilityLabel("Next ayah").accessibilityIdentifier("session.next")
             .disabled(!model.canStepForward)
-            if let practice = focus.practice { RepeatChip(model: model, practice: practice) }
+            if let practice = focus.practice { RepeatChip(model: model, practice: practice).padding(.leading, 4) }
         }
         .buttonStyle(.plain).foregroundStyle(Color.bronze)
-        .frame(maxWidth: .infinity)
     }
 
     private var checkCard: some View {
@@ -559,14 +629,29 @@ private struct FocusCoach: View {
             HStack(spacing: 8) {
                 ForEach(CheckAnswer.choices(for: focus.kind)) { choice in
                     let selected = focus.answer == choice
+                    let tint = choice.rating.color
                     Button { model.answer(choice) } label: {
-                        Text(choice.title)
-                            .font(.footnote.weight(.semibold))
-                            .frame(maxWidth: .infinity, minHeight: 44)
-                            .background(selected ? Color.olive : Color.appCollectedFill, in: Capsule())
-                            .foregroundStyle(selected ? Color.white : Color.appBrownText)
+                        // The icon drops out when the three don't fit with it.
+                        ViewThatFits(in: .horizontal) {
+                            Label {
+                                Text(choice.title)
+                            } icon: {
+                                Image(systemName: choice.systemImage)
+                                    .symbolVariant(selected ? .fill : .none)
+                                    .foregroundStyle(selected ? Color.appWarmSurface : tint)
+                            }
+                            .labelStyle(.titleAndIcon)
+                            Text(choice.title)
+                        }
+                        .font(.footnote.weight(.semibold)).lineLimit(1)
+                        .padding(.horizontal, 6)
+                        .frame(maxWidth: .infinity, minHeight: 44)
+                        .background(selected ? tint : tint.opacity(0.14), in: Capsule())
+                        .overlay { Capsule().strokeBorder(tint.opacity(selected ? 0 : 0.35)) }
+                        .foregroundStyle(selected ? Color.appWarmSurface : Color.appBrownText)
                     }
                     .buttonStyle(.plain)
+                    .sensoryFeedback(.selection, trigger: selected)
                     .accessibilityAddTraits(selected ? .isSelected : [])
                     .accessibilityIdentifier("session.answer.\(choice.rawValue)")
                 }

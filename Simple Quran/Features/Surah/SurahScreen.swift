@@ -95,6 +95,8 @@ struct SurahScreen: View {
             scrollToAyah: model.destination.scrollToAyah,
             focusRange: model.focus?.range,
             markedAyahs: model.focus?.slipped ?? [],
+            isPlaying: model.isPlaying,
+            followRequest: model.followRequest,
             onSelect: model.select
         ) { verse in ayahMenu(verse) }
     }
@@ -110,15 +112,7 @@ struct SurahScreen: View {
         }
     }
 
-    /// Keeps the ayah being read or memorized clear of the shorter sheet heights. At half height
-    /// the text stays full length behind the sheet, so the surah's opening shows above it.
-    private var textInset: CGFloat {
-        switch model.detent {
-        case SurahSheetDetent.coach: SurahSheetDetent.coachHeight
-        case SurahSheetDetent.check: SurahSheetDetent.checkHeight
-        default: SurahSheetDetent.peekHeight
-        }
-    }
+    private var textInset: CGFloat { model.textInset }
 
     private func halfSheetTop(in geometry: GeometryProxy) -> CGFloat {
         let windowHeight = geometry.size.height + geometry.safeAreaInsets.top + geometry.safeAreaInsets.bottom

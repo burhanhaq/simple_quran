@@ -16,6 +16,10 @@ struct QuranTextView<AyahMenu: View>: View {
     var markedAyahs: Set<Int> = []
     /// Shown under the surah banner in ayah-by-ayah layout.
     var caption: String? = nil
+    /// Playback is running, so a scroll by hand pauses following it.
+    var isPlaying = false
+    /// Changes when the user asks to see the current ayah, by picking one, stepping, or pressing play.
+    var followRequest = 0
     let onSelect: (Int) -> Void
     @ViewBuilder var ayahMenu: (QuranVerse) -> AyahMenu
 
@@ -23,6 +27,8 @@ struct QuranTextView<AyahMenu: View>: View {
     /// ayah opens in place instead of jumping there after the list appears.
     @State private var listPosition: Int?
     @State private var seededListPosition = false
+    @State private var follow = AutoFollow()
+    @State private var resumeTask: Task<Void, Never>?
 
     /// Translation always shows ayah by ayah; continuous text stays Arabic only.
     private var translation: BundledTranslation? {
@@ -32,6 +38,9 @@ struct QuranTextView<AyahMenu: View>: View {
     /// Playback moves within this many ayahs scroll with animation; longer jumps go straight
     /// there, since animating through hundreds of lazy rows stutters.
     private static var animatedFollowDistance: Int { 3 }
+    /// Coming back after the user scrolled away animates from a little further.
+    private static var animatedResumeDistance: Int { 12 }
+    private static var followAnimation: Animation { .easeInOut(duration: 0.35) }
 
     var body: some View {
         Group {
@@ -45,12 +54,71 @@ struct QuranTextView<AyahMenu: View>: View {
                     focusedAyah: focusedAyah,
                     focusRange: focusRange,
                     markedAyahs: markedAyahs,
+                    isFollowing: !follow.isPaused,
                     onSelect: onSelect
                 )
             } else { ayahList }
         }
         // Switching layouts, such as turning translation on, keeps the place instead of reopening the surah.
         .onChange(of: environment.settings.displayedReadingLayout) { _, _ in seededListPosition = true }
+        .onScrollPhaseChange { _, phase in scrollPhaseChanged(to: phase) }
+        .onChange(of: followRequest) { _, _ in resumeFollowing() }
+        .overlay(alignment: .top) { returnButton }
+        .animation(.snappy, value: follow.showsReturnButton(isPlaying: isPlaying))
+        .onDisappear { resumeTask?.cancel() }
+    }
+
+    @ViewBuilder
+    private var returnButton: some View {
+        if follow.showsReturnButton(isPlaying: isPlaying) {
+            Button(action: resumeFollowing) {
+                Label(String(localized: "Current ayah"), systemImage: "location.fill")
+                    .font(.footnote.weight(.semibold))
+                    .padding(.horizontal, 14)
+                    .frame(minHeight: 36)
+                    .background(Color.appWarmSurface, in: Capsule())
+                    .shadow(color: .black.opacity(0.12), radius: 8, y: 2)
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(Color.bronze)
+            .frame(minHeight: 44)
+            .padding(.top, 8)
+            .transition(.move(edge: .top).combined(with: .opacity))
+            .accessibilityHint(String(localized: "Scrolls back to the ayah being played"))
+            .accessibilityIdentifier("quran.currentAyah")
+        }
+    }
+
+    /// A drag pauses following; once scrolling settles, following comes back after a rest.
+    private func scrollPhaseChanged(to phase: ScrollPhase) {
+        switch phase {
+        case .interacting:
+            resumeTask?.cancel()
+            follow.userScrolled(isPlaying: isPlaying)
+        case .idle where follow.isPaused:
+            resumeTask?.cancel()
+            resumeTask = Task {
+                guard (try? await Task.sleep(for: AutoFollow.resumeAfterIdle)) != nil else { return }
+                resumeFollowing()
+            }
+        default:
+            break
+        }
+    }
+
+    private func resumeFollowing() {
+        resumeTask?.cancel()
+        resumeTask = nil
+        guard follow.isPaused else { return }
+        follow.resume()
+        // Continuous text scrolls back itself when following resumes.
+        guard environment.settings.displayedReadingLayout != .mushaf, let ayah = currentAyah else { return }
+        let distance = listPosition.map { abs($0 - ayah) } ?? .max
+        if reduceMotion || distance > Self.animatedResumeDistance {
+            listPosition = ayah
+        } else {
+            withAnimation(Self.followAnimation) { listPosition = ayah }
+        }
     }
 
     private var ayahList: some View {
@@ -93,12 +161,12 @@ struct QuranTextView<AyahMenu: View>: View {
             if environment.settings.showsTranslation { await environment.translations.loadIfNeeded() }
         }
         .onChange(of: currentAyah) { previous, ayah in
-            guard let ayah else { return }
+            guard let ayah, !follow.isPaused else { return }
             let distance = previous.map { abs($0 - ayah) } ?? .max
             if reduceMotion || distance > Self.animatedFollowDistance {
                 listPosition = ayah
             } else {
-                withAnimation(.easeInOut(duration: 0.25)) { listPosition = ayah }
+                withAnimation(Self.followAnimation) { listPosition = ayah }
             }
         }
     }

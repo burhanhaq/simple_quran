@@ -7,6 +7,9 @@ enum CoachMode: String, CaseIterable, Identifiable {
 
     var id: String { rawValue }
 
+    /// How many times each mode's hint shows before it moves behind the info button.
+    static let hintShowCount = 3
+
     var title: String {
         switch self {
         case .learn: String(localized: "Learn")
@@ -137,6 +140,16 @@ struct MemorizeFocus {
         } else {
             slipped.insert(ayah)
         }
+    }
+
+    /// Testing, everything in the piece is in view: shown all at once or opened one by one.
+    var showsWholePiece: Bool { mode == .test && hiddenAyahs.isEmpty }
+
+    /// Hides the whole piece again, including ayahs opened by tapping. Marks stay, since
+    /// they're the record of the attempt.
+    mutating func hideAllText() {
+        showsAllText = false
+        revealed = []
     }
 
     /// The answer each ayah gets: slipped ayahs the weaker one, the rest the piece's answer.

@@ -1,17 +1,36 @@
 import SwiftUI
 
 /// Where the surah screen's sheet rests. Reading uses peek, half and full; memorizing a piece
-/// uses the coach heights so the text above stays in view.
+/// fits the coach so the text above stays in view. A one-piece surah's overview fits too,
+/// since it has no parts list to fill half the screen.
 /// Heights are above the home indicator.
 enum SurahSheetDetent {
     static let peekHeight: CGFloat = 88
-    static let coachHeight: CGFloat = 270
-    static let checkHeight: CGFloat = 370
     static let peek = PresentationDetent.height(peekHeight)
     static let half = PresentationDetent.medium
     static let full = PresentationDetent.large
-    static let coach = PresentationDetent.height(coachHeight)
-    static let check = PresentationDetent.height(checkHeight)
+    /// Measured heights round up to this step, so small layout changes don't move the sheet.
+    static let fitStep: CGFloat = 8
+
+    static func fitted(_ height: CGFloat) -> PresentationDetent { .height(height) }
+
+    static func rounded(_ height: CGFloat) -> CGFloat { (height / fitStep).rounded(.up) * fitStep }
+}
+
+/// What the sheet shows, each fitted to its own measured height.
+enum SurahSheetContent: Hashable {
+    case overview
+    case learn
+    case test
+
+    /// Used until the content has been measured once.
+    var estimatedHeight: CGFloat {
+        switch self {
+        case .overview: 400
+        case .learn: 170
+        case .test: 330
+        }
+    }
 }
 
 /// The height the reader opens at: readers start with the text in full view, memorizers with the overview.
@@ -165,6 +184,12 @@ final class SurahScreenModel {
     var errorMessage: UserFacingMessage?
     var showsOptions = false
     var showsPassagePicker = false
+    /// Changes whenever the user asks to see the current ayah, so the text follows playback again
+    /// after they scrolled away.
+    private(set) var followRequest = 0
+    /// Measured sheet content, kept across screens so the next surah opens at the right height.
+    private var fittedHeights = SurahScreenModel.rememberedHeights
+    @ObservationIgnored private static var rememberedHeights: [SurahSheetContent: CGFloat] = [:]
     /// Large text and landscape need the whole coach, so memorizing uses the full sheet there.
     var prefersFullCoach = false {
         didSet {
@@ -183,8 +208,10 @@ final class SurahScreenModel {
         case .session(let session):
             let surah = environment.quran.verse(globalAyah: session.range.startGlobalAyah)?.surahNumber ?? 1
             destination = .surah(number: surah, scrollToAyah: session.range.startGlobalAyah)
-            detent = session.kind == .review ? SurahSheetDetent.check : SurahSheetDetent.coach
+            let content = session.kind == .review ? SurahSheetContent.test : .learn
+            detent = SurahSheetDetent.fitted(Self.rememberedHeights[content] ?? content.estimatedHeight)
         }
+        if detent == SurahSheetDetent.half { detent = middleDetent }
     }
 
     // MARK: - What's on screen
@@ -206,13 +233,53 @@ final class SurahScreenModel {
     var groups: [SurahPieceGroup] { pieceCache.groups(for: span, size: environment.settings.pieceSize, catalog: quran) }
     var pieces: [VerseRange] { groups.flatMap(\.pieces) }
 
+    // MARK: - Sheet heights
+
+    var sheetContent: SurahSheetContent {
+        guard let focus else { return .overview }
+        return focus.mode == .test ? .test : .learn
+    }
+
+    /// A short surah is one piece, so its overview has no parts list and fits its content.
+    var fitsOverview: Bool { pieces.count <= 1 }
+
+    private func fittedHeight(_ content: SurahSheetContent) -> CGFloat {
+        fittedHeights[content] ?? content.estimatedHeight
+    }
+
+    private func fittedDetent(_ content: SurahSheetContent) -> PresentationDetent {
+        SurahSheetDetent.fitted(fittedHeight(content))
+    }
+
+    /// Where reading rests between peek and full.
+    var middleDetent: PresentationDetent { fitsOverview ? fittedDetent(.overview) : SurahSheetDetent.half }
+
     var detents: Set<PresentationDetent> {
         focus == nil
-            ? [SurahSheetDetent.peek, SurahSheetDetent.half, SurahSheetDetent.full]
-            : [SurahSheetDetent.coach, SurahSheetDetent.check, SurahSheetDetent.full]
+            ? [SurahSheetDetent.peek, middleDetent, SurahSheetDetent.full]
+            : [fittedDetent(sheetContent), SurahSheetDetent.full]
     }
     /// The text stays scrollable and tappable while the sheet is below this height.
-    var interactionLimit: PresentationDetent { focus == nil ? SurahSheetDetent.half : SurahSheetDetent.check }
+    var interactionLimit: PresentationDetent { focus == nil ? middleDetent : fittedDetent(sheetContent) }
+
+    /// True while the sheet sits at a height fitted to its content.
+    private var isFitted: Bool {
+        (focus != nil || fitsOverview) && detent == fittedDetent(sheetContent)
+    }
+
+    /// Keeps the ayah being read or memorized clear of the shorter sheet heights. At half height
+    /// the text stays full length behind the sheet, so the surah's opening shows above it.
+    var textInset: CGFloat { isFitted ? fittedHeight(sheetContent) : SurahSheetDetent.peekHeight }
+
+    /// Takes the content's natural height; a sheet resting at the old fit follows the new one.
+    func fitSheet(_ content: SurahSheetContent, to height: CGFloat) {
+        let fitted = SurahSheetDetent.rounded(height)
+        guard fitted > 0, fitted != fittedHeights[content] else { return }
+        let wasFitted = content == sheetContent && isFitted
+        fittedHeights[content] = fitted
+        Self.rememberedHeights[content] = fitted
+        if wasFitted { withAnimation(.snappy) { detent = fittedDetent(content) } }
+    }
 
     private var ownsReading: Bool { playback.activeSet == nil && playback.isPrepared(for: ranges) }
     private var ownsFocus: Bool { focus?.practice.map { playback.activeSet?.id == $0.id } ?? false }
@@ -274,6 +341,7 @@ final class SurahScreenModel {
 
     func togglePlayback() {
         if isPlaying { playback.pause(); return }
+        followRequest += 1
         if let focus {
             self.focus?.engaged = true
             if !ownsFocus, let practice = focus.practice {
@@ -287,6 +355,7 @@ final class SurahScreenModel {
     }
 
     func select(_ ayah: Int) {
+        followRequest += 1
         if let focus {
             // Only the piece answers taps while memorizing; the rest is context.
             guard focus.range.contains(ayah) else { return }
@@ -307,6 +376,7 @@ final class SurahScreenModel {
         let ayahs = stepAyahs
         guard let ayah = currentAyah, let index = ayahs.firstIndex(of: ayah), ayahs.indices.contains(index + offset) else { return }
         let target = ayahs[index + offset]
+        followRequest += 1
         selectedAyah = target
         if ownsPlayback { playback.move(to: target) }
         if focus == nil { savePosition() }
@@ -391,13 +461,14 @@ final class SurahScreenModel {
         playback.pause()
         undo = nil
         focus = MemorizeFocus(route: route)
+        followRequest += 1
         withAnimation(.snappy) { detent = coachDetent }
         begin(route.range)
     }
 
     private var coachDetent: PresentationDetent {
         if prefersFullCoach { return SurahSheetDetent.full }
-        return focus?.mode == .test ? SurahSheetDetent.check : SurahSheetDetent.coach
+        return fittedDetent(sheetContent)
     }
 
     /// The text in view hides while testing, except while the user hears their recording back,
@@ -416,8 +487,8 @@ final class SurahScreenModel {
         if detent != SurahSheetDetent.full { withAnimation(.snappy) { detent = coachDetent } }
     }
 
-    func showAllText() {
-        focus?.showsAllText = true
+    func setShowsAllText(_ shows: Bool) {
+        if shows { focus?.showsAllText = true } else { focus?.hideAllText() }
         focus?.engaged = true
     }
 
@@ -459,6 +530,7 @@ final class SurahScreenModel {
 
     func move(to newRange: VerseRange, index: ProgressIndex) {
         commit(index: index)
+        followRequest += 1
         withAnimation(.snappy) {
             focus?.move(to: newRange)
             showInText(newRange)
@@ -478,7 +550,7 @@ final class SurahScreenModel {
         withAnimation(.snappy) {
             self.focus = nil
             selectedAyah = focus.range.startGlobalAyah
-            detent = SurahSheetDetent.half
+            detent = middleDetent
         }
     }
 

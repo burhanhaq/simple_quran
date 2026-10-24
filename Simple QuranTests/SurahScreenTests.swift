@@ -49,7 +49,16 @@ struct SurahScreenTests {
         #expect(focus.hiddenAyahs.isEmpty)
         focus.tap(11)
         #expect(focus.slipped == [10, 11])
+        #expect(focus.showsWholePiece)
+
+        // Hiding brings back every ayah, tapped ones too, and keeps the marks.
+        focus.hideAllText()
+        #expect(focus.hiddenAyahs == [8, 9, 10, 11, 12])
+        #expect(!focus.showsWholePiece)
+        #expect(focus.slipped == [10, 11])
+
         focus.mode = .learn
+        #expect(!focus.showsWholePiece)
         #expect(focus.slipped == [10, 11])
 
         focus.answer = .almost
@@ -63,6 +72,31 @@ struct SurahScreenTests {
                                                        reviewQueue: [.clamped(start: 8, end: 9)]))
         #expect(review.mode == .test)
         #expect(review.route.reviewQueue == [.clamped(start: 8, end: 9)])
+    }
+
+    @Test @MainActor func openingEveryAyahShowsTheWholePiece() {
+        var focus = MemorizeFocus(route: SessionRoute(range: .clamped(start: 1, end: 3), kind: .review))
+        #expect(!focus.showsWholePiece)
+        for ayah in 1...3 { focus.tap(ayah) }
+        #expect(focus.showsWholePiece)
+        focus.hideAllText()
+        #expect(focus.hiddenAyahs == [1, 2, 3])
+        #expect(focus.slipped == [1, 2, 3])
+    }
+
+    @Test @MainActor func scrollingDuringPlaybackPausesFollowingUntilResumed() {
+        var follow = AutoFollow()
+        follow.userScrolled(isPlaying: false)
+        #expect(!follow.isPaused)
+
+        follow.userScrolled(isPlaying: true)
+        #expect(follow.isPaused)
+        #expect(follow.showsReturnButton(isPlaying: true))
+        #expect(!follow.showsReturnButton(isPlaying: false))
+
+        follow.resume()
+        #expect(!follow.isPaused)
+        #expect(!follow.showsReturnButton(isPlaying: true))
     }
 
     @Test @MainActor func slippedAyahsGetTheWeakerAnswerOnlyWithAnAnswer() {

@@ -34,6 +34,17 @@ extension Freshness {
     }
 }
 
+extension RecallRating {
+    /// The same green, amber, and warm danger as freshness, so an answer reads like the state it leads to.
+    var color: Color {
+        switch self {
+        case .solid: .olive
+        case .comfortable: .fadingAmber
+        case .needsWork, .again: .dangerWarm
+        }
+    }
+}
+
 extension Font {
     static func quran(_ size: QuranScript.Size = .body) -> Font {
         QuranScript.font(size)
@@ -246,24 +257,23 @@ struct QuranAyahText: View {
     }
 }
 
+/// A picker, so the menu marks the layout in use with a single checkmark and nothing else competes.
 struct ReadingLayoutMenu: View {
     @Environment(AppEnvironment.self) private var environment
 
+    /// Continuous text can't show translations, so while they're on the title says choosing it turns them off.
+    private var title: String {
+        environment.settings.showsTranslation
+            ? String(localized: "Continuous text turns translation off")
+            : String(localized: "Reading Layout")
+    }
+
     var body: some View {
-        Section(String(localized: "Reading Layout")) {
-            ForEach(QuranReadingLayout.allCases) { layout in
-                Button {
-                    environment.settings.displayedReadingLayout = layout
-                } label: {
-                    Label(
-                        layout.title,
-                        systemImage: environment.settings.displayedReadingLayout == layout
-                            ? "checkmark"
-                            : layout.systemImage
-                    )
-                }
-            }
+        Picker(title, selection: Bindable(environment.settings).displayedReadingLayout) {
+            ForEach(QuranReadingLayout.allCases) { Text($0.title).tag($0) }
         }
+        .pickerStyle(.inline)
+        .accessibilityIdentifier("surah.readingLayout")
     }
 }
 
