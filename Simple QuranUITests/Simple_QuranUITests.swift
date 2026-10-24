@@ -261,8 +261,9 @@ final class Simple_QuranUITests: XCTestCase {
         app.buttons["session.nextPassage"].tap()
         XCTAssertTrue(app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", "Ayahs 6–16")).firstMatch.waitForExistence(timeout: 3))
         finishAndClose(app)
-        XCTAssertTrue(app.buttons["memorize.start"].waitForExistence(timeout: 3))
-        capture(app, name: "Memorize-Continue")
+        // Today's passage is ticked off, with the next one there for anyone who wants to keep going.
+        XCTAssertTrue(app.buttons["memorize.keepGoing"].waitForExistence(timeout: 3))
+        capture(app, name: "Memorize-KeepGoing")
     }
 
     @MainActor
