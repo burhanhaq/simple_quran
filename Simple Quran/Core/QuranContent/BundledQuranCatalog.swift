@@ -21,6 +21,7 @@ nonisolated struct BundledQuranCatalog: QuranCatalog, Sendable {
     let juzs: [JuzSection]
     let pages: [PageSection]
     let pieces: QuranPieces
+    let names: QuranNameIndex
     let integrity: QuranIntegrityReport
 
     init(from url: URL) throws {
@@ -68,7 +69,7 @@ nonisolated struct BundledQuranCatalog: QuranCatalog, Sendable {
                     ayahCount: fileSurah.ayahs.count,
                     startGlobalAyah: start,
                     endGlobalAyah: end,
-                    aliases: SurahAliasTable.aliases(for: fileSurah.number, englishName: fileSurah.englishName)
+                    aliases: SurahAliases.aliases(for: fileSurah.number)
                 )
             )
         }
@@ -78,6 +79,7 @@ nonisolated struct BundledQuranCatalog: QuranCatalog, Sendable {
         self.juzs = Self.makeJuzs(from: verses)
         self.pages = Self.makePages(from: verses)
         self.pieces = QuranPieces(verses: verses)
+        self.names = QuranNameIndex(surahs: surahs)
         self.integrity = Self.validate(surahs: surahs, verses: verses, juzs: juzs, pages: pages)
 
         if strict, !integrity.isValid {
@@ -137,7 +139,15 @@ nonisolated struct BundledQuranCatalog: QuranCatalog, Sendable {
     }
 
     func search(_ query: String) -> QuranSearchResult {
-        QuranSearchIndex(catalog: self).search(query)
+        QuranSearch(catalog: self).search(query)
+    }
+
+    func surahs(matching query: String) -> [Surah] {
+        QuranSearch(catalog: self).surahs(matching: query)
+    }
+
+    func juzs(matching query: String) -> [JuzSection] {
+        QuranSearch(catalog: self).juzs(matching: query)
     }
 
     func versesForJuz(_ number: Int) throws -> VerseRange {

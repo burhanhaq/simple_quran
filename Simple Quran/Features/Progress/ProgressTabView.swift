@@ -90,15 +90,13 @@ struct ProgressTabView: View {
         environment.openReviews(ReviewPlanner.memorizedPassages(in: surah.range, snapshots: progress.map(\.snapshot), catalog: environment.quran))
     }
 
+    /// The chosen order while browsing; best match first while searching.
     private var surahs: [Surah] {
-        order.arranged(environment.quran.surahs).filter {
-            search.isEmpty || "\($0.number) \($0.englishName) \($0.arabicName) \($0.translation) \($0.aliases.joined(separator: " "))"
-                .localizedCaseInsensitiveContains(search)
-        }
+        search.isEmpty ? order.arranged(environment.quran.surahs) : environment.quran.surahs(matching: search)
     }
 
     private var juzs: [JuzSection] {
-        order.arranged(environment.quran.juzs).filter { search.isEmpty || "Juz \($0.number) \($0.number == 30 ? "Amma" : "")".localizedCaseInsensitiveContains(search) }
+        search.isEmpty ? order.arranged(environment.quran.juzs) : environment.quran.juzs(matching: search)
     }
 
     private func map(_ index: ProgressIndex) -> some View {

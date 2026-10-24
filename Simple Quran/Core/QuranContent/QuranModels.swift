@@ -30,6 +30,7 @@ nonisolated struct Surah: Equatable, Hashable, Sendable, Identifiable {
     var ayahCount: Int
     var startGlobalAyah: Int
     var endGlobalAyah: Int
+    /// Other names the surah is known by, beyond spelling variants of `englishName`.
     var aliases: [String]
 
     var id: Int { number }
@@ -66,6 +67,10 @@ nonisolated protocol QuranCatalog: Sendable {
     func piece(containing globalAyah: Int, size: PieceSize) -> VerseRange?
     func range(surah: Int, startAyah: Int, endAyah: Int) throws -> VerseRange
     func search(_ query: String) -> QuranSearchResult
+    /// Surahs a surah list's search box should show, best match first.
+    func surahs(matching query: String) -> [Surah]
+    /// Juz a juz list's search box should show, best match first.
+    func juzs(matching query: String) -> [JuzSection]
 }
 
 nonisolated struct QuranSearchHit: Equatable, Sendable, Identifiable {

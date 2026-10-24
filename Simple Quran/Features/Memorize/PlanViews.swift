@@ -67,13 +67,11 @@ struct PlanPickerView: View {
                     }.pickerStyle(.segmented).listRowBackground(Color.clear)
                     switch browse {
                     case .surahs:
-                        ForEach(environment.quran.surahs.filter {
-                            search.isEmpty || "\($0.displayName) \($0.arabicName) \($0.translation) \($0.aliases.joined(separator: " "))".localizedCaseInsensitiveContains(search)
-                        }) { surah in
+                        ForEach(search.isEmpty ? environment.quran.surahs : environment.quran.surahs(matching: search)) { surah in
                             row(LearningTarget(range: surah.range), title: surah.displayName, subtitle: "\(surah.ayahCount) ayahs")
                         }
                     case .juz:
-                        ForEach(environment.quran.juzs.filter { search.isEmpty || "Juz \($0.number)".localizedCaseInsensitiveContains(search) }) { juz in
+                        ForEach(search.isEmpty ? environment.quran.juzs : environment.quran.juzs(matching: search)) { juz in
                             row(LearningTarget(range: juz.range, juzNumber: juz.number), title: "Juz \(juz.number)",
                                 subtitle: LearningPassage.referenceLabel(juz.range, catalog: environment.quran))
                         }
