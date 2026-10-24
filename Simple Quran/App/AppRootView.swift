@@ -19,7 +19,6 @@ struct AppRootView: View {
         @Bindable var environment = environment
         return TabView(selection: $environment.selectedTab) {
             Tab(value: AppTab.memorize) { MemorizeView() } label: { tabLabel(.memorize) }
-            Tab(value: AppTab.progress) { ProgressTabView() } label: { tabLabel(.progress) }
             Tab(value: AppTab.quran) { QuranBrowserView() } label: { tabLabel(.quran) }
         }
         .tint(Color.bronze)

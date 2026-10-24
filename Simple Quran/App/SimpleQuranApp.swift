@@ -45,6 +45,7 @@ struct SimpleQuranApp: App {
         if ProcessInfo.processInfo.arguments.contains("-ui-testing-reset-focus") {
             settings.learningTargets = []
             settings.activeTargetID = nil
+            settings.dailyLog = .empty(on: .now)
         }
         if ProcessInfo.processInfo.arguments.contains("-ui-testing-skip-onboarding") {
             settings.hasCompletedOnboarding = true

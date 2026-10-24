@@ -93,6 +93,7 @@ private struct ReadingOverview: View {
         revision
         actions
         knownRow
+        queueRow
         if hasParts { piecesList }
     }
 
@@ -302,6 +303,28 @@ private struct ReadingOverview: View {
                 .font(.subheadline).foregroundStyle(Color.secondaryWarm)
                 .frame(maxWidth: .infinity, minHeight: 44)
                 .accessibilityIdentifier("surah.markKnown")
+        }
+    }
+
+    /// Lines this surah up after what the user is memorizing now, or says it already is.
+    @ViewBuilder
+    private var queueRow: some View {
+        let settings = environment.settings
+        if case .surah(let number, _) = model.destination, model.readingRanges == nil, memorized < total,
+           let surah = environment.quran.surah(number: number), let current = settings.activePlan, current.range != surah.range {
+            if settings.isQueued(surah.range) {
+                Label("Memorizing next, after \(current.title(catalog: environment.quran))", systemImage: "checkmark")
+                    .font(.subheadline).foregroundStyle(Color.olive)
+                    .frame(maxWidth: .infinity, minHeight: 44)
+                    .accessibilityIdentifier("surah.queued")
+            } else {
+                Button { withAnimation(.snappy) { settings.queueNext(LearningTarget(range: surah.range)) } } label: {
+                    Label("Memorize \(surah.englishName) next", systemImage: "text.badge.plus")
+                }
+                .font(.subheadline).foregroundStyle(Color.secondaryWarm)
+                .frame(maxWidth: .infinity, minHeight: 44)
+                .accessibilityIdentifier("surah.queue")
+            }
         }
     }
 

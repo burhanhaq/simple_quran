@@ -426,8 +426,10 @@ final class SurahScreenModel {
 
     /// "Revised today" for the memorized ayahs in range; the rest are left as they are.
     func markRevised(_ range: VerseRange) {
-        do { try environment.store.markRevised(ayahs: range.globalAyahs, now: .now) }
-        catch { errorMessage = .from(.persistenceFailure) }
+        do {
+            try environment.store.markRevised(ayahs: range.globalAyahs, now: .now)
+            environment.settings.recordRevised()
+        } catch { errorMessage = .from(.persistenceFailure) }
     }
 
     func markNeedsRevision(_ range: VerseRange) {
@@ -613,6 +615,12 @@ final class SurahScreenModel {
             }
             if focus.kind == .learn, focus.answer == .memorized, let next = nextPassage(index: index) {
                 environment.settings.remember(next, targetID: focus.planID)
+            }
+            // Ticks today's checklist: learning counts only for what the user is memorizing.
+            switch focus.kind {
+            case .learn where focus.planID != nil: environment.settings.recordLearned(focus.range)
+            case .learn: break
+            case .review: environment.settings.recordRevised()
             }
         } catch { errorMessage = .from(.persistenceFailure) }
         self.focus?.engaged = false

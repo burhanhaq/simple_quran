@@ -56,6 +56,7 @@ final class AppSettings {
         static let revisionClocksStarted = "learning.revisionClocksStarted"
         static let legacyLearningStart = "learning.start"
         static let legacyLearningEnd = "learning.end"
+        static let dailyLog = "learning.dailyLog"
     }
 
     var learningTargets: [LearningTarget] {
@@ -86,6 +87,36 @@ final class AppSettings {
     func removePlan(id: UUID) {
         learningTargets.removeAll { $0.id == id }
         if activeTargetID == id { activeTargetID = learningTargets.first?.id }
+    }
+
+    /// Lines a target up after what the user is memorizing now, without switching to it.
+    func queueNext(_ target: LearningTarget) {
+        guard !learningTargets.contains(where: { $0.range == target.range }) else { return }
+        learningTargets.append(target)
+    }
+
+    /// Whether `range` is already lined up after what the user is memorizing now.
+    func isQueued(_ range: VerseRange) -> Bool {
+        learningTargets.contains { $0.range == range && $0.id != activePlan?.id }
+    }
+
+    /// What the user finished today, for the Memorize checklist.
+    var dailyLog: DailyLog {
+        didSet {
+            if let data = try? JSONEncoder().encode(dailyLog) { defaults.set(data, forKey: Key.dailyLog) }
+        }
+    }
+
+    func recordLearned(_ range: VerseRange, now: Date = .now) {
+        var log = dailyLog.forToday(now: now)
+        log.learned = range
+        dailyLog = log
+    }
+
+    func recordRevised(now: Date = .now) {
+        var log = dailyLog.forToday(now: now)
+        log.revised = true
+        dailyLog = log
     }
 
     /// Saves where the user is in a plan. Never changes which plan is active.
@@ -218,6 +249,8 @@ final class AppSettings {
         learningTargets = defaults.data(forKey: "learning.targets")
             .flatMap { try? JSONDecoder().decode([LearningTarget].self, from: $0) } ?? []
         activeTargetID = defaults.string(forKey: "learning.activeTarget").flatMap(UUID.init(uuidString:))
+        dailyLog = defaults.data(forKey: Key.dailyLog)
+            .flatMap { try? JSONDecoder().decode(DailyLog.self, from: $0) } ?? .empty(on: .now)
         readingAyah = defaults.integer(forKey: "reading.ayah")
         pieceSize = defaults.string(forKey: Key.pieceSize).flatMap(PieceSize.init(rawValue:))
             ?? (defaults.bool(forKey: Key.legacyPracticeByPage) ? .fullPage : .default)
@@ -373,13 +406,11 @@ final class AppEnvironment {
 
 enum AppTab: String, Hashable, CaseIterable {
     case memorize
-    case progress
     case quran
 
     var title: String {
         switch self {
         case .memorize: String(localized: "Memorize")
-        case .progress: String(localized: "Progress")
         case .quran: String(localized: "Quran")
         }
     }
@@ -387,7 +418,6 @@ enum AppTab: String, Hashable, CaseIterable {
     var systemImage: String {
         switch self {
         case .memorize: "leaf"
-        case .progress: "square.grid.3x3.fill"
         case .quran: "book"
         }
     }

@@ -105,7 +105,7 @@ struct OnboardingView: View {
         return ScrollView {
             VStack(alignment: .leading, spacing: 18) {
                 Text("What would you like to memorize next?").font(.system(.largeTitle, design: .serif))
-                Text("This becomes your plan. You can memorize anything else too, and change your plan anytime.")
+                Text("You can memorize anything else too, and change this anytime.")
                     .font(.subheadline).foregroundStyle(Color.secondaryWarm)
                 ForEach(suggestions) { suggestion in
                     Button {

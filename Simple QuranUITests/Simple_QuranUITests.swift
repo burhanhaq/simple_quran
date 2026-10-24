@@ -21,7 +21,7 @@ final class Simple_QuranUITests: XCTestCase {
         let choose = app.buttons["memorize.choosePlan"]
         XCTAssertTrue(choose.waitForExistence(timeout: 5))
         choose.tap()
-        XCTAssertTrue(app.navigationBars["Choose your plan"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.navigationBars["Choose what to memorize"].waitForExistence(timeout: 3))
         if juz { app.segmentedControls.buttons["Juz"].tap() }
         let row = app.buttons[identifier]
         for _ in 0..<6 where !row.isHittable { app.swipeUp() }
@@ -50,12 +50,31 @@ final class Simple_QuranUITests: XCTestCase {
         XCTFail("The passage picker didn't open")
     }
 
+    /// The total sits at the end of the Memorize screen, below the map.
     @MainActor
     private func memorizedCount(_ app: XCUIApplication) -> String {
-        app.tabBars.buttons["Progress"].tap()
+        app.tabBars.buttons["Memorize"].tap()
         let count = app.staticTexts["progress.memorizedCount"]
         XCTAssertTrue(count.waitForExistence(timeout: 3))
         return count.label
+    }
+
+    /// Scrolls the Memorize screen until `element` can be tapped. The map runs long, so it may be further down or back up.
+    @MainActor
+    private func reveal(_ element: XCUIElement, in app: XCUIApplication) {
+        app.tabBars.buttons["Memorize"].tap()
+        XCTAssertTrue(element.waitForExistence(timeout: 5))
+        for _ in 0..<30 where !element.isHittable {
+            if element.frame.minY > app.frame.midY { app.swipeUp() } else { app.swipeDown() }
+        }
+    }
+
+    /// Opens a surah from the map on the Memorize screen.
+    @MainActor
+    private func openFromMap(_ app: XCUIApplication, surah: Int) {
+        let tile = app.buttons["progress.surah.\(surah)"]
+        reveal(tile, in: app)
+        tile.tap()
     }
 
     /// Moves a piece that opens on Listen to Recite, which hides the text.
@@ -74,10 +93,10 @@ final class Simple_QuranUITests: XCTestCase {
     }
 
     @MainActor
-    func testThreeTabsPlanAndMemorizingCountsOnlyWhatIsClaimed() {
+    func testTwoTabsTodayAndMemorizingCountsOnlyWhatIsClaimed() {
         let app = launch()
         XCTAssertTrue(app.navigationBars["Memorize"].waitForExistence(timeout: 5))
-        XCTAssertEqual(app.tabBars.buttons.count, 3)
+        XCTAssertEqual(app.tabBars.buttons.count, 2)
         capture(app, name: "Memorize-Empty")
         choosePlan(app)
         XCTAssertTrue(app.buttons["memorize.start"].waitForExistence(timeout: 3))
@@ -99,8 +118,11 @@ final class Simple_QuranUITests: XCTestCase {
         capture(app, name: "Surah-AfterMemorizing")
         app.buttons["surah.close"].tap()
         XCTAssertTrue(app.navigationBars["Memorize"].waitForExistence(timeout: 3))
+        // Today ticks off the passage, and with nothing else to do the day is done.
+        XCTAssertTrue(app.staticTexts["memorize.doneForToday"].waitForExistence(timeout: 3))
+        capture(app, name: "Memorize-DoneForToday")
         XCTAssertEqual(memorizedCount(app), "7")
-        capture(app, name: "Progress-Light")
+        capture(app, name: "Journey-Light")
     }
 
     @MainActor
@@ -137,14 +159,11 @@ final class Simple_QuranUITests: XCTestCase {
         XCTAssertEqual(memorizedCount(app), "0")
     }
 
-    /// Progress opens the surah itself with its overview; knowing it is one tap and can be undone.
+    /// The map opens the surah itself with its overview; knowing it is one tap and can be undone.
     @MainActor
-    func testProgressOpensTheSurahAndMarksItWithUndo() {
+    func testMapOpensTheSurahAndMarksItWithUndo() {
         let app = launch()
-        app.tabBars.buttons["Progress"].tap()
-        let fatiha = app.buttons["progress.surah.1"]
-        XCTAssertTrue(fatiha.waitForExistence(timeout: 3))
-        fatiha.tap()
+        openFromMap(app, surah: 1)
         let markKnown = app.buttons["surah.markKnown"]
         XCTAssertTrue(markKnown.waitForExistence(timeout: 5))
         XCTAssertTrue(app.buttons["surah.memorize"].exists)
@@ -158,7 +177,7 @@ final class Simple_QuranUITests: XCTestCase {
         app.buttons["surah.close"].tap()
         XCTAssertEqual(memorizedCount(app), "0")
 
-        app.buttons["progress.surah.1"].tap()
+        openFromMap(app, surah: 1)
         XCTAssertTrue(markKnown.waitForExistence(timeout: 5))
         markKnown.tap()
         XCTAssertTrue(undo.waitForExistence(timeout: 3))
@@ -170,8 +189,7 @@ final class Simple_QuranUITests: XCTestCase {
     @MainActor
     func testMemorizingFocusesAPieceAndMovesToTheNext() {
         let app = launch()
-        app.tabBars.buttons["Progress"].tap()
-        app.buttons["progress.surah.2"].tap()
+        openFromMap(app, surah: 2)
         let memorize = app.buttons["surah.memorize"]
         XCTAssertTrue(memorize.waitForExistence(timeout: 5))
         memorize.tap()
@@ -267,7 +285,9 @@ final class Simple_QuranUITests: XCTestCase {
     func testNightAppearanceAndContinuousText() {
         let app = launch(appearance: "night", extra: ["-settings.quranReadingLayout", "mushaf"])
         capture(app, name: "Memorize-Night")
-        app.buttons["memorize.other"].tap()
+        let other = app.buttons["memorize.other"]
+        reveal(other, in: app)
+        other.tap()
         app.buttons["plan.select.ayah.1"].tap()
         app.buttons["plan.start"].tap()
         XCTAssertTrue(app.buttons["session.play"].waitForExistence(timeout: 5))
@@ -304,7 +324,7 @@ final class Simple_QuranUITests: XCTestCase {
     }
 
     @MainActor
-    func testSwitchingPlansKeepsTheOtherWaiting() {
+    func testSwitchingKeepsTheOtherWaiting() {
         let app = launch()
         choosePlan(app)
         app.buttons["memorize.plan"].tap()
@@ -314,8 +334,28 @@ final class Simple_QuranUITests: XCTestCase {
         app.buttons["plan.select.juz.1"].tap()
         app.buttons["plan.save"].tap()
         XCTAssertTrue(app.staticTexts["Juz 1"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.buttons["Switch"].exists)
+        XCTAssertTrue(app.buttons["Memorize now"].exists)
         capture(app, name: "Plan-UpNext")
+    }
+
+    /// A surah opened from the map can be lined up after what the user is memorizing, without switching to it.
+    @MainActor
+    func testSurahCanBeLinedUpNextFromTheMap() {
+        let app = launch()
+        choosePlan(app)
+        openFromMap(app, surah: 2)
+        let queue = app.buttons["surah.queue"]
+        XCTAssertTrue(queue.waitForExistence(timeout: 5))
+        queue.tap()
+        XCTAssertTrue(app.staticTexts["surah.queued"].waitForExistence(timeout: 3) || app.otherElements["surah.queued"].exists)
+        capture(app, name: "Surah-Queued")
+        app.buttons["surah.close"].tap()
+        let current = app.buttons["memorize.plan"]
+        reveal(current, in: app)
+        current.tap()
+        XCTAssertTrue(app.buttons["plan.memorizeNext"].waitForExistence(timeout: 3))
+        XCTAssertTrue(app.buttons["Memorize now"].exists)
+        capture(app, name: "Plan-AfterThis")
     }
 
     @MainActor

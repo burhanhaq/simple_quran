@@ -2,45 +2,21 @@ import SwiftData
 import SwiftUI
 
 enum PlanPickerPurpose: String, Identifiable {
-    /// Choose the one plan that drives "New" each day.
+    /// Choose what the user is memorizing, which drives today's checklist.
     case plan
-    /// Memorize anything else now without changing the plan.
+    /// Memorize anything else now without changing what they're memorizing.
     case oneOff
+    /// Line something up to memorize after what they're memorizing now.
+    case next
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
-        case .plan: String(localized: "Choose your plan")
+        case .plan: String(localized: "Choose what to memorize")
         case .oneOff: String(localized: "Memorize something else")
+        case .next: String(localized: "Memorize next")
         }
-    }
-}
-
-/// Compact plan summary used on the Memorize and Progress tabs.
-struct PlanCard: View {
-    @Environment(AppEnvironment.self) private var environment
-    let plan: LearningTarget
-    let index: ProgressIndex
-
-    var body: some View {
-        let memorized = index.count(.memorized, in: plan.range)
-        WarmCard {
-            VStack(alignment: .leading, spacing: 12) {
-                HStack(spacing: 12) {
-                    VStack(alignment: .leading, spacing: 5) {
-                        Text("YOUR PLAN").font(.caption.weight(.semibold)).tracking(1.4).foregroundStyle(Color.secondaryWarm)
-                        Text(plan.title(catalog: environment.quran)).font(.headline)
-                    }
-                    Spacer(minLength: 0)
-                    Image(systemName: "chevron.right").font(.caption.weight(.semibold)).foregroundStyle(Color.bronze)
-                }
-                ProgressView(value: Double(memorized), total: Double(plan.range.count)).tint(Color.olive)
-                Text("\(memorized) of \(plan.range.count) ayahs memorized")
-                    .font(.caption).foregroundStyle(Color.secondaryWarm)
-            }
-        }
-        .accessibilityElement(children: .combine)
     }
 }
 
@@ -96,30 +72,35 @@ struct PlanPickerView: View {
             if let selection {
                 Text(selection.title(catalog: environment.quran)).font(.subheadline.weight(.semibold))
             } else if verticalSizeClass != .compact {
-                Text(purpose == .plan ? "Choose one surah, juz, or ayah range" : "Choose what to memorize now")
+                Text(purpose == .oneOff ? "Choose what to memorize now" : "Choose one surah, juz, or ayah range")
                     .font(.caption).foregroundStyle(Color.secondaryWarm)
             }
             switch purpose {
             case .plan:
-                Button { makePlan() } label: { Text("Set as my plan").frame(maxWidth: .infinity) }
+                Button { makePlan() } label: { Text("Memorize this").frame(maxWidth: .infinity) }
                     .buttonStyle(WarmButtonStyle()).disabled(selection == nil).accessibilityIdentifier("plan.save")
             case .oneOff:
                 Button { start() } label: { Text("Start memorizing").frame(maxWidth: .infinity) }
                     .buttonStyle(WarmButtonStyle()).disabled(selection == nil).accessibilityIdentifier("plan.start")
-                Button("Make it my plan instead") { makePlan() }
-                    .frame(minHeight: 44).disabled(selection == nil).accessibilityIdentifier("plan.makePlan")
+                Button("Memorize this next") { queue() }
+                    .frame(minHeight: 44).disabled(selection == nil).accessibilityIdentifier("plan.queue")
+            case .next:
+                Button { queue() } label: { Text("Add").frame(maxWidth: .infinity) }
+                    .buttonStyle(WarmButtonStyle()).disabled(selection == nil).accessibilityIdentifier("plan.queue")
             }
         }.padding(20).background(Color.appWarmSurface)
     }
 
     private func row(_ target: LearningTarget, title: String, subtitle: String) -> some View {
         let selected = selection?.range == target.range
-        let isPlan = environment.settings.activePlan?.range == target.range
+        let isCurrent = environment.settings.activePlan?.range == target.range
+        let isQueued = environment.settings.isQueued(target.range)
         return Button { selection = selected ? nil : target } label: {
             HStack(spacing: 14) {
                 VStack(alignment: .leading, spacing: 5) {
                     Text(title).font(.headline).foregroundStyle(Color.appBrownText)
-                    Text(isPlan ? "Your current plan" : subtitle).font(.caption).foregroundStyle(Color.secondaryWarm)
+                    Text(isCurrent ? String(localized: "Memorizing now") : isQueued ? String(localized: "Memorizing next") : subtitle)
+                        .font(.caption).foregroundStyle(Color.secondaryWarm)
                 }
                 Spacer(minLength: 0)
                 Image(systemName: selected ? "checkmark.circle.fill" : "circle")
@@ -133,6 +114,12 @@ struct PlanPickerView: View {
     private func makePlan() {
         guard let selection else { return }
         environment.settings.setActivePlan(selection)
+        dismiss()
+    }
+
+    private func queue() {
+        guard let selection else { return }
+        environment.settings.queueNext(selection)
         dismiss()
     }
 
@@ -221,8 +208,7 @@ struct AyahRangeEditor: View {
     }
 }
 
-
-/// The active plan, its progress, and the other plans waiting their turn.
+/// What the user is memorizing, how far they've come, and what comes after it.
 struct PlanDetailView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.dismiss) private var dismiss
@@ -233,15 +219,17 @@ struct PlanDetailView: View {
 
     var body: some View {
         let index = ProgressIndex(progress.map(\.snapshot))
+        let plan = environment.settings.activePlan
+        let title = plan?.title(catalog: environment.quran) ?? ""
         ScrollView {
-            if let plan = environment.settings.activePlan {
+            if let plan {
                 let memorized = index.count(.memorized, in: plan.range)
                 let learning = index.count(.learning, in: plan.range)
                 VStack(alignment: .leading, spacing: 24) {
                     VStack(alignment: .leading, spacing: 12) {
-                        Label("YOUR PLAN", systemImage: "bookmark")
+                        Label("YOU’RE MEMORIZING", systemImage: "leaf")
                             .font(.caption.weight(.semibold)).tracking(1.4).foregroundStyle(Color.bronze)
-                        Text(plan.title(catalog: environment.quran)).font(.system(.largeTitle, design: .serif))
+                        Text(title).font(.system(.largeTitle, design: .serif))
                         Text(LearningPassage.referenceLabel(plan.range, catalog: environment.quran)).font(.subheadline).foregroundStyle(Color.secondaryWarm)
                     }
                     WarmCard {
@@ -258,7 +246,7 @@ struct PlanDetailView: View {
                             Text("NEXT").font(.caption.weight(.semibold)).tracking(1.4).foregroundStyle(Color.secondaryWarm)
                             Text(LearningPassage.referenceLabel(next, catalog: environment.quran)).font(.headline)
                             Button { environment.openSession(next, planID: plan.id) } label: {
-                                Label("Memorize this passage", systemImage: "play.fill").frame(maxWidth: .infinity)
+                                Label("Memorize these ayahs", systemImage: "play.fill").frame(maxWidth: .infinity)
                             }.buttonStyle(WarmButtonStyle()).accessibilityIdentifier("plan.memorizeNext")
                         }
                     }
@@ -269,19 +257,20 @@ struct PlanDetailView: View {
                             Label("Revise what you’ve memorized", systemImage: "arrow.counterclockwise").frame(maxWidth: .infinity)
                         }.buttonStyle(WarmButtonStyle(emphasis: .secondary))
                     }
-                    upNext(excluding: plan, index: index)
+                    upNext(after: plan, title: title, index: index)
                     VStack(spacing: 4) {
-                        Button { picker = .plan } label: { Label("Choose a different plan", systemImage: "arrow.left.arrow.right").frame(maxWidth: .infinity, minHeight: 44) }
+                        Button { picker = .plan } label: { Label("Memorize something different", systemImage: "arrow.left.arrow.right").frame(maxWidth: .infinity, minHeight: 44) }
                             .accessibilityIdentifier("plan.change")
-                        Button { showRange = true } label: { Label("Edit ayah range", systemImage: "slider.horizontal.3").frame(maxWidth: .infinity, minHeight: 44) }
+                        Button { showRange = true } label: { Label("Change ayah range", systemImage: "slider.horizontal.3").frame(maxWidth: .infinity, minHeight: 44) }
                             .accessibilityIdentifier("plan.edit")
-                        Button("Remove this plan", role: .destructive) { showRemove = true }.frame(minHeight: 44)
+                        Button("Stop memorizing \(title)", role: .destructive) { showRemove = true }
+                            .frame(minHeight: 44).accessibilityIdentifier("plan.remove")
                     }
                 }.padding(24).frame(maxWidth: 680).frame(maxWidth: .infinity)
             }
         }
         .foregroundStyle(Color.appBrownText).background(Color.parchment.ignoresSafeArea())
-        .navigationTitle("Your plan").navigationBarTitleDisplayMode(.inline)
+        .navigationTitle(title).navigationBarTitleDisplayMode(.inline)
         .sheet(item: $picker) { PlanPickerView(purpose: $0) }
         .sheet(isPresented: $showRange) {
             if let plan = environment.settings.activePlan {
@@ -293,38 +282,38 @@ struct PlanDetailView: View {
                 }
             }
         }
-        .confirmationDialog("Remove this plan?", isPresented: $showRemove, titleVisibility: .visible) {
-            Button("Remove plan", role: .destructive) {
+        .confirmationDialog("Stop memorizing \(title)?", isPresented: $showRemove, titleVisibility: .visible) {
+            Button("Stop memorizing", role: .destructive) {
                 if let plan = environment.settings.activePlan { environment.settings.removePlan(id: plan.id) }
                 dismiss()
             }
         } message: { Text("Ayahs you’ve memorized stay memorized.") }
     }
 
-    @ViewBuilder
-    private func upNext(excluding plan: LearningTarget, index: ProgressIndex) -> some View {
-        let others = environment.settings.learningTargets.filter { $0.id != plan.id }
-        if !others.isEmpty {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("UP NEXT").font(.caption.weight(.semibold)).tracking(1.4).foregroundStyle(Color.secondaryWarm)
-                ForEach(others) { other in
-                    WarmCard {
-                        HStack(spacing: 12) {
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(other.title(catalog: environment.quran)).font(.headline)
-                                Text("\(index.count(.memorized, in: other.range)) of \(other.range.count) memorized")
-                                    .font(.caption).foregroundStyle(Color.secondaryWarm)
-                            }
-                            Spacer(minLength: 0)
-                            Button("Switch") { environment.settings.setActivePlan(other) }
-                                .font(.subheadline.weight(.semibold)).frame(minHeight: 44)
+    /// What comes after the current target, in the order it will come up.
+    private func upNext(after plan: LearningTarget, title: String, index: ProgressIndex) -> some View {
+        let others = TodayPlan.upNext(environment.settings.learningTargets, after: plan)
+        return VStack(alignment: .leading, spacing: 12) {
+            Text("AFTER \(title.uppercased())").font(.caption.weight(.semibold)).tracking(1.4).foregroundStyle(Color.secondaryWarm)
+            ForEach(others) { other in
+                WarmCard {
+                    HStack(spacing: 12) {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text(other.title(catalog: environment.quran)).font(.headline)
+                            Text("\(index.count(.memorized, in: other.range)) of \(other.range.count) memorized")
+                                .font(.caption).foregroundStyle(Color.secondaryWarm)
                         }
-                    }
-                    .contextMenu {
-                        Button("Remove", systemImage: "trash", role: .destructive) { environment.settings.removePlan(id: other.id) }
+                        Spacer(minLength: 0)
+                        Button("Memorize now") { environment.settings.setActivePlan(other) }
+                            .font(.subheadline.weight(.semibold)).frame(minHeight: 44)
                     }
                 }
+                .contextMenu {
+                    Button("Remove", systemImage: "trash", role: .destructive) { environment.settings.removePlan(id: other.id) }
+                }
             }
+            Button { picker = .next } label: { Label("Add a surah", systemImage: "plus").frame(minHeight: 44) }
+                .font(.subheadline.weight(.semibold)).accessibilityIdentifier("plan.addNext")
         }
     }
 }

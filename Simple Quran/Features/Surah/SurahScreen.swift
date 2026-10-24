@@ -132,9 +132,10 @@ struct SurahScreen: View {
             Button("I know this ayah", systemImage: MemorizationStatus.memorized.systemImage) {
                 model.markKnown(.clamped(start: ayah, end: ayah), index: index)
             }
-            if let surah = environment.quran.surah(number: verse.surahNumber), environment.settings.activePlan?.range != surah.range {
-                Button("Make \(surah.englishName) my plan", systemImage: "bookmark") {
-                    environment.settings.setActivePlan(LearningTarget(range: surah.range))
+            if let surah = environment.quran.surah(number: verse.surahNumber), environment.settings.activePlan?.range != surah.range,
+               !environment.settings.isQueued(surah.range) {
+                Button("Memorize \(surah.englishName) next", systemImage: "text.badge.plus") {
+                    environment.settings.queueNext(LearningTarget(range: surah.range))
                 }
             }
         }

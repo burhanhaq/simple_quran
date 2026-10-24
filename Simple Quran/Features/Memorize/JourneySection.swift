@@ -1,12 +1,12 @@
 import SwiftData
 import SwiftUI
 
-/// A map of the whole Quran showing what the user has memorized, with honest counts below it.
-struct ProgressTabView: View {
+/// The user's journey through the whole Quran: a map of what they've memorized, with honest counts below it.
+struct JourneySection: View {
     @Environment(AppEnvironment.self) private var environment
-    @Query private var progress: [VerseProgress]
+    let snapshots: [VerseProgressSnapshot]
+    let search: String
     @State private var browse = PlanBrowse.surahs
-    @State private var search = ""
     @AppStorage(ProgressLayout.storageKey) private var layout = ProgressLayout.map
     @AppStorage(ProgressOrder.storageKey) private var order = ProgressOrder.fromAnNas
     /// Juz the user unfolded from a "not started" line.
@@ -19,23 +19,12 @@ struct ProgressTabView: View {
     private var showsList: Bool { layout == .list || !search.isEmpty }
 
     var body: some View {
-        let snapshots = progress.map(\.snapshot)
         let index = ProgressIndex(snapshots)
         let insights = ProgressInsights.make(snapshots: snapshots, surahs: environment.quran.surahs, cycle: environment.settings.revisionCycle,
                                              now: .now, calendar: .current)
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 24) {
-                    revisionBanner(index)
-                    map(index)
-                    memorizedSummary(insights)
-                }
-                .foregroundStyle(Color.appBrownText)
-                .padding(24).frame(maxWidth: 680).frame(maxWidth: .infinity)
-            }
-            .background(Color.parchment.ignoresSafeArea())
-            .navigationTitle(AppTab.progress.title)
-            .searchable(text: $search, prompt: browse == .surahs ? "Find a surah" : "Find a juz")
+        VStack(alignment: .leading, spacing: 24) {
+            map(index)
+            if search.isEmpty { memorizedSummary(insights) }
         }
     }
 
@@ -60,36 +49,6 @@ struct ProgressTabView: View {
 
     private var cycle: RevisionCycle { environment.settings.revisionCycle }
 
-    /// Memorized surahs that have gone too long without a revision, with the most urgent one a tap away.
-    @ViewBuilder
-    private func revisionBanner(_ index: ProgressIndex) -> some View {
-        let toRevise = index.surahsToRevise(environment.quran.surahs, cycle: cycle)
-        if let first = toRevise.first {
-            let needsRevision = toRevise.filter { $0.freshness == .needsRevision }.count
-            WarmCard {
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack(spacing: 10) {
-                        Circle().fill(first.freshness.color).frame(width: 10, height: 10)
-                        Text(needsRevision > 0
-                             ? (needsRevision == 1 ? String(localized: "1 surah needs revision") : String(localized: "\(needsRevision) surahs need revision"))
-                             : (toRevise.count == 1 ? String(localized: "1 surah is fading") : String(localized: "\(toRevise.count) surahs are fading")))
-                            .font(.headline)
-                    }
-                    Text(toRevise.prefix(3).map(\.surah.englishName).joined(separator: ", ") + (toRevise.count > 3 ? "…" : ""))
-                        .font(.subheadline).foregroundStyle(Color.secondaryWarm).lineLimit(1)
-                    Button { revise(first.surah, index: index) } label: {
-                        Label("Revise \(first.surah.englishName)", systemImage: "arrow.counterclockwise").frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(WarmButtonStyle()).accessibilityIdentifier("progress.revise")
-                }
-            }
-        }
-    }
-
-    private func revise(_ surah: Surah, index: ProgressIndex) {
-        environment.openReviews(ReviewPlanner.memorizedPassages(in: surah.range, snapshots: progress.map(\.snapshot), catalog: environment.quran))
-    }
-
     /// The chosen order while browsing; best match first while searching.
     private var surahs: [Surah] {
         search.isEmpty ? order.arranged(environment.quran.surahs) : environment.quran.surahs(matching: search)
@@ -102,7 +61,7 @@ struct ProgressTabView: View {
     private func map(_ index: ProgressIndex) -> some View {
         VStack(alignment: .leading, spacing: 14) {
             HStack(spacing: 10) {
-                Text("The Quran").font(.title3.weight(.semibold))
+                Text("Your journey").font(.system(.title2, design: .serif).weight(.medium))
                 Spacer()
                 Button { withAnimation(.snappy) { layout = layout == .map ? .list : .map } } label: {
                     Image(systemName: layout == .map ? "list.bullet" : "square.grid.3x3").font(.subheadline.weight(.semibold))

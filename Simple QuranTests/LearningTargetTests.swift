@@ -57,6 +57,38 @@ struct LearningTargetTests {
         #expect(AppSettings(defaults: defaults).activePlan?.id == second.id)
     }
 
+    @Test @MainActor func queueingLinesUpATargetWithoutSwitchingToIt() throws {
+        let suite = "PlanTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettings(defaults: defaults)
+        let current = LearningTarget(range: .clamped(start: 1, end: 7))
+        let next = LearningTarget(range: .clamped(start: 6231, end: 6236))
+        settings.setActivePlan(current)
+        settings.queueNext(next)
+        settings.queueNext(LearningTarget(range: next.range))
+        settings.queueNext(LearningTarget(range: current.range))
+
+        #expect(settings.learningTargets.map(\.id) == [current.id, next.id])
+        #expect(settings.activePlan?.id == current.id)
+        #expect(settings.isQueued(next.range))
+        #expect(!settings.isQueued(current.range))
+    }
+
+    @Test @MainActor func todaysLogIsSavedAndStartsOverTheNextDay() throws {
+        let suite = "PlanTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettings(defaults: defaults)
+        let yesterday = try #require(Calendar.current.date(byAdding: .day, value: -1, to: .now))
+        settings.recordRevised(now: yesterday)
+        settings.recordLearned(.clamped(start: 1, end: 4))
+
+        let reopened = AppSettings(defaults: defaults)
+        #expect(reopened.dailyLog.learned == .clamped(start: 1, end: 4))
+        #expect(!reopened.dailyLog.revised)
+    }
+
     @Test func nextPassageSkipsMemorizedPassagesAndWraps() throws {
         let catalog = try BundledQuranCatalog.loadFromBundle()
         let mulk = try #require(catalog.surah(number: 67))
