@@ -66,14 +66,14 @@ private struct ReadingOverview: View {
 
     var body: some View {
         ScrollView {
-            LazyVStack(alignment: .leading, spacing: 22) {
-                peekBar
-                header
-                status
-                revision
-                actions
-                knownRow
-                if hasParts { piecesList }
+            Group {
+                // Lazy only for a long parts list. A fitted sheet measures its content, and a lazy
+                // stack estimates the rows it hasn't built, so the height would shift with the sheet.
+                if hasParts {
+                    LazyVStack(alignment: .leading, spacing: 22) { sections }
+                } else {
+                    VStack(alignment: .leading, spacing: 22) { sections }
+                }
             }
             .padding(.horizontal, 22).padding(.top, 20).padding(.bottom, hasParts ? 28 : 4)
             .frame(maxWidth: 680).frame(maxWidth: .infinity)
@@ -83,6 +83,17 @@ private struct ReadingOverview: View {
         // At peek height a drag should open the sheet, not scroll what's hidden below the player.
         .scrollDisabled(model.detent == SurahSheetDetent.peek)
         .animation(.snappy, value: model.undo?.id)
+    }
+
+    @ViewBuilder
+    private var sections: some View {
+        peekBar
+        header
+        status
+        revision
+        actions
+        knownRow
+        if hasParts { piecesList }
     }
 
     // The part that shows at peek height: what this is, where playback is, and play.

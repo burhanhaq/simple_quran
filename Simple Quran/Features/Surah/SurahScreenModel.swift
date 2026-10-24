@@ -11,6 +11,8 @@ enum SurahSheetDetent {
     static let full = PresentationDetent.large
     /// Measured heights round up to this step, so small layout changes don't move the sheet.
     static let fitStep: CGFloat = 8
+    /// Measured changes this small are layout noise from the sheet moving, not new content.
+    static let fitTolerance: CGFloat = 1
 
     static func fitted(_ height: CGFloat) -> PresentationDetent { .height(height) }
 
@@ -189,6 +191,8 @@ final class SurahScreenModel {
     private(set) var followRequest = 0
     /// Measured sheet content, kept across screens so the next surah opens at the right height.
     private var fittedHeights = SurahScreenModel.rememberedHeights
+    /// The unrounded heights last taken, to tell real changes from sub-point layout noise.
+    @ObservationIgnored private var measuredHeights: [SurahSheetContent: CGFloat] = [:]
     @ObservationIgnored private static var rememberedHeights: [SurahSheetContent: CGFloat] = [:]
     /// Large text and landscape need the whole coach, so memorizing uses the full sheet there.
     var prefersFullCoach = false {
@@ -272,10 +276,16 @@ final class SurahScreenModel {
     var textInset: CGFloat { isFitted ? fittedHeight(sheetContent) : SurahSheetDetent.peekHeight }
 
     /// Takes the content's natural height; a sheet resting at the old fit follows the new one.
+    /// Only what's on screen counts; a view leaving during a switch still reports its old height.
+    /// Moving the sheet shifts layout by a fraction of a point, so changes within the tolerance are
+    /// ignored; otherwise a height on a rounding step flips the sheet back and forth.
     func fitSheet(_ content: SurahSheetContent, to height: CGFloat) {
+        guard content == sheetContent, height > 0 else { return }
+        if let measured = measuredHeights[content], abs(measured - height) <= SurahSheetDetent.fitTolerance { return }
+        measuredHeights[content] = height
         let fitted = SurahSheetDetent.rounded(height)
-        guard fitted > 0, fitted != fittedHeights[content] else { return }
-        let wasFitted = content == sheetContent && isFitted
+        guard fitted != fittedHeights[content] else { return }
+        let wasFitted = isFitted
         fittedHeights[content] = fitted
         Self.rememberedHeights[content] = fitted
         if wasFitted { withAnimation(.snappy) { detent = fittedDetent(content) } }
