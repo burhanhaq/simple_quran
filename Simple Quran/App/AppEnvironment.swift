@@ -39,6 +39,7 @@ final class AppSettings {
         static let wifiOnly = "settings.wifiOnly"
         static let streamWhenMissing = "settings.streamWhenMissing"
         static let downloadWhilePlaying = "settings.downloadWhilePlaying"
+        static let reciterID = "settings.reciterID"
         static let lastTab = "settings.lastTab"
         static let quranReadingLayout = "settings.quranReadingLayout"
         static let showsTranslation = "settings.showsTranslation"
@@ -192,6 +193,28 @@ final class AppSettings {
         didSet { defaults.set(downloadWhilePlaying, forKey: Key.downloadWhilePlaying) }
     }
 
+    /// The reciter the user listens to; nil only until the first launch resolves it.
+    var reciterID: String? {
+        didSet { defaults.set(reciterID, forKey: Key.reciterID) }
+    }
+
+    /// Earlier versions only offered Sudais, so people updating keep him and their downloads;
+    /// everyone else starts on the catalog's default.
+    func resolveFirstReciter(catalog: ReciterCatalog) {
+        guard reciterID == nil else { return }
+        reciterID = isReturningUser ? ReciterID.sudais : catalog.defaultReciterID
+    }
+
+    /// The chosen reciter, or the catalog's default when the catalog no longer offers them.
+    func reciter(in catalog: ReciterCatalog) -> Reciter {
+        catalog.reciter(id: reciterID) ?? catalog.defaultReciter
+    }
+
+    /// Someone who used an earlier version of the app.
+    var isReturningUser: Bool {
+        hasCompletedOnboarding || showsStatusChangeNote || !learningTargets.isEmpty || readingAyah > 0
+    }
+
     /// The layout the user chose. Translation shows ayah by ayah without changing it.
     var quranReadingLayout: QuranReadingLayout {
         didSet {
@@ -262,6 +285,7 @@ final class AppSettings {
         self.wifiOnly = defaults.object(forKey: Key.wifiOnly) as? Bool ?? false
         self.streamWhenMissing = defaults.object(forKey: Key.streamWhenMissing) as? Bool ?? true
         self.downloadWhilePlaying = defaults.object(forKey: Key.downloadWhilePlaying) as? Bool ?? true
+        self.reciterID = defaults.string(forKey: Key.reciterID)
         self.quranReadingLayout = defaults.string(forKey: Key.quranReadingLayout)
             .flatMap(QuranReadingLayout.init(rawValue:)) ?? .ayahByAyah
         self.showsTranslation = defaults.bool(forKey: Key.showsTranslation)
@@ -280,7 +304,8 @@ final class AppSettings {
 final class AppEnvironment {
     let quran: BundledQuranCatalog
     let store: PracticeStore
-    let audioSource: AudioSource
+    private(set) var audioSource: AlQuranCloudAudioSource
+    let reciters: ReciterCatalogStore
     let downloads: AudioDownloadManager
     let playback: PlaybackCoordinator
     let recorder: RecitationRecordingController
@@ -296,7 +321,8 @@ final class AppEnvironment {
     init(
         quran: BundledQuranCatalog,
         store: PracticeStore,
-        audioSource: AudioSource,
+        audioSource: AlQuranCloudAudioSource,
+        reciters: ReciterCatalogStore,
         downloads: AudioDownloadManager,
         playback: PlaybackCoordinator,
         recorder: RecitationRecordingController,
@@ -305,6 +331,7 @@ final class AppEnvironment {
         self.quran = quran
         self.store = store
         self.audioSource = audioSource
+        self.reciters = reciters
         self.downloads = downloads
         self.playback = playback
         self.recorder = recorder
@@ -313,8 +340,7 @@ final class AppEnvironment {
         settings.adoptLegacyLearningPlace(catalog: quran)
         settings.adoptPagePieces(catalog: quran)
         // People updating from an earlier version get the one-time note instead of onboarding.
-        if !settings.hasCompletedOnboarding,
-           settings.showsStatusChangeNote || !settings.learningTargets.isEmpty || settings.readingAyah > 0 {
+        if !settings.hasCompletedOnboarding, settings.isReturningUser {
             settings.hasCompletedOnboarding = true
         }
         playback.configure(catalog: quran, allowStreaming: settings.streamWhenMissing)
@@ -347,6 +373,26 @@ final class AppEnvironment {
         downloads.onAudioReady = { [weak playback] ayah in playback?.audioBecameAvailable(ayah) }
         downloads.onAudioFailed = { [weak playback] ayah in playback?.audioDownloadFailed(ayah) }
         downloads.updateCellular(!settings.wifiOnly)
+        reciters.onCatalogChanged = { [weak self] catalog in
+            self?.downloads.removeReciters(notIn: Set(catalog.reciters.map(\.id)))
+            self?.applyReciter()
+        }
+    }
+
+    func selectReciter(_ reciter: Reciter) {
+        settings.reciterID = reciter.id
+        applyReciter()
+    }
+
+    /// Points playback and downloads at the chosen reciter from the current catalog.
+    private func applyReciter() {
+        let catalog = reciters.catalog
+        let source = catalog.audioSource(for: settings.reciter(in: catalog))
+        guard source != audioSource else { return }
+        let files = downloads.fileStore.with(reciter: source.reciter)
+        audioSource = source
+        downloads.use(source: source, fileStore: files)
+        playback.use(source: source, fileStore: files)
     }
 
     /// Opens the surah screen. Readers start with the text in full view; Progress opens the overview.

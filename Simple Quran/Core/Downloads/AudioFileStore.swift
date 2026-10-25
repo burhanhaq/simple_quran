@@ -16,16 +16,25 @@ nonisolated struct AudioFileStore {
         self.baseDirectory = baseDirectory
     }
 
-    func directory() throws -> URL {
+    /// The same storage, for another reciter.
+    func with(reciter: Reciter) -> AudioFileStore {
+        AudioFileStore(reciter: reciter, fileManager: fileManager, baseDirectory: baseDirectory)
+    }
+
+    /// Holds one folder per reciter.
+    func audioRoot() throws -> URL {
         let base = try baseDirectory ?? fileManager.url(
             for: .applicationSupportDirectory,
             in: .userDomainMask,
             appropriateFor: nil,
             create: true
         )
-        let folder = base.appending(path: "Audio", directoryHint: .isDirectory)
-            .appending(path: reciter.id, directoryHint: .isDirectory)
-            .appending(path: "\(reciter.qualityKbps)", directoryHint: .isDirectory)
+        return base.appending(path: "Audio", directoryHint: .isDirectory)
+    }
+
+    /// This reciter's folder, created on first use.
+    func directory() throws -> URL {
+        let folder = try folderURL()
         if !fileManager.fileExists(atPath: folder.path) {
             try fileManager.createDirectory(at: folder, withIntermediateDirectories: true)
             var values = URLResourceValues()
@@ -36,8 +45,15 @@ nonisolated struct AudioFileStore {
         return folder
     }
 
+    /// Where an ayah lives. Looking doesn't create the folder; installing does.
     func fileURL(globalAyah: Int) throws -> URL {
-        try directory().appending(path: "\(globalAyah).mp3")
+        try folderURL().appending(path: "\(globalAyah).mp3")
+    }
+
+    private func folderURL() throws -> URL {
+        try audioRoot()
+            .appending(path: reciter.id, directoryHint: .isDirectory)
+            .appending(path: "\(reciter.qualityKbps)", directoryHint: .isDirectory)
     }
 
     func urlIfReady(reciter: Reciter, globalAyah: Int) -> URL? {
@@ -54,14 +70,15 @@ nonisolated struct AudioFileStore {
     }
 
     func install(temporaryURL: URL, globalAyah: Int) throws -> URL {
-        let destination = try fileURL(globalAyah: globalAyah)
+        let destination = try directory().appending(path: "\(globalAyah).mp3")
         let staging = destination
             .deletingLastPathComponent()
             .appending(path: ".\(UUID().uuidString).mp3")
         do {
             try fileManager.moveItem(at: temporaryURL, to: staging)
             guard let size = try? staging.resourceValues(forKeys: [.fileSizeKey]).fileSize,
-                  Int64(size) >= Self.minimumPlayableBytes
+                  Int64(size) >= Self.minimumPlayableBytes,
+                  Self.startsLikeMP3(staging)
             else { throw AppError.invalidAudio }
             try fileManager.setAttributes(
                 [.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication],
@@ -90,14 +107,6 @@ nonisolated struct AudioFileStore {
         }
     }
 
-    func removeAll() throws {
-        let dir = try directory()
-        if fileManager.fileExists(atPath: dir.path) {
-            try fileManager.removeItem(at: dir)
-        }
-        _ = try directory()
-    }
-
     func byteCount(globalAyah: Int) -> Int64 {
         guard let url = try? fileURL(globalAyah: globalAyah),
               let values = try? url.resourceValues(forKeys: [.fileSizeKey]),
@@ -113,6 +122,59 @@ nonisolated struct AudioFileStore {
         return files.reduce(0) { partial, url in
             let size = (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
             return partial + Int64(size)
+        }
+    }
+
+    /// Everything saved for `reciterID`, at any quality.
+    func byteCount(reciterID: String) -> Int64 {
+        guard let folder = try? audioRoot().appending(path: reciterID, directoryHint: .isDirectory) else { return 0 }
+        return byteCount(under: folder)
+    }
+
+    /// Everything saved, for every reciter.
+    func totalByteCountAllReciters() -> Int64 {
+        guard let root = try? audioRoot() else { return 0 }
+        return byteCount(under: root)
+    }
+
+    /// Reciters with a folder on the device.
+    func storedReciterIDs() -> Set<String> {
+        guard let root = try? audioRoot(),
+              let folders = try? fileManager.contentsOfDirectory(at: root, includingPropertiesForKeys: nil)
+        else { return [] }
+        return Set(folders.map(\.lastPathComponent))
+    }
+
+    func remove(reciterID: String) throws {
+        let folder = try audioRoot().appending(path: reciterID, directoryHint: .isDirectory)
+        if fileManager.fileExists(atPath: folder.path) {
+            try fileManager.removeItem(at: folder)
+        }
+    }
+
+    /// Removes every reciter's audio.
+    func removeAllReciters() throws {
+        let root = try audioRoot()
+        if fileManager.fileExists(atPath: root.path) {
+            try fileManager.removeItem(at: root)
+        }
+        _ = try directory()
+    }
+
+    /// Servers sometimes answer 200 with something that isn't audio, such as an error page,
+    /// so a file must begin with an ID3 tag or an MPEG frame sync (11 set bits).
+    static func startsLikeMP3(_ url: URL) -> Bool {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
+        defer { try? handle.close() }
+        guard let head = try? handle.read(upToCount: 3), head.count == 3 else { return false }
+        let bytes = [UInt8](head)
+        return bytes == Array("ID3".utf8) || (bytes[0] == 0xFF && bytes[1] & 0xE0 == 0xE0)
+    }
+
+    private func byteCount(under folder: URL) -> Int64 {
+        guard let files = fileManager.enumerator(at: folder, includingPropertiesForKeys: [.fileSizeKey]) else { return 0 }
+        return files.compactMap { $0 as? URL }.reduce(0) { partial, url in
+            partial + Int64((try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
         }
     }
 

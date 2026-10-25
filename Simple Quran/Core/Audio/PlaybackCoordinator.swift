@@ -20,8 +20,8 @@ struct PlaybackSnapshot: Equatable {
 @MainActor
 @Observable
 final class PlaybackCoordinator {
-    private let source: AudioSource
-    private let fileStore: AudioFileStore
+    private var source: AudioSource
+    private var fileStore: AudioFileStore
     private let nowPlaying: NowPlayingBridge
     private let logger = Logger(subsystem: "com.simpleAzaan.Simple-Quran1", category: "playback")
 
@@ -122,6 +122,18 @@ final class PlaybackCoordinator {
     func configure(catalog: any QuranCatalog, allowStreaming: Bool) {
         self.catalog = catalog
         self.allowStreaming = allowStreaming
+    }
+
+    /// Switches reciter. Whatever is prepared carries on from the same ayah in the new voice.
+    func use(source: AudioSource, fileStore: AudioFileStore) {
+        let wasPlaying = snapshot.isPlaying || shouldAutoplay
+        self.source = source
+        self.fileStore = fileStore
+        unavailableAyahs = []
+        awaitedAyah = nil
+        downloadsMissingAudio = false
+        guard !preparedPassages.isEmpty, cursor?.current != nil else { return }
+        rebuildQueue(autoplay: wasPlaying)
     }
 
     func start(set: PracticeSet, catalog: any QuranCatalog, resume: Bool, allowStreaming: Bool) {

@@ -37,6 +37,13 @@ struct SettingsView: View {
                         .warmListRow()
                 }
                 Section(String(localized: "Audio")) {
+                    NavigationLink {
+                        ReciterPickerView()
+                    } label: {
+                        LabeledContent(String(localized: "Reciter"), value: environment.audioSource.reciter.englishName)
+                    }
+                    .accessibilityIdentifier("settings.reciter")
+                    .warmListRow()
                     Toggle(String(localized: "Wi-Fi only downloads"), isOn: Bindable(environment.settings).wifiOnly)
                         .onChange(of: environment.settings.wifiOnly) { _, wifiOnly in
                             environment.downloads.updateCellular(!wifiOnly)
@@ -48,7 +55,7 @@ struct SettingsView: View {
                         .accessibilityIdentifier("settings.downloadWhilePlaying")
                         .warmListRow()
                     LabeledContent(String(localized: "Downloaded audio")) {
-                        Text(ByteCountFormatter.string(fromByteCount: environment.downloads.fileStore.totalByteCount(), countStyle: .file))
+                        Text(ByteCountFormatter.string(fromByteCount: environment.downloads.fileStore.totalByteCountAllReciters(), countStyle: .file))
                     }
                     .warmListRow()
                     Button(String(localized: "Remove downloaded recitation"), role: .destructive) {
@@ -95,8 +102,6 @@ struct SettingsView: View {
                         .warmListRow()
                     LabeledContent(String(localized: "Page convention"), value: String(localized: "604-page Madani Hafs"))
                         .warmListRow()
-                    LabeledContent(String(localized: "Reciter"), value: environment.audioSource.reciter.englishName)
-                        .warmListRow()
                 }
             }
             .warmListChrome()
@@ -109,7 +114,7 @@ struct SettingsView: View {
             .sheet(isPresented: $showAcknowledgements) { AcknowledgementsView() }
             .sheet(isPresented: $showPrivacy) { PrivacyView() }
             .confirmationDialog(
-                String(localized: "Remove all downloaded recitation?"),
+                String(localized: "Remove downloaded recitation for every reciter?"),
                 isPresented: $confirmRemoveDownloads,
                 titleVisibility: .visible
             ) {
@@ -164,7 +169,7 @@ struct AcknowledgementsView: View {
                         .tint(Color.bronze)
                     Text(String(localized: "Audio"))
                         .font(.headline)
-                    Text("Abdul Rahman Al-Sudais recitations are streamed or downloaded from Al Quran Cloud / islamic.network for personal and educational use. Copyright remains with the reciter.")
+                    Text("Recitations by \(reciterNames) are streamed or downloaded from Al Quran Cloud / islamic.network for personal and educational use. Copyright remains with each reciter.")
                 }
                 .padding()
                 .foregroundStyle(Color.appBrownText)
@@ -174,6 +179,10 @@ struct AcknowledgementsView: View {
             .navigationTitle(String(localized: "Acknowledgements"))
             .task { await environment.translations.loadIfNeeded(edition) }
         }
+    }
+
+    private var reciterNames: String {
+        ListFormatter.localizedString(byJoining: environment.reciters.catalog.reciters.map(\.englishName))
     }
 
     private var translationVersion: String {

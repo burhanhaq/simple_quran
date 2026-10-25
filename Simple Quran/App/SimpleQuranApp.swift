@@ -39,8 +39,6 @@ struct SimpleQuranApp: App {
         }
         self.container = container
 
-        let source = AlQuranCloudAudioSource()
-        let files = AudioFileStore(reciter: source.reciter)
         let settings = AppSettings()
         if ProcessInfo.processInfo.arguments.contains("-ui-testing-reset-focus") {
             settings.learningTargets = []
@@ -54,6 +52,10 @@ struct SimpleQuranApp: App {
             settings.hasCompletedOnboarding = false
             settings.showsStatusChangeNote = false
         }
+        let reciters = ReciterCatalogStore()
+        settings.resolveFirstReciter(catalog: reciters.catalog)
+        let source = reciters.catalog.audioSource(for: settings.reciter(in: reciters.catalog))
+        let files = AudioFileStore(reciter: source.reciter)
         let downloads = AudioDownloadManager(
             source: source,
             fileStore: files,
@@ -85,6 +87,7 @@ struct SimpleQuranApp: App {
             quran: catalog,
             store: store,
             audioSource: source,
+            reciters: reciters,
             downloads: downloads,
             playback: playback,
             recorder: recorder,
@@ -111,6 +114,7 @@ private struct AppearanceRoot: View {
     var body: some View {
         AppRootView()
             .preferredColorScheme(environment.settings.appearance.preferredColorScheme)
+            .task { await environment.reciters.refreshIfNeeded() }
     }
 }
 

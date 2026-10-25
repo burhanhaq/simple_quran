@@ -43,8 +43,8 @@ private nonisolated struct DownloadTaskMetadata: Equatable, Sendable {
 final class AudioDownloadManager: NSObject, URLSessionDownloadDelegate {
     static let sessionIdentifier = "com.simpleAzaan.Simple-Quran1.audio"
 
-    let source: AudioSource
-    let fileStore: AudioFileStore
+    private(set) var source: AudioSource
+    private(set) var fileStore: AudioFileStore
     private let logger = Logger(subsystem: "com.simpleAzaan.Simple-Quran1", category: "downloads")
     private var session: URLSession!
     private var taskAyahs: [Int: Int] = [:]
@@ -82,6 +82,27 @@ final class AudioDownloadManager: NSObject, URLSessionDownloadDelegate {
 
     func updateCellular(_ allowed: Bool) {
         allowCellular = allowed
+    }
+
+    /// Switches to another reciter. Their earlier downloads stay on the device; unfinished
+    /// downloads for the previous reciter stop.
+    func use(source: AudioSource, fileStore: AudioFileStore) {
+        let reciterChanged = !Self.sameAudio(source.reciter, self.source.reciter)
+        self.source = source
+        self.fileStore = fileStore
+        guard reciterChanged else { return }
+        session.getAllTasks { [weak self] tasks in
+            Task { @MainActor in
+                guard let self else { return }
+                for task in tasks where !self.isCurrent(DownloadTaskMetadata(taskDescription: task.taskDescription)) {
+                    task.cancel()
+                }
+            }
+        }
+        jobs.removeAll()
+        taskAyahs.removeAll()
+        quietAyahs.removeAll()
+        reconcileRecordsWithFiles()
     }
 
     func estimate(for ayahs: [Int]) -> Int64 {
@@ -143,20 +164,37 @@ final class AudioDownloadManager: NSObject, URLSessionDownloadDelegate {
         saveContext()
     }
 
+    /// Removes every reciter's downloads.
     func removeAll() {
         do {
-            try fileStore.removeAll()
-            let reciterID = source.reciter.id
-            let quality = source.reciter.qualityKbps
-            let descriptor = FetchDescriptor<AudioDownloadRecord>(
-                predicate: #Predicate { $0.reciterID == reciterID && $0.quality == quality }
-            )
-            for record in (try? context?.fetch(descriptor)) ?? [] { context?.delete(record) }
+            try fileStore.removeAllReciters()
+            for record in (try? context?.fetch(FetchDescriptor<AudioDownloadRecord>())) ?? [] { context?.delete(record) }
             jobs.removeAll()
             saveContext()
         } catch {
             userMessage = UserFacingMessage.from(.downloadFailed)
             logger.error("Could not remove downloads: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Removes one reciter's downloads, at any quality.
+    func remove(reciterID: String) {
+        do {
+            try fileStore.remove(reciterID: reciterID)
+            let descriptor = FetchDescriptor<AudioDownloadRecord>(predicate: #Predicate { $0.reciterID == reciterID })
+            for record in (try? context?.fetch(descriptor)) ?? [] { context?.delete(record) }
+            if reciterID == source.reciter.id { jobs.removeAll() }
+            saveContext()
+        } catch {
+            userMessage = UserFacingMessage.from(.downloadFailed)
+            logger.error("Could not remove downloads for \(reciterID, privacy: .public): \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    /// Deletes audio for reciters the catalog no longer offers, so a withdrawn recitation leaves the device.
+    func removeReciters(notIn offered: Set<String>) {
+        for reciterID in fileStore.storedReciterIDs().subtracting(offered) {
+            remove(reciterID: reciterID)
         }
     }
 
@@ -174,12 +212,12 @@ final class AudioDownloadManager: NSObject, URLSessionDownloadDelegate {
         let http = downloadTask.response as? HTTPURLResponse
         let statusCode = http?.statusCode ?? -1
         guard (200...299).contains(statusCode) else {
-            Task { @MainActor in self.markFailed(ayah: metadata.globalAyah, error: AppError.httpStatus(statusCode)) }
+            Task { @MainActor in self.markFailed(metadata, error: AppError.httpStatus(statusCode)) }
             return
         }
         let mime = http?.mimeType?.lowercased()
         guard mime?.hasPrefix("audio/") == true || mime == "application/octet-stream" else {
-            Task { @MainActor in self.markFailed(ayah: metadata.globalAyah, error: AppError.invalidAudio) }
+            Task { @MainActor in self.markFailed(metadata, error: AppError.invalidAudio) }
             return
         }
 
@@ -189,14 +227,12 @@ final class AudioDownloadManager: NSObject, URLSessionDownloadDelegate {
         do {
             try FileManager.default.copyItem(at: location, to: temp)
         } catch {
-            Task { @MainActor in self.markFailed(ayah: metadata.globalAyah, error: error) }
+            Task { @MainActor in self.markFailed(metadata, error: error) }
             return
         }
 
         Task { @MainActor in
-            guard metadata.reciterID == self.source.reciter.id,
-                  metadata.quality == self.source.reciter.qualityKbps
-            else {
+            guard self.isCurrent(metadata) else {
                 try? FileManager.default.removeItem(at: temp)
                 return
             }
@@ -218,7 +254,7 @@ final class AudioDownloadManager: NSObject, URLSessionDownloadDelegate {
                 self.onAudioReady?(metadata.globalAyah)
             } catch {
                 try? FileManager.default.removeItem(at: temp)
-                self.markFailed(ayah: metadata.globalAyah, error: error)
+                self.markFailed(metadata, error: error)
             }
         }
     }
@@ -235,6 +271,7 @@ final class AudioDownloadManager: NSObject, URLSessionDownloadDelegate {
             ? min(1, Double(totalBytesWritten) / Double(totalBytesExpectedToWrite))
             : 0
         Task { @MainActor in
+            guard self.isCurrent(metadata) else { return }
             self.jobs[metadata.globalAyah] = DownloadJob(
                 globalAyah: metadata.globalAyah,
                 fraction: fraction,
@@ -250,7 +287,7 @@ final class AudioDownloadManager: NSObject, URLSessionDownloadDelegate {
             defer { self.taskAyahs[identifier] = nil }
             guard let metadata, let error else { return }
             if (error as NSError).code == NSURLErrorCancelled { return }
-            self.markFailed(ayah: metadata.globalAyah, error: error)
+            self.markFailed(metadata, error: error)
         }
     }
 
@@ -267,8 +304,7 @@ final class AudioDownloadManager: NSObject, URLSessionDownloadDelegate {
                 guard let self else { return }
                 for task in tasks {
                     guard let metadata = DownloadTaskMetadata(taskDescription: task.taskDescription),
-                          metadata.reciterID == self.source.reciter.id,
-                          metadata.quality == self.source.reciter.qualityKbps
+                          self.isCurrent(metadata)
                     else {
                         task.cancel()
                         continue
@@ -282,6 +318,15 @@ final class AudioDownloadManager: NSObject, URLSessionDownloadDelegate {
                 }
             }
         }
+    }
+
+    /// Whether a download task belongs to the reciter and quality now in use.
+    private func isCurrent(_ metadata: DownloadTaskMetadata?) -> Bool {
+        metadata?.reciterID == source.reciter.id && metadata?.quality == source.reciter.qualityKbps
+    }
+
+    private static func sameAudio(_ lhs: Reciter, _ rhs: Reciter) -> Bool {
+        lhs.id == rhs.id && lhs.qualityKbps == rhs.qualityKbps
     }
 
     private func reconcileRecordsWithFiles() {
@@ -341,6 +386,12 @@ final class AudioDownloadManager: NSObject, URLSessionDownloadDelegate {
         if status == .ready { existing.downloadedAt = .now }
         existing.lastError = lastError
         saveContext()
+    }
+
+    /// A task for a reciter the user has since switched away from fails silently.
+    private func markFailed(_ metadata: DownloadTaskMetadata, error: Error) {
+        guard isCurrent(metadata) else { return }
+        markFailed(ayah: metadata.globalAyah, error: error)
     }
 
     private func markFailed(ayah: Int, error: Error) {

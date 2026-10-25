@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "host": "https://cdn.islamic.network/quran/audio",
+  "defaultReciterID": "ar.husary",
+  "reciters": [
+    {
+      "id": "ar.husary",
+      "englishName": "Mahmoud Khalil Al-Husary",
+      "arabicName": "محمود خليل الحصري",
+      "qualityKbps": 64,
+      "averageAyahBytes": 198000
+    },
+    {
+      "id": "ar.alafasy",
+      "englishName": "Mishary Rashid Alafasy",
+      "arabicName": "مشاري راشد العفاسي",
+      "qualityKbps": 64,
+      "averageAyahBytes": 138000
+    },
+    {
+      "id": "ar.abdurrahmaansudais",
+      "englishName": "Abdul Rahman Al-Sudais",
+      "arabicName": "عبدالرحمن السديس",
+      "qualityKbps": 64,
+      "averageAyahBytes": 98000
+    },
+    {
+      "id": "ar.mahermuaiqly",
+      "englishName": "Maher Al-Muaiqly",
+      "arabicName": "ماهر المعيقلي",
+      "qualityKbps": 128,
+      "averageAyahBytes": 98000
+    },
+    {
+      "id": "ar.saoodshuraym",
+      "englishName": "Saud Ash-Shuraim",
+      "arabicName": "سعود الشريم",
+      "qualityKbps": 64,
+      "averageAyahBytes": 169000
+    },
+    {
+      "id": "ar.shaatree",
+      "englishName": "Abu Bakr Ash-Shatri",
+      "arabicName": "أبو بكر الشاطري",
+      "qualityKbps": 64,
+      "averageAyahBytes": 120000
+    }
+  ]
+}

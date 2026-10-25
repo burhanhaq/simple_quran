@@ -377,14 +377,29 @@ struct SearchAndAudioSourceTests {
     }
 
     @Test func sudaisURLsAreVerseAddressable() throws {
-        let source = AlQuranCloudAudioSource()
+        let source = AlQuranCloudAudioSource(reciter: .sudais)
         let url = try source.remoteURL(for: 1)
-        #expect(source.reciter.id == "ar.abdurrahmaansudais")
+        #expect(source.reciter.id == ReciterID.sudais)
         #expect(source.reciter.qualityKbps == 64)
-        #expect(url.absoluteString.hasSuffix("/64/ar.abdurrahmaansudais/1.mp3"))
+        #expect(url.absoluteString == "https://cdn.islamic.network/quran/audio/64/ar.abdurrahmaansudais/1.mp3")
         #expect(throws: AppError.invalidRange) {
             _ = try source.remoteURL(for: 0)
         }
+    }
+
+    @Test func catalogReciterURLsUseTheirFolderAndOptionalHost() throws {
+        let catalog = try ReciterCatalog.bundled()
+        let husary = try #require(catalog.reciter(id: ReciterID.husary))
+        #expect(try catalog.audioSource(for: husary).remoteURL(for: 6236).absoluteString
+            == "https://cdn.islamic.network/quran/audio/64/ar.husary/6236.mp3")
+        let maher = try #require(catalog.reciter(id: "ar.mahermuaiqly"))
+        #expect(try catalog.audioSource(for: maher).remoteURL(for: 747).absoluteString
+            == "https://cdn.islamic.network/quran/audio/128/ar.mahermuaiqly/747.mp3")
+        var elsewhere = husary
+        elsewhere.host = URL(string: "https://audio.example.org/quran")
+        #expect(try catalog.audioSource(for: elsewhere).remoteURL(for: 1).absoluteString
+            == "https://audio.example.org/quran/64/ar.husary/1.mp3")
+        #expect(catalog.audioSource(for: husary).estimatedBytesPerAyah == 198_000)
     }
 }
 
@@ -403,7 +418,7 @@ struct AudioFileStoreTests {
         #expect(store.isReady(1) == false)
 
         let validSized = root.appending(path: "valid.mp3")
-        try Data(repeating: 0, count: 2_000).write(to: validSized)
+        try (Data("ID3".utf8) + Data(repeating: 0, count: 1_997)).write(to: validSized)
         _ = try store.install(temporaryURL: validSized, globalAyah: 1)
         #expect(store.isReady(1))
         #expect(store.byteCount(globalAyah: 1) == 2_000)
