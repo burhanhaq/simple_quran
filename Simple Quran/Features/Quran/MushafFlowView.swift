@@ -529,7 +529,8 @@ private struct MushafPageView: UIViewRepresentable {
                 dimmedAyahs: dimmedAyahs,
                 markedAyahs: markedAyahs
             ),
-            contentSizeCategory: dynamicTypeSize.uiContentSizeCategory
+            contentSizeCategory: dynamicTypeSize.uiContentSizeCategory,
+            animatesHiding: context.transaction.animation != nil && !context.transaction.disablesAnimations
         )
     }
 
@@ -609,6 +610,8 @@ private final class MushafPageTextView: UITextView {
     private var pendingBasmala = ""
     private var pendingHighlight = MushafHighlightState.empty
     private var pendingCategory: UIContentSizeCategory = .large
+    /// Hiding or showing ayahs as part of an animation crossfades the text instead of cutting to it.
+    private var pendingAnimatesHiding = false
     private var renderKey: RenderKey?
     private var appliedHighlight = MushafHighlightState.empty
     private var ayahRanges: [Int: NSRange] = [:]
@@ -621,13 +624,15 @@ private final class MushafPageTextView: UITextView {
         hiddenAyahs: Set<Int>,
         basmala: String,
         highlight: MushafHighlightState,
-        contentSizeCategory: UIContentSizeCategory
+        contentSizeCategory: UIContentSizeCategory,
+        animatesHiding: Bool
     ) {
         pendingVerses = verses
         pendingHiddenAyahs = hiddenAyahs
         pendingBasmala = basmala
         pendingHighlight = highlight
         pendingCategory = contentSizeCategory
+        pendingAnimatesHiding = animatesHiding
         if bounds.width > 0 {
             apply(width: bounds.width)
         }
@@ -688,8 +693,14 @@ private final class MushafPageTextView: UITextView {
             ayahRanges = document.ayahRanges
             bodyRanges = document.bodyRanges
             appliedHighlight = pendingHighlight
+            let onlyHidingChanged = renderKey?.verseIDs == key.verseIDs && renderKey?.category == key.category
             renderKey = key
-            attributedText = mutable
+            if onlyHidingChanged, pendingAnimatesHiding {
+                UIView.transition(with: self, duration: Self.hidingDuration,
+                                  options: [.transitionCrossDissolve, .allowUserInteraction]) { self.attributedText = mutable }
+            } else {
+                attributedText = mutable
+            }
             lastReportedAnchor = nil
             return
         }
@@ -738,6 +749,8 @@ private final class MushafPageTextView: UITextView {
             && abs(lhs.width - rhs.width) < 0.5
             && abs(lhs.height - rhs.height) < 0.5
     }
+
+    private static let hidingDuration: TimeInterval = 0.3
 
     private struct RenderKey: Equatable {
         var verseIDs: [Int]

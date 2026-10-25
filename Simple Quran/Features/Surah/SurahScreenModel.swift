@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// Where the surah screen's sheet rests. Reading uses peek, half and full; memorizing a piece
-/// fits the coach so the text above stays in view. A one-piece surah's overview fits too,
-/// since it has no parts list to fill half the screen.
+/// fits the coach so the text above stays in view, and can shrink to a slim coach at peek.
+/// A one-piece surah's overview fits too, since it has no parts list to fill half the screen.
 /// Heights are above the home indicator.
 enum SurahSheetDetent {
     static let peekHeight: CGFloat = 88
@@ -13,6 +13,8 @@ enum SurahSheetDetent {
     static let fitStep: CGFloat = 8
     /// Measured changes this small are layout noise from the sheet moving, not new content.
     static let fitTolerance: CGFloat = 1
+    /// Opening a piece to recite holds its text in view this long, so the sheet settles before it hides.
+    static let textHideDelay: Duration = .milliseconds(350)
 
     static func fitted(_ height: CGFloat) -> PresentationDetent { .height(height) }
 
@@ -188,6 +190,9 @@ final class SurahScreenModel {
     /// Changes whenever the user asks to see the current ayah, so the text follows playback again
     /// after they scrolled away.
     private(set) var followRequest = 0
+    /// True for a moment after a piece opens, so the text hides after the sheet has changed, not with it.
+    private var holdsText = false
+    @ObservationIgnored private var holdTask: Task<Void, Never>?
     /// Measured sheet content, kept across screens so the next surah opens at the right height.
     private var fittedHeights = SurahScreenModel.rememberedHeights
     /// The unrounded heights last taken, to tell real changes from sub-point layout noise.
@@ -254,11 +259,16 @@ final class SurahScreenModel {
     /// Where reading rests between peek and full.
     var middleDetent: PresentationDetent { fitsOverview ? fittedDetent(.overview) : SurahSheetDetent.half }
 
+    /// Memorizing can shrink to the slim coach at peek height, except while checking.
     var detents: Set<PresentationDetent> {
-        focus == nil
-            ? [SurahSheetDetent.peek, middleDetent, SurahSheetDetent.full]
-            : [fittedDetent(sheetContent), SurahSheetDetent.full]
+        guard let focus else { return [SurahSheetDetent.peek, middleDetent, SurahSheetDetent.full] }
+        let coach: Set = [fittedDetent(sheetContent), SurahSheetDetent.full]
+        return focus.step.allowsSlimCoach ? coach.union([SurahSheetDetent.peek]) : coach
     }
+
+    /// The coach shrunk to one row, so more of the text shows.
+    var isCoachSlim: Bool { focus != nil && detent == SurahSheetDetent.peek }
+
     /// The text stays scrollable and tappable while the sheet is below this height.
     var interactionLimit: PresentationDetent { focus == nil ? middleDetent : fittedDetent(sheetContent) }
 
@@ -469,9 +479,12 @@ final class SurahScreenModel {
         savePosition()
         playback.pause()
         undo = nil
-        focus = MemorizeFocus(route: route)
         followRequest += 1
-        withAnimation(.snappy) { detent = coachDetent }
+        holdTextWhileSheetSettles()
+        withAnimation(.snappy) {
+            focus = MemorizeFocus(route: route)
+            detent = coachDetent
+        }
         begin(route.range)
     }
 
@@ -480,18 +493,37 @@ final class SurahScreenModel {
         return fittedDetent(sheetContent)
     }
 
+    /// Brings the slim coach back to its full height.
+    func expandCoach() {
+        withAnimation(.snappy) { detent = coachDetent }
+    }
+
     /// The text in view hides while reciting, except while the user hears their recording back,
     /// so they can follow it and mark where they slipped.
     var hiddenAyahs: Set<Int> {
-        guard let focus, !environment.recorder.isPlayingComparison else { return [] }
+        guard let focus, !holdsText, !environment.recorder.isPlayingComparison else { return [] }
         return focus.hiddenAyahs
     }
 
+    /// Keeps the text in view while the sheet changes, then hides it as its own step.
+    private func holdTextWhileSheetSettles() {
+        holdTask?.cancel()
+        holdsText = true
+        holdTask = Task { [weak self] in
+            guard (try? await Task.sleep(for: SurahSheetDetent.textHideDelay)) != nil else { return }
+            withAnimation(.easeInOut) { self?.holdsText = false }
+        }
+    }
+
     /// Moving between steps keeps the marks; only moving to another piece clears them.
-    /// The reciter is for listening, so it pauses once the user recites.
+    /// The reciter is for listening, so it pauses once the user recites. Checking needs the
+    /// answers in view, so it brings back the whole coach.
     func setStep(_ step: CoachStep) {
         guard focus != nil, focus?.step != step else { return }
-        focus?.go(to: step)
+        withAnimation(.snappy) {
+            if !step.allowsSlimCoach, isCoachSlim { detent = coachDetent }
+            focus?.go(to: step)
+        }
         focus?.engaged = true
         if step == .listen { environment.recorder.cancelComparisonPlayback() } else { playback.pause() }
     }
@@ -538,7 +570,8 @@ final class SurahScreenModel {
         withAnimation(.snappy) {
             focus?.move(to: newRange)
             showInText(newRange)
-            if detent != SurahSheetDetent.full { detent = coachDetent }
+            // A sheet the user moved to full or slim stays there.
+            if detent != SurahSheetDetent.full, !isCoachSlim { detent = coachDetent }
         }
         begin(newRange)
     }

@@ -29,6 +29,9 @@ enum CoachStep: String {
         }
     }
 
+    /// Listening and reciting fit one row; checking needs the answers in view.
+    var allowsSlimCoach: Bool { self != .check }
+
     var previous: CoachStep? {
         switch self {
         case .listen: nil

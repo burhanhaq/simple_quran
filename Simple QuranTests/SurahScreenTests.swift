@@ -77,6 +77,11 @@ struct SurahScreenTests {
         #expect(CoachStep.listen.previous == nil && CoachStep.recite.previous == .listen && CoachStep.check.previous == .recite)
     }
 
+    @Test @MainActor func onlyCheckingNeedsTheWholeCoach() {
+        #expect(CoachStep.listen.allowsSlimCoach && CoachStep.recite.allowsSlimCoach)
+        #expect(!CoachStep.check.allowsSlimCoach)
+    }
+
     @Test @MainActor func openingEveryAyahShowsTheWholePieceUntilRecitingAgain() {
         var focus = MemorizeFocus(route: SessionRoute(range: .clamped(start: 1, end: 3), kind: .review))
         for ayah in 1...3 { focus.tap(ayah) }

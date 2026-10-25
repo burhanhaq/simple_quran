@@ -13,11 +13,12 @@ struct SurahSheet: View {
     var body: some View {
         @Bindable var model = model
         let index = index
-        Group {
+        // Opening a piece and finishing it blend one into the other while the sheet changes height.
+        ZStack(alignment: .top) {
             if let focus = model.focus {
-                FocusCoach(model: model, focus: focus, index: index)
+                FocusCoach(model: model, focus: focus, index: index).transition(.blurReplace)
             } else {
-                ReadingOverview(model: model, index: index)
+                ReadingOverview(model: model, index: index).transition(.blurReplace)
             }
         }
         .foregroundStyle(Color.appBrownText)
@@ -489,6 +490,7 @@ private extension View {
 /// Coaches one piece in place, a step at a time: Listen with the player and repeat count, Recite
 /// with the text hidden and the recorder, then Check with the text back and the answers. Every step
 /// has the same rows, so the sheet keeps its height. Answering stays optional: Done or Next skips it.
+/// Dragged down to peek height, it shrinks to one row so more of the text shows.
 private struct FocusCoach: View {
     @Environment(AppEnvironment.self) private var environment
     let model: SurahScreenModel
@@ -498,7 +500,42 @@ private struct FocusCoach: View {
     /// Every step's tools get the recorder's height, so the steps line up.
     private static let toolsHeight: CGFloat = 56
 
+    /// The whole coach stays in place under the slim one. Removing its scroll view as the sheet
+    /// settles makes the sheet jump back to its previous height while the selection keeps the new one.
     var body: some View {
+        let slim = model.isCoachSlim
+        ZStack(alignment: .top) {
+            fullCoach.opacity(slim ? 0 : 1).allowsHitTesting(!slim).accessibilityHidden(slim)
+            if slim { slimCoach.transition(.opacity) }
+        }
+        .animation(.snappy, value: slim)
+    }
+
+    /// The passage, then the step's own control. Tapping the passage brings back the whole coach.
+    private var slimCoach: some View {
+        HStack(spacing: 10) {
+            Button { model.expandCoach() } label: {
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(label).font(.caption2.weight(.semibold)).tracking(1.4).foregroundStyle(Color.bronze)
+                    Text(reference).font(.subheadline.weight(.medium)).lineLimit(1)
+                }
+                .frame(maxWidth: .infinity, minHeight: 44, alignment: .leading).contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityElement(children: .combine)
+            .accessibilityHint("Shows the whole coach")
+            .accessibilityIdentifier("session.expand")
+            switch focus.step {
+            case .listen: playerControls
+            case .recite: RecitationBar(model: model, isSlim: true)
+            case .check: EmptyView()
+            }
+        }
+        .padding(.horizontal, 22).padding(.top, 20)
+        .frame(maxWidth: 680).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+    }
+
+    private var fullCoach: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 14) {
                 header
@@ -521,8 +558,7 @@ private struct FocusCoach: View {
                 Text(label).font(.caption2.weight(.semibold)).tracking(1.4).foregroundStyle(Color.bronze)
                 Button { model.showsPassagePicker = true } label: {
                     HStack(spacing: 4) {
-                        Text(LearningPassage.referenceLabel(focus.range, catalog: environment.quran))
-                            .font(.subheadline.weight(.medium)).multilineTextAlignment(.leading)
+                        Text(reference).font(.subheadline.weight(.medium)).multilineTextAlignment(.leading)
                         Image(systemName: "chevron.down").font(.caption2.weight(.bold)).foregroundStyle(Color.bronze)
                     }
                     .frame(minHeight: 28).contentShape(Rectangle())
@@ -538,6 +574,8 @@ private struct FocusCoach: View {
         }
         .disabled(model.recordingBusy)
     }
+
+    private var reference: String { LearningPassage.referenceLabel(focus.range, catalog: environment.quran) }
 
     private var label: String {
         if focus.kind == .review {
@@ -586,6 +624,14 @@ private struct FocusCoach: View {
 
     private var player: some View {
         HStack(spacing: 6) {
+            playerControls
+            if let practice = focus.practice { RepeatChip(model: model, practice: practice).padding(.leading, 4) }
+        }
+        .buttonStyle(.plain).foregroundStyle(Color.bronze)
+    }
+
+    private var playerControls: some View {
+        HStack(spacing: 6) {
             Button { model.step(by: -1) } label: {
                 Image(systemName: "backward.end.fill").font(.body).frame(width: 36, height: 44)
             }
@@ -603,7 +649,6 @@ private struct FocusCoach: View {
             }
             .accessibilityLabel("Next ayah").accessibilityIdentifier("session.next")
             .disabled(!model.canStepForward)
-            if let practice = focus.practice { RepeatChip(model: model, practice: practice).padding(.leading, 4) }
         }
         .buttonStyle(.plain).foregroundStyle(Color.bronze)
     }
@@ -706,25 +751,33 @@ private struct FocusCoach: View {
 }
 
 /// Record yourself reciting, then hear it back. Starting turns the mic into a stop button with
-/// a short animation; recording shows a pulsing dot and a running timer.
+/// a short animation; recording shows a pulsing dot and a running timer. The slim coach keeps only
+/// the timer and the button; hearing it back and deleting wait for the whole coach.
 private struct RecitationBar: View {
     @Environment(AppEnvironment.self) private var environment
     let model: SurahScreenModel
+    var isSlim = false
 
     private var recorder: RecitationRecordingController { environment.recorder }
     private var isActive: Bool { recorder.phase == .starting || recorder.phase == .recording }
+    private var buttonSize: CGFloat { isSlim ? 48 : 56 }
 
     var body: some View {
         HStack(spacing: 14) {
-            recordButton
-            status
-            Spacer(minLength: 0)
-            if !isActive, recorder.hasRecording, recorder.phase != .finishing {
-                Button { recorder.deleteLatest() } label: {
-                    Image(systemName: "trash").font(.body).frame(width: 44, height: 44)
+            if isSlim {
+                if recorder.phase == .recording { recordingTimer }
+                recordButton
+            } else {
+                recordButton
+                status
+                Spacer(minLength: 0)
+                if !isActive, recorder.hasRecording, recorder.phase != .finishing {
+                    Button { recorder.deleteLatest() } label: {
+                        Image(systemName: "trash").font(.body).frame(width: 44, height: 44)
+                    }
+                    .buttonStyle(.plain).foregroundStyle(Color.secondaryWarm)
+                    .accessibilityLabel("Delete recording").accessibilityIdentifier("session.deleteRecording")
                 }
-                .buttonStyle(.plain).foregroundStyle(Color.secondaryWarm)
-                .accessibilityLabel("Delete recording").accessibilityIdentifier("session.deleteRecording")
             }
         }
         .animation(.spring(duration: 0.4), value: recorder.phase)
@@ -739,7 +792,7 @@ private struct RecitationBar: View {
                     .foregroundStyle(isActive ? Color.white : Color.bronze)
                     .contentTransition(.symbolEffect(.replace))
             }
-            .frame(width: 56, height: 56)
+            .frame(width: buttonSize, height: buttonSize)
             .scaleEffect(recorder.phase == .starting ? 1.12 : 1)
             .overlay {
                 if recorder.phase == .starting {
@@ -762,12 +815,7 @@ private struct RecitationBar: View {
             Text("Starting…").font(.subheadline.weight(.medium)).foregroundStyle(Color.dangerWarm)
         case .recording:
             HStack(spacing: 8) {
-                Image(systemName: "circle.fill").font(.caption2).foregroundStyle(Color.dangerWarm)
-                    .symbolEffect(.pulse, options: .repeating)
-                if let start = recorder.recordingStartedAt {
-                    Text(timerInterval: start...Date.distantFuture, countsDown: false)
-                        .font(.subheadline.weight(.semibold)).monospacedDigit()
-                }
+                recordingTimer
                 Text("Recording").font(.subheadline).foregroundStyle(Color.secondaryWarm)
             }
             .accessibilityElement(children: .combine)
@@ -798,6 +846,17 @@ private struct RecitationBar: View {
                     Text("Record yourself").font(.subheadline.weight(.semibold))
                     Text("Optional. Play it back to check.").font(.caption).foregroundStyle(Color.secondaryWarm)
                 }
+            }
+        }
+    }
+
+    private var recordingTimer: some View {
+        HStack(spacing: 8) {
+            Image(systemName: "circle.fill").font(.caption2).foregroundStyle(Color.dangerWarm)
+                .symbolEffect(.pulse, options: .repeating)
+            if let start = recorder.recordingStartedAt {
+                Text(timerInterval: start...Date.distantFuture, countsDown: false)
+                    .font(.subheadline.weight(.semibold)).monospacedDigit()
             }
         }
     }
