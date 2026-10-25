@@ -13,12 +13,13 @@ struct SurahSheet: View {
     var body: some View {
         @Bindable var model = model
         let index = index
-        // Opening a piece and finishing it blend one into the other while the sheet changes height.
+        // Opening a piece and finishing it blend one into the other while the sheet changes height,
+        // and so does one surah's overview into the next.
         ZStack(alignment: .top) {
             if let focus = model.focus {
                 FocusCoach(model: model, focus: focus, index: index).transition(.blurReplace)
             } else {
-                ReadingOverview(model: model, index: index).transition(.blurReplace)
+                ReadingOverview(model: model, index: index).id(ObjectIdentifier(model)).transition(.blurReplace)
             }
         }
         .foregroundStyle(Color.appBrownText)

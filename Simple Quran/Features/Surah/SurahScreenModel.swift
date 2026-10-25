@@ -42,6 +42,11 @@ enum SurahSheetStart: Hashable {
     case half
 
     var detent: PresentationDetent { self == .peek ? SurahSheetDetent.peek : SurahSheetDetent.half }
+
+    /// Moving to the next surah keeps the sheet as it was: still at peek, or back at the middle.
+    static func keeping(_ detent: PresentationDetent) -> SurahSheetStart {
+        detent == SurahSheetDetent.peek ? .peek : .half
+    }
 }
 
 /// A surah's pieces in reading order, grouped by surah so a juz reads as the surahs it holds.
@@ -589,6 +594,27 @@ final class SurahScreenModel {
             selectedAyah = focus.range.startGlobalAyah
             detent = middleDetent
         }
+    }
+
+    // MARK: - Next and previous surah
+
+    /// Only while reading: memorizing or revising stays on its piece until it's finished.
+    var canSwitchSurah: Bool { focus == nil && !recordingBusy && errorMessage == nil }
+
+    func neighbor(_ side: ReaderNeighbor) -> QuranDestination? { destination.neighbor(side, in: quran) }
+
+    func neighborRoute(_ side: ReaderNeighbor) -> AppRoute? {
+        guard let neighbor = neighbor(side) else { return nil }
+        return .reader(ReaderRoute(destination: neighbor, sheet: .keeping(detent)))
+    }
+
+    /// Saves the place, and stops this surah's audio so the next one opens fresh instead of the
+    /// mini player carrying on with this one. Audio from elsewhere was already paused on opening.
+    func leaveForNeighbor() {
+        savePosition()
+        undo = nil
+        environment.recorder.cancelComparisonPlayback()
+        if ownsPlayback { playback.stop() }
     }
 
     /// Closing the screen keeps playback going for the mini player; answers are saved first.

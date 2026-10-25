@@ -8,12 +8,14 @@ struct SurahScreen: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.verticalSizeClass) private var verticalSizeClass
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
     @Query private var progress: [VerseProgress]
     @State private var model: SurahScreenModel
     @State private var showsSheet = true
     @State private var showsTranslationNote = false
     /// Checking files is a filesystem call per ayah, so it runs when downloads finish, not on every render.
     @State private var audioDownloaded = false
+    @State private var swipe = SurahSwipeState()
 
     init(route: AppRoute, environment: AppEnvironment) {
         _model = State(initialValue: SurahScreenModel(route: route, environment: environment))
@@ -33,10 +35,27 @@ struct SurahScreen: View {
         @Bindable var model = model
         NavigationStack {
             GeometryReader { geometry in
-                text
-                    .safeAreaPadding(.bottom, textInset)
-                    .overlay(alignment: .bottom) { fade.offset(y: -halfSheetTop(in: geometry)) }
-                    .animation(.snappy, value: textInset)
+                ZStack {
+                    // A new surah gets new text, so scrolling and following start fresh.
+                    text
+                        .offset(x: swipe.offset)
+                        .id(ObjectIdentifier(model))
+                        .transition(arrival(width: geometry.size.width))
+                }
+                .safeAreaPadding(.bottom, textInset)
+                .allowsHitTesting(swipe.phase.acceptsDrag)
+                .background { reveal(in: geometry) }
+                .overlay(alignment: .bottom) { fade.offset(y: -halfSheetTop(in: geometry)) }
+                .animation(.snappy, value: textInset)
+                .gesture(SurahSwipeGesture(
+                    isEnabled: model.canSwitchSurah && swipe.phase.acceptsDrag,
+                    onChange: {
+                        dragChanged($0, width: geometry.size.width, revealY: visibleTextHeight(in: geometry) / 2)
+                    },
+                    onEnd: { dragEnded($0, velocityX: $1, width: geometry.size.width) },
+                    onCancel: springBack
+                ))
+                .sensoryFeedback(.selection, trigger: swipe.isPastThreshold) { _, past in past }
             }
             .overlay(alignment: .top) {
                 if showsTranslationNote {
@@ -144,6 +163,7 @@ struct SurahScreen: View {
     @ToolbarContentBuilder
     private var toolbar: some ToolbarContent {
         @Bindable var settings = environment.settings
+        ToolbarItem(placement: .principal) { title }
         ToolbarItem(placement: .topBarLeading) {
             Button {
                 model.close(index: index)
@@ -173,6 +193,142 @@ struct SurahScreen: View {
             } label: { Image(systemName: "ellipsis").frame(width: 32, height: 32) }
                 .accessibilityLabel("Options").accessibilityIdentifier("surah.options").disabled(model.recordingBusy)
         }
+    }
+
+    // MARK: - Next and previous surah
+
+    /// The title moves with the text, so the new name comes in from the same side.
+    private var title: some View {
+        ZStack {
+            Text(model.title)
+                .font(.headline)
+                .lineLimit(1)
+                .id(model.title)
+                .transition(titleTransition)
+        }
+        .accessibilityElement(children: .combine)
+        .accessibilityAddTraits(.isHeader)
+        .accessibilityActions {
+            ForEach(ReaderNeighbor.allCases, id: \.self) { side in
+                if model.canSwitchSurah, swipe.phase.acceptsDrag, model.neighbor(side) != nil {
+                    Button(model.destination.neighborCaption(side)) { switchSurah(side, width: 0) }
+                }
+            }
+        }
+    }
+
+    private var titleTransition: AnyTransition {
+        guard !reduceMotion, let side = swipe.side else { return .opacity }
+        let shift = side == .next ? -SurahSwipe.titleShift : SurahSwipe.titleShift
+        return .asymmetric(insertion: .offset(x: shift).combined(with: .opacity),
+                           removal: .offset(x: -shift).combined(with: .opacity))
+    }
+
+    /// The old text is already off screen when it goes; the new one slides in from where the
+    /// neighbour's name was. With Reduce Motion the two cross-fade instead.
+    private func arrival(width: CGFloat) -> AnyTransition {
+        guard !reduceMotion, let side = swipe.side else { return .opacity }
+        return .asymmetric(insertion: .offset(x: SurahSwipe.arrivalOffset(from: side, width: width)).combined(with: .opacity),
+                           removal: .opacity)
+    }
+
+    @ViewBuilder
+    private func reveal(in geometry: GeometryProxy) -> some View {
+        if let reveal = swipe.reveal {
+            let width = geometry.size.width
+            let progress = SurahSwipe.progress(for: reveal.offset, width: width)
+            // Centered in the strip the text uncovers.
+            let x = reveal.side == .next ? reveal.offset / 2 : width + reveal.offset / 2
+            SurahNeighborReveal(side: reveal.side, caption: reveal.caption,
+                                title: reveal.destination.title(in: environment.quran),
+                                arabicName: reveal.destination.arabicName(in: environment.quran))
+                .scaleEffect(0.9 + 0.1 * progress)
+                .opacity(swipe.showsReveal ? progress : 0)
+                .position(x: x, y: reveal.centerY)
+        }
+    }
+
+    private func visibleTextHeight(in geometry: GeometryProxy) -> CGFloat {
+        let covered = model.detent == SurahSheetDetent.half ? halfSheetTop(in: geometry) : textInset
+        return max(geometry.size.height - covered, 0)
+    }
+
+    private func dragChanged(_ translationX: CGFloat, width: CGFloat, revealY: CGFloat) {
+        let side = SurahSwipe.side(for: translationX)
+        let neighbor = model.neighbor(side)
+        let offset = SurahSwipe.offset(for: translationX, hasNeighbor: neighbor != nil)
+        swipe.phase = .dragging
+        swipe.offset = offset
+        swipe.reveal = neighbor.map {
+            SurahReveal(side: side, destination: $0, caption: model.destination.neighborCaption(side),
+                        offset: offset, centerY: revealY)
+        }
+        swipe.isPastThreshold = neighbor != nil && SurahSwipe.progress(for: translationX, width: width) >= 1
+    }
+
+    private func dragEnded(_ translationX: CGFloat, velocityX: CGFloat, width: CGFloat) {
+        let available = Set(ReaderNeighbor.allCases.filter { model.neighbor($0) != nil })
+        let projected = SurahSwipe.projectedEnd(translationX: translationX, velocityX: velocityX)
+        guard let side = SurahSwipe.outcome(translationX: translationX, projectedEndX: projected,
+                                            width: width, available: available) else {
+            springBack()
+            return
+        }
+        switchSurah(side, width: width)
+    }
+
+    private func springBack() {
+        guard swipe.phase == .dragging else { return }
+        swipe.isPastThreshold = false
+        withAnimation(.snappy) {
+            swipe.offset = 0
+            swipe.reveal?.offset = 0
+        } completion: {
+            // A new drag may have started while the text was on its way back.
+            if swipe.phase == .dragging, swipe.offset == 0 { swipe = SurahSwipeState() }
+        }
+    }
+
+    /// Slides this surah out the way the finger went, then brings the neighbour in from the other
+    /// side. The sheet stays up and follows the new surah; nothing is presented again.
+    private func switchSurah(_ side: ReaderNeighbor, width: CGFloat) {
+        guard model.canSwitchSurah, swipe.phase.acceptsDrag,
+              let neighbor = model.neighbor(side), let route = model.neighborRoute(side) else { return }
+        model.leaveForNeighbor()
+        // From VoiceOver there's no drag, so nothing was uncovered; the transitions still need the side.
+        if swipe.side != side {
+            swipe.reveal = SurahReveal(side: side, destination: neighbor, caption: model.destination.neighborCaption(side),
+                                       offset: 0, centerY: 0)
+            swipe.showsReveal = false
+        }
+        swipe.phase = .leaving
+        guard !reduceMotion, width > 0 else { arrive(at: route); return }
+        // Starts at speed and ends exactly on time, so the next surah follows without a pause.
+        withAnimation(.easeOut(duration: SurahSwipe.leavingDuration)) {
+            let target = SurahSwipe.leavingOffset(toward: side, width: width)
+            swipe.offset = target
+            swipe.reveal?.offset = target
+        } completion: {
+            arrive(at: route)
+        }
+    }
+
+    private func arrive(at route: AppRoute) {
+        swipe.phase = .arriving
+        let next = SurahScreenModel(route: route, environment: environment)
+        next.prefersFullCoach = prefersFullCoach
+        let duration = SurahSwipe.arrivalDuration
+        withAnimation(reduceMotion ? .easeInOut(duration: duration) : .easeOut(duration: duration)) {
+            model = next
+            model.start()
+            swipe.offset = 0
+            swipe.isPastThreshold = false
+            swipe.showsReveal = false
+        } completion: {
+            swipe = SurahSwipeState()
+        }
+        model.savePosition()
+        AccessibilityNotification.Announcement(model.title).post()
     }
 
     private func refreshAudioDownloaded() {
