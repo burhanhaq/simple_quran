@@ -171,20 +171,18 @@ struct SurahScreen: View {
             } label: { Image(systemName: "chevron.down").frame(width: 32, height: 32) }
                 .accessibilityLabel("Close").accessibilityIdentifier("surah.close").disabled(model.recordingBusy)
         }
-        // Shown in both layouts: turning it on in continuous text shows ayah by ayah.
-        ToolbarItem(placement: .topBarTrailing) {
-            Toggle(isOn: $settings.showsTranslation) {
-                Label(String(localized: "Translation"), systemImage: "translate")
-            }
-            .toggleStyle(.button)
-            .accessibilityIdentifier("surah.translation")
-        }
+        // One button on each side keeps the title centered whatever its length.
         ToolbarItem(placement: .topBarTrailing) {
             Menu {
                 if model.focus != nil {
                     Button("Repeat and pause", systemImage: "repeat") { model.showsOptions = true }
                     Button("Change passage", systemImage: "slider.horizontal.3") { model.showsPassagePicker = true }
                 }
+                // Shown in both layouts: turning it on in continuous text shows ayah by ayah.
+                Toggle(isOn: $settings.showsTranslation) {
+                    Label(String(localized: "Translation"), systemImage: "translate")
+                }
+                .accessibilityIdentifier("surah.translation")
                 ReadingLayoutMenu()
                 Button(audioDownloaded ? "Audio downloaded" : downloading ? "Downloading audio…" : "Download this audio",
                        systemImage: audioDownloaded ? "checkmark.circle" : "arrow.down.circle") {
