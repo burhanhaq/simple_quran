@@ -49,6 +49,8 @@ struct MushafHighlightState: Equatable {
     var dimmedAyahs: Set<Int> = []
     /// Ayahs the user marked as slipped while testing themselves, underlined in the danger color.
     var markedAyahs: Set<Int> = []
+    /// Ayahs hidden for recall. Their words stay laid out but undrawn, so hiding never moves a line.
+    var hiddenAyahs: Set<Int> = []
 
     static let empty = MushafHighlightState()
 }
@@ -66,6 +68,7 @@ enum MushafTextBuilder {
     private static let bodyColor = UIColor(named: "BrownText") ?? .label
     private static let numberColor = UIColor(named: "Bronze") ?? bodyColor
     static let dimmedAlpha: CGFloat = 0.3
+    static let hiddenBarColor = bodyColor.withAlphaComponent(HiddenAyahStyle.barOpacity)
     private static let markedColor = UIColor(named: "DangerText") ?? .systemRed
 
     private static let bodyParagraph: NSParagraphStyle = {
@@ -88,7 +91,6 @@ enum MushafTextBuilder {
 
     static func make(
         verses: [QuranVerse],
-        hiddenAyahs: Set<Int>,
         basmala: String,
         contentSizeCategory: UIContentSizeCategory
     ) -> MushafAttributedPage {
@@ -127,7 +129,7 @@ enum MushafTextBuilder {
             }
 
             // The text already carries the sajdah sign where one belongs.
-            let bodyText = hiddenAyahs.contains(verse.globalAyah) ? QuranScript.hiddenPlaceholder : verse.text
+            let bodyText = verse.text
             let numberText = QuranScript.ayahNumber(verse.ayahInSurah) + " "
             let location = result.length
             var bodyAttributes: [NSAttributedString.Key: Any] = [
@@ -165,13 +167,19 @@ enum MushafTextBuilder {
         }
         affected.formUnion(previous.collectedAyahs.symmetricDifference(next.collectedAyahs))
 
+        let recolored = previous.dimmedAyahs.symmetricDifference(next.dimmedAyahs)
+            .union(previous.hiddenAyahs.symmetricDifference(next.hiddenAyahs))
+
         let storage = text as? NSTextStorage
         storage?.beginEditing()
-        for ayah in previous.dimmedAyahs.symmetricDifference(next.dimmedAyahs) {
+        for ayah in recolored {
             guard let range = ayahRanges[ayah], range.location + range.length <= text.length else { continue }
             let dimmed = next.dimmedAyahs.contains(ayah)
             let body = bodyRanges[ayah] ?? range
-            text.addAttribute(.foregroundColor, value: dimmed ? bodyColor.withAlphaComponent(dimmedAlpha) : bodyColor, range: body)
+            let words: UIColor = next.hiddenAyahs.contains(ayah) ? .clear
+                : dimmed ? bodyColor.withAlphaComponent(dimmedAlpha) : bodyColor
+            text.addAttribute(.foregroundColor, value: words, range: body)
+            // The number stays in view while the words are hidden, so the user knows which ayah to recite.
             let number = NSRange(location: NSMaxRange(body), length: NSMaxRange(range) - NSMaxRange(body))
             if number.length > 0 {
                 text.addAttribute(.foregroundColor, value: dimmed ? numberColor.withAlphaComponent(dimmedAlpha) : numberColor, range: number)
@@ -492,8 +500,9 @@ private struct MushafPageView: UIViewRepresentable {
         Coordinator(onSelect: onSelect, onAnchorRect: onAnchorRect)
     }
 
-    func makeUIView(context: Context) -> MushafPageTextView {
-        let textView = MushafPageTextView()
+    func makeUIView(context: Context) -> MushafPageHostView {
+        let host = MushafPageHostView()
+        let textView = host.textView
         textView.delegate = context.coordinator
         textView.backgroundColor = .clear
         textView.isEditable = false
@@ -504,43 +513,40 @@ private struct MushafPageView: UIViewRepresentable {
         textView.textContainer.lineFragmentPadding = 0
         // Ayahs are links for tapping, but their color comes from the text so a piece can dim its surroundings.
         textView.linkTextAttributes = [:]
-        textView.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        textView.setContentHuggingPriority(.required, for: .vertical)
-        textView.setContentCompressionResistancePriority(.required, for: .vertical)
         textView.onAnchorRect = { [weak coordinator = context.coordinator] rect in
             coordinator?.onAnchorRect(rect)
         }
-        return textView
+        return host
     }
 
-    func updateUIView(_ textView: MushafPageTextView, context: Context) {
+    func updateUIView(_ host: MushafPageHostView, context: Context) {
         context.coordinator.selectionEnabled = selectionEnabled
         context.coordinator.onSelect = onSelect
         context.coordinator.onAnchorRect = onAnchorRect
+        let textView = host.textView
         textView.isSelectable = selectionEnabled
         textView.anchorAyah = anchorAyah
         textView.configure(
             verses: verses,
-            hiddenAyahs: hiddenAyahs,
             basmala: basmala,
             highlight: MushafHighlightState(
                 highlightedAyah: highlightedAyah,
                 collectedAyahs: collectedAyahs,
                 dimmedAyahs: dimmedAyahs,
-                markedAyahs: markedAyahs
+                markedAyahs: markedAyahs,
+                hiddenAyahs: hiddenAyahs
             ),
-            contentSizeCategory: dynamicTypeSize.uiContentSizeCategory,
-            animatesHiding: context.transaction.animation != nil && !context.transaction.disablesAnimations
+            contentSizeCategory: dynamicTypeSize.uiContentSizeCategory
         )
     }
 
-    func sizeThatFits(_ proposal: ProposedViewSize, uiView: MushafPageTextView, context: Context) -> CGSize? {
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: MushafPageHostView, context: Context) -> CGSize? {
         let width = proposal.width ?? uiView.bounds.width
         guard width > 0, width.isFinite else {
             return CGSize(width: 0, height: 1)
         }
         updateUIView(uiView, context: context)
-        return CGSize(width: width, height: uiView.measuredHeight(for: width))
+        return CGSize(width: width, height: uiView.textView.measuredHeight(for: width))
     }
 
     @MainActor
@@ -572,6 +578,16 @@ private struct MushafPageView: UIViewRepresentable {
             return UIAction { [weak self] _ in
                 self?.onSelect(globalAyah)
             }
+        }
+
+        /// Hidden words stay in the text for layout, so the menu mustn't offer to copy or look them up.
+        func textView(
+            _ textView: UITextView,
+            editMenuForTextIn range: NSRange,
+            suggestedActions: [UIMenuElement]
+        ) -> UIMenu? {
+            guard let page = textView as? MushafPageTextView, page.hidesWords(in: range) else { return nil }
+            return UIMenu(children: [])
         }
     }
 }
@@ -605,13 +621,15 @@ private final class MushafPageTextView: UITextView {
         }
     }
 
+    /// The text was built anew, so anything drawn over it must be placed again.
+    var onRebuild: (() -> Void)?
+    /// Ayahs opened or hidden on text that kept its layout, so the change can animate in place.
+    var onHidingChange: ((_ revealed: Set<Int>, _ covered: Set<Int>) -> Void)?
+
     private var pendingVerses: [QuranVerse] = []
-    private var pendingHiddenAyahs: Set<Int> = []
     private var pendingBasmala = ""
     private var pendingHighlight = MushafHighlightState.empty
     private var pendingCategory: UIContentSizeCategory = .large
-    /// Hiding or showing ayahs as part of an animation crossfades the text instead of cutting to it.
-    private var pendingAnimatesHiding = false
     private var renderKey: RenderKey?
     private var appliedHighlight = MushafHighlightState.empty
     private var ayahRanges: [Int: NSRange] = [:]
@@ -619,20 +637,18 @@ private final class MushafPageTextView: UITextView {
     private var lastReportedAnchor: CGRect?
     private var isApplying = false
 
+    var hiddenAyahs: Set<Int> { appliedHighlight.hiddenAyahs }
+
     func configure(
         verses: [QuranVerse],
-        hiddenAyahs: Set<Int>,
         basmala: String,
         highlight: MushafHighlightState,
-        contentSizeCategory: UIContentSizeCategory,
-        animatesHiding: Bool
+        contentSizeCategory: UIContentSizeCategory
     ) {
         pendingVerses = verses
-        pendingHiddenAyahs = hiddenAyahs
         pendingBasmala = basmala
         pendingHighlight = highlight
         pendingCategory = contentSizeCategory
-        pendingAnimatesHiding = animatesHiding
         if bounds.width > 0 {
             apply(width: bounds.width)
         }
@@ -663,11 +679,7 @@ private final class MushafPageTextView: UITextView {
 
     private func apply(width: CGFloat) {
         guard width > 0, !pendingVerses.isEmpty else { return }
-        let key = RenderKey(
-            verseIDs: pendingVerses.map(\.globalAyah),
-            hiddenAyahs: pendingHiddenAyahs,
-            category: pendingCategory
-        )
+        let key = RenderKey(verseIDs: pendingVerses.map(\.globalAyah), category: pendingCategory)
         guard !isApplying else { return }
         isApplying = true
         defer { isApplying = false }
@@ -678,7 +690,6 @@ private final class MushafPageTextView: UITextView {
             defer { QuranLog.rendering.endInterval("Page build", signpost) }
             let document = MushafTextBuilder.make(
                 verses: pendingVerses,
-                hiddenAyahs: pendingHiddenAyahs,
                 basmala: pendingBasmala,
                 contentSizeCategory: pendingCategory
             )
@@ -693,27 +704,74 @@ private final class MushafPageTextView: UITextView {
             ayahRanges = document.ayahRanges
             bodyRanges = document.bodyRanges
             appliedHighlight = pendingHighlight
-            let onlyHidingChanged = renderKey?.verseIDs == key.verseIDs && renderKey?.category == key.category
             renderKey = key
-            if onlyHidingChanged, pendingAnimatesHiding {
-                UIView.transition(with: self, duration: Self.hidingDuration,
-                                  options: [.transitionCrossDissolve, .allowUserInteraction]) { self.attributedText = mutable }
-            } else {
-                attributedText = mutable
-            }
+            attributedText = mutable
             lastReportedAnchor = nil
+            onRebuild?()
             return
         }
 
         guard appliedHighlight != pendingHighlight else { return }
+        let previous = appliedHighlight
         MushafTextBuilder.applyHighlightChange(
             to: textStorage,
             ayahRanges: ayahRanges,
             bodyRanges: bodyRanges,
-            from: appliedHighlight,
+            from: previous,
             to: pendingHighlight
         )
         appliedHighlight = pendingHighlight
+        let revealed = previous.hiddenAyahs.subtracting(pendingHighlight.hiddenAyahs)
+        let covered = pendingHighlight.hiddenAyahs.subtracting(previous.hiddenAyahs)
+        if !revealed.isEmpty || !covered.isEmpty {
+            onHidingChange?(revealed, covered)
+        }
+    }
+
+    /// Where an ayah's words sit, one rect per line, in this view's coordinates. Standard segments
+    /// measure every line alike; selection rects stretch a line that continues an ayah up into the
+    /// line spacing above it.
+    func bodyRects(for globalAyah: Int) -> [CGRect] {
+        guard let range = bodyRanges[globalAyah],
+              let manager = textLayoutManager,
+              let content = manager.textContentManager,
+              let start = content.location(content.documentRange.location, offsetBy: range.location),
+              let end = content.location(start, offsetBy: range.length),
+              let textRange = NSTextRange(location: start, end: end)
+        else { return [] }
+        manager.ensureLayout(for: textRange)
+        var lines: [CGRect] = []
+        manager.enumerateTextSegments(in: textRange, type: .standard, options: .rangeNotRequired) { _, frame, _, _ in
+            guard let segment = usableRect(frame.offsetBy(dx: textContainerInset.left, dy: textContainerInset.top)) else { return true }
+            // Runs of one line can come back as separate segments; a line gets one bar.
+            if let index = lines.firstIndex(where: { abs($0.midY - segment.midY) < 1 }) {
+                lines[index] = lines[index].union(segment)
+            } else {
+                lines.append(segment)
+            }
+            return true
+        }
+        return lines
+    }
+
+    func hidesWords(in range: NSRange) -> Bool {
+        hiddenAyahs.contains { ayah in
+            bodyRanges[ayah].map { NSIntersectionRange($0, range).length > 0 } ?? false
+        }
+    }
+
+    /// VoiceOver says a hidden ayah is hidden instead of reading out the words being recited.
+    override var accessibilityValue: String? {
+        get {
+            guard !hiddenAyahs.isEmpty, let text = attributedText?.string else { return super.accessibilityValue }
+            let spoken = NSMutableString(string: text)
+            let ranges = hiddenAyahs.compactMap { bodyRanges[$0] }.sorted { $0.location > $1.location }
+            for range in ranges where NSMaxRange(range) <= spoken.length {
+                spoken.replaceCharacters(in: range, with: String(localized: "Arabic hidden for recall"))
+            }
+            return spoken as String
+        }
+        set { super.accessibilityValue = newValue }
     }
 
     private func reportAnchor() {
@@ -750,11 +808,227 @@ private final class MushafPageTextView: UITextView {
             && abs(lhs.height - rhs.height) < 0.5
     }
 
-    private static let hidingDuration: TimeInterval = 0.3
-
     private struct RenderKey: Equatable {
         var verseIDs: [Int]
-        var hiddenAyahs: Set<Int>
         var category: UIContentSizeCategory
+    }
+}
+
+/// A page's text with the bars that stand in for its hidden ayahs laid over it, above any highlight
+/// behind the words. The bars sit beside the text, not inside it, so the mask that sweeps an opening
+/// ayah's ink in never cuts them, and they let touches through to the ayah underneath.
+private final class MushafPageHostView: UIView {
+    let textView = MushafPageTextView()
+    private let barsView = UIView()
+    /// Bars over the ayahs hidden now. A bar fading out has already left.
+    private var bars: [Int: CAShapeLayer] = [:]
+    private var fadingBars: [CALayer] = []
+    private var barsSize: CGSize?
+    private var sweepMask: CALayer?
+
+    private static let textFadeKey = "hiding"
+    private static let sweepKey = "sweep"
+
+    override init(frame: CGRect) {
+        super.init(frame: frame)
+        barsView.isUserInteractionEnabled = false
+        addSubview(textView)
+        addSubview(barsView)
+        textView.onRebuild = { [weak self] in
+            self?.finishAnimations()
+            self?.barsSize = nil
+            self?.setNeedsLayout()
+        }
+        textView.onHidingChange = { [weak self] revealed, covered in
+            self?.animateHiding(revealed: revealed, covered: covered)
+        }
+        registerForTraitChanges([UITraitUserInterfaceStyle.self]) { (self: Self, _) in
+            let color = self.barColor
+            for bar in self.bars.values { bar.fillColor = color }
+        }
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) has not been implemented")
+    }
+
+    override func layoutSubviews() {
+        super.layoutSubviews()
+        textView.frame = bounds
+        barsView.frame = bounds
+        guard bounds.width > 0, barsSize != bounds.size else { return }
+        // A new width moves the lines, so anything mid-flight finishes where it was headed.
+        finishAnimations()
+        textView.layoutIfNeeded()
+        placeBars()
+        barsSize = bounds.size
+    }
+
+    // MARK: Bars
+
+    private var barColor: CGColor {
+        MushafTextBuilder.hiddenBarColor.resolvedColor(with: traitCollection).cgColor
+    }
+
+    /// One bar per line the ayah's words take, so the page keeps its shape while they're hidden.
+    private func barPath(for ayah: Int) -> CGPath {
+        let path = CGMutablePath()
+        for line in textView.bodyRects(for: ayah) {
+            let height = line.height * HiddenAyahStyle.barHeight
+            let bar = CGRect(x: line.minX, y: line.midY - height / 2, width: line.width, height: height)
+            let radius = min(height, line.width) / 2
+            path.addRoundedRect(in: bar, cornerWidth: radius, cornerHeight: radius)
+        }
+        return path
+    }
+
+    private func makeBar(for ayah: Int) -> CAShapeLayer {
+        let bar = CAShapeLayer()
+        bar.fillColor = barColor
+        bar.path = barPath(for: ayah)
+        barsView.layer.addSublayer(bar)
+        bars[ayah] = bar
+        return bar
+    }
+
+    /// Bars for exactly the ayahs hidden now, placed on the current lines.
+    private func placeBars() {
+        let hidden = textView.hiddenAyahs
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for (ayah, bar) in bars where !hidden.contains(ayah) {
+            bar.removeFromSuperlayer()
+            bars[ayah] = nil
+        }
+        for ayah in hidden {
+            if let bar = bars[ayah] { bar.path = barPath(for: ayah) } else { _ = makeBar(for: ayah) }
+        }
+        CATransaction.commit()
+    }
+
+    // MARK: Animation
+
+    /// Hiding fades the words out as their bars fade in. Opening sweeps each ayah's ink in from the
+    /// right as its bar fades, one ayah after another; with Reduce Motion it fades instead.
+    private func animateHiding(revealed: Set<Int>, covered: Set<Int>) {
+        finishAnimations()
+        let sweeps = !revealed.isEmpty && !UIAccessibility.isReduceMotionEnabled
+        let delays = sweeps ? HiddenAyahStyle.revealDelays(for: revealed) : [:]
+        let now = CACurrentMediaTime()
+
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        if !covered.isEmpty || (!revealed.isEmpty && !sweeps) {
+            fadeText(duration: covered.isEmpty ? HiddenAyahStyle.revealDuration : HiddenAyahStyle.hideDuration)
+        }
+        for ayah in covered {
+            fade(makeBar(for: ayah), from: 0, to: 1, duration: HiddenAyahStyle.hideDuration, beginTime: now)
+        }
+        for ayah in revealed {
+            guard let bar = bars.removeValue(forKey: ayah) else { continue }
+            fadingBars.append(bar)
+            fade(bar, from: 1, to: 0, duration: HiddenAyahStyle.revealDuration, beginTime: now + (delays[ayah] ?? 0))
+        }
+        if sweeps { sweepIn(delays, at: now) }
+
+        let mask = sweepMask
+        let fading = fadingBars
+        CATransaction.setCompletionBlock { [weak self] in
+            fading.forEach { $0.removeFromSuperlayer() }
+            guard let self else { return }
+            self.fadingBars.removeAll { layer in fading.contains { $0 === layer } }
+            if let mask, self.sweepMask === mask { self.clearSweep() }
+        }
+        CATransaction.commit()
+    }
+
+    private func fadeText(duration: TimeInterval) {
+        let fade = CATransition()
+        fade.type = .fade
+        fade.duration = duration
+        textView.layer.add(fade, forKey: Self.textFadeKey)
+    }
+
+    private func fade(_ layer: CALayer, from: Float, to: Float, duration: TimeInterval, beginTime: CFTimeInterval) {
+        layer.opacity = to
+        let fade = CABasicAnimation(keyPath: "opacity")
+        fade.fromValue = from
+        fade.toValue = to
+        fade.duration = duration
+        fade.beginTime = beginTime
+        fade.fillMode = .backwards
+        fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        layer.add(fade, forKey: nil)
+    }
+
+    /// Masks the text so the opening ayahs' words start undrawn, then sweeps each one's ink in
+    /// right to left behind a soft edge. Everything else on the page shows as usual throughout.
+    private func sweepIn(_ delays: [Int: TimeInterval], at now: CFTimeInterval) {
+        let mask = CALayer()
+        mask.frame = textView.bounds
+        let rest = CAShapeLayer()
+        rest.frame = mask.bounds
+        rest.fillRule = .evenOdd
+        let restPath = CGMutablePath()
+        restPath.addRect(mask.bounds)
+        mask.addSublayer(rest)
+
+        for (ayah, delay) in delays {
+            let lines = textView.bodyRects(for: ayah)
+            guard !lines.isEmpty else { continue }
+            restPath.addRects(lines)
+            mask.addSublayer(sweep(over: lines, beginTime: now + delay))
+        }
+        rest.path = restPath
+        textView.layer.mask = mask
+        sweepMask = mask
+    }
+
+    private func sweep(over lines: [CGRect], beginTime: CFTimeInterval) -> CALayer {
+        let box = lines.reduce(CGRect.null) { $0.union($1) }
+        let area = CALayer()
+        area.frame = box
+        let shape = CAShapeLayer()
+        shape.frame = area.bounds
+        let linesPath = CGMutablePath()
+        linesPath.addRects(lines, transform: CGAffineTransform(translationX: -box.minX, y: -box.minY))
+        shape.path = linesPath
+        area.mask = shape
+
+        // Clear on the left, opaque from the soft edge on. It starts just past the ayah's right
+        // side and ends with the opaque part covering it.
+        let edge = box.width * HiddenAyahStyle.sweepSoftness
+        let ink = CAGradientLayer()
+        ink.colors = [UIColor.clear.cgColor, UIColor.black.cgColor]
+        ink.locations = [0, NSNumber(value: Double(edge / (box.width + edge)))]
+        ink.startPoint = CGPoint(x: 0, y: 0.5)
+        ink.endPoint = CGPoint(x: 1, y: 0.5)
+        ink.frame = CGRect(x: -edge, y: 0, width: box.width + edge, height: box.height)
+        area.addSublayer(ink)
+
+        let move = CABasicAnimation(keyPath: "position.x")
+        move.fromValue = ink.position.x + box.width + edge
+        move.toValue = ink.position.x
+        move.duration = HiddenAyahStyle.revealDuration
+        move.beginTime = beginTime
+        move.fillMode = .backwards
+        move.timingFunction = CAMediaTimingFunction(name: .easeOut)
+        ink.add(move, forKey: Self.sweepKey)
+        return area
+    }
+
+    private func clearSweep() {
+        textView.layer.mask = nil
+        sweepMask = nil
+    }
+
+    /// Jumps whatever is animating to where it was headed.
+    private func finishAnimations() {
+        clearSweep()
+        textView.layer.removeAnimation(forKey: Self.textFadeKey)
+        fadingBars.forEach { $0.removeFromSuperlayer() }
+        fadingBars.removeAll()
+        bars.values.forEach { $0.removeAllAnimations() }
     }
 }

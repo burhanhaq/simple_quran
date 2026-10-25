@@ -39,7 +39,7 @@ struct MushafFlowTests {
             sampleVerse(globalAyah: 9, ayahInSurah: 2, page: 2, text: "ذَٰلِكَ ٱلْكِتَٰبُ")
         ]
 
-        let page = MushafTextBuilder.make(verses: verses, hiddenAyahs: [], basmala: Self.basmala, contentSizeCategory: .large)
+        let page = MushafTextBuilder.make(verses: verses, basmala: Self.basmala, contentSizeCategory: .large)
         let firstRange = try #require(page.ayahRanges[8])
         let secondRange = try #require(page.ayahRanges[9])
 
@@ -49,23 +49,42 @@ struct MushafFlowTests {
         #expect(page.ayahRanges.count == verses.count)
     }
 
-    @Test func hiddenAyahKeepsLaterRangesOnTheFollowingAyah() throws {
+    @Test func hidingAnAyahKeepsItsWordsInPlaceButUndrawn() throws {
         let verses = [
             sampleVerse(globalAyah: 8, ayahInSurah: 1, page: 2, text: "الٓمٓ"),
             sampleVerse(globalAyah: 9, ayahInSurah: 2, page: 2, text: "ذَٰلِكَ ٱلْكِتَٰبُ")
         ]
+        let page = MushafTextBuilder.make(verses: verses, basmala: Self.basmala, contentSizeCategory: .large)
+        let text = NSMutableAttributedString(attributedString: page.text)
+        let original = text.string
+        let body = try #require(page.bodyRanges[8])
+        let numberLocation = NSMaxRange(body)
+        let following = try #require(page.ayahRanges[9])
+        func alpha(at location: Int) -> CGFloat {
+            (text.attribute(.foregroundColor, at: location, effectiveRange: nil) as? UIColor)?.cgColor.alpha ?? 1
+        }
 
-        let page = MushafTextBuilder.make(verses: verses, hiddenAyahs: [8], basmala: Self.basmala, contentSizeCategory: .large)
-        let hiddenRange = try #require(page.ayahRanges[8])
-        let followingRange = try #require(page.ayahRanges[9])
-        let hiddenText = substring(page.text, range: hiddenRange)
-        let followingText = substring(page.text, range: followingRange)
+        let hidden = MushafHighlightState(hiddenAyahs: [8])
+        MushafTextBuilder.applyHighlightChange(to: text, ayahRanges: page.ayahRanges, bodyRanges: page.bodyRanges, from: .empty, to: hidden)
+        #expect(text.string == original)
+        #expect(alpha(at: body.location) == 0)
+        #expect(alpha(at: numberLocation) == 1)
+        #expect(alpha(at: following.location) == 1)
 
-        #expect(hiddenText.hasPrefix(QuranScript.hiddenPlaceholder))
-        #expect(hiddenText.contains("الٓمٓ") == false)
-        #expect(followingText.hasPrefix("ذَٰلِكَ ٱلْكِتَٰبُ"))
-        #expect(NSIntersectionRange(hiddenRange, followingRange).length == 0)
-        #expect(hiddenRange.location + hiddenRange.length <= followingRange.location)
+        MushafTextBuilder.applyHighlightChange(to: text, ayahRanges: page.ayahRanges, bodyRanges: page.bodyRanges, from: hidden, to: .empty)
+        #expect(alpha(at: body.location) == 1)
+    }
+
+    @Test func ayahsOpeningTogetherCascadeInReadingOrderWithinACap() throws {
+        #expect(HiddenAyahStyle.revealDelays(for: [12]) == [12: 0])
+
+        let three = HiddenAyahStyle.revealDelays(for: [7, 5, 6])
+        #expect(three[5] == 0)
+        #expect(try #require(three[6]) < #require(three[7]))
+
+        let long = HiddenAyahStyle.revealDelays(for: Set(1...40))
+        #expect(long[1] == 0)
+        #expect(try #require(long[40]) <= HiddenAyahStyle.maxRevealSpread + 0.0001)
     }
 
     @Test func applyingAHighlightChangesBackgroundWithoutChangingTheString() throws {
@@ -73,7 +92,7 @@ struct MushafFlowTests {
             sampleVerse(globalAyah: 8, ayahInSurah: 1, page: 2, text: "الٓمٓ"),
             sampleVerse(globalAyah: 9, ayahInSurah: 2, page: 2, text: "ذَٰلِكَ ٱلْكِتَٰبُ")
         ]
-        let page = MushafTextBuilder.make(verses: verses, hiddenAyahs: [], basmala: Self.basmala, contentSizeCategory: .large)
+        let page = MushafTextBuilder.make(verses: verses, basmala: Self.basmala, contentSizeCategory: .large)
         let text = NSMutableAttributedString(attributedString: page.text)
         let original = text.string
         let first = try #require(page.ayahRanges[8])
@@ -109,7 +128,7 @@ struct MushafFlowTests {
             sampleVerse(globalAyah: 8, ayahInSurah: 1, page: 2, text: "الٓمٓ"),
             sampleVerse(globalAyah: 262, ayahInSurah: 255, page: 42, text: "ٱللَّهُ")
         ]
-        let page = MushafTextBuilder.make(verses: verses, hiddenAyahs: [], basmala: Self.basmala, contentSizeCategory: .large)
+        let page = MushafTextBuilder.make(verses: verses, basmala: Self.basmala, contentSizeCategory: .large)
 
         let first = substring(page.text, range: try #require(page.ayahRanges[8]))
         let second = substring(page.text, range: try #require(page.ayahRanges[262]))
@@ -120,7 +139,7 @@ struct MushafFlowTests {
     @Test func sajdahSignComesFromTheTextOnly() throws {
         var verse = sampleVerse(globalAyah: 1160, ayahInSurah: 206, page: 176, text: "وَلَهُۥ يَسۡجُدُونَ۩")
         verse.sajdah = .recommended
-        let page = MushafTextBuilder.make(verses: [verse], hiddenAyahs: [], basmala: Self.basmala, contentSizeCategory: .large)
+        let page = MushafTextBuilder.make(verses: [verse], basmala: Self.basmala, contentSizeCategory: .large)
 
         #expect(page.text.string.filter { $0 == "۩" }.count == 1)
     }
@@ -148,7 +167,7 @@ struct MushafFlowTests {
         let elapsed = clock.measure {
             for block in blocks {
                 let page = MushafTextBuilder.make(
-                    verses: block.verses, hiddenAyahs: [], basmala: catalog.basmala, contentSizeCategory: .large
+                    verses: block.verses, basmala: catalog.basmala, contentSizeCategory: .large
                 )
                 let storage = NSTextStorage(attributedString: page.text)
                 let layout = NSLayoutManager()
@@ -182,7 +201,7 @@ struct MushafFlowTests {
             sampleVerse(globalAyah: 8, ayahInSurah: 1, page: 2, text: "الٓمٓ"),
             sampleVerse(globalAyah: 9, ayahInSurah: 2, page: 2, text: "ذَٰلِكَ ٱلْكِتَٰبُ")
         ]
-        let page = MushafTextBuilder.make(verses: verses, hiddenAyahs: [], basmala: Self.basmala, contentSizeCategory: .large)
+        let page = MushafTextBuilder.make(verses: verses, basmala: Self.basmala, contentSizeCategory: .large)
         let text = NSMutableAttributedString(attributedString: page.text)
         let body = try #require(page.bodyRanges[8])
         let whole = try #require(page.ayahRanges[8])

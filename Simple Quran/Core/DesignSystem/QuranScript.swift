@@ -11,8 +11,6 @@ enum QuranScript {
     nonisolated static let fontExtension = "ttf"
     /// Truncated like this inside the font itself. Any other spelling silently falls back to the system font.
     nonisolated static let postScriptName = "KFGQPCHAFSUthmanicScript-Regula"
-    /// Shown in place of an ayah hidden for recall. The font has no bullet, so iOS draws it in the system font.
-    static let hiddenPlaceholder = "••••••"
 
     nonisolated enum Size: Hashable, Sendable {
         case body
@@ -108,5 +106,30 @@ enum QuranScript {
         let attributed = NSAttributedString(string: sample, attributes: [.font: font])
         let line = CTLineCreateWithAttributedString(attributed)
         _ = CTLineGetTypographicBounds(line, nil, nil, nil)
+    }
+}
+
+/// How an ayah hidden for recall looks and opens. Its words keep their place on the page but
+/// aren't drawn; soft bars sit over its lines instead, so hiding or showing it never reflows the text.
+/// Opening, the ink sweeps in from the right, the way the words are read, as the bars fade.
+enum HiddenAyahStyle {
+    static let barOpacity: CGFloat = 0.13
+    /// A bar's height as a share of its line's.
+    static let barHeight: CGFloat = 0.36
+    /// The sweep's soft edge as a share of the ayah's width, wide enough that it reads as a fade leaning right to left.
+    static let sweepSoftness: CGFloat = 0.6
+    static let revealDuration: TimeInterval = 0.45
+    static let hideDuration: TimeInterval = 0.25
+    /// Ayahs opening together follow one another in reading order this far apart...
+    static let revealStagger: TimeInterval = 0.06
+    /// ...unless that would spread a long piece over more than this.
+    static let maxRevealSpread: TimeInterval = 0.36
+
+    /// When each ayah opening together starts. A single ayah opens at once; a whole piece cascades.
+    static func revealDelays(for ayahs: Set<Int>) -> [Int: TimeInterval] {
+        let ordered = ayahs.sorted()
+        guard ordered.count > 1 else { return Dictionary(uniqueKeysWithValues: ordered.map { ($0, 0) }) }
+        let step = min(revealStagger, maxRevealSpread / TimeInterval(ordered.count - 1))
+        return Dictionary(uniqueKeysWithValues: ordered.enumerated().map { ($1, TimeInterval($0) * step) })
     }
 }

@@ -199,6 +199,8 @@ struct QuranAyahText: View {
     /// Shown under the Arabic, and hidden with it while testing.
     var translation: String? = nil
 
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text(displayedText)
@@ -206,18 +208,22 @@ struct QuranAyahText: View {
                 .lineSpacing(12)
                 .foregroundStyle(Color.appBrownText)
                 .underline(marked, color: .dangerWarm)
+                .textRenderer(HiddenAyahRenderer(shown: hidden ? 0 : 1, sweeps: !reduceMotion))
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .environment(\.layoutDirection, .rightToLeft)
                 .accessibilityLabel(hidden ? String(localized: "Arabic hidden for recall") : verse.text)
                 .accessibilityValue(marked ? String(localized: "Marked as slipped") : "")
-            if let translation, !hidden {
+            // Laid out even while hidden, so opening the ayah doesn't push the rows below.
+            if let translation {
                 Text(translation)
                     .font(.callout)
                     .foregroundStyle(Color.secondaryWarm)
                     .multilineTextAlignment(.leading)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .environment(\.layoutDirection, .leftToRight)
+                    .opacity(hidden ? 0 : 1)
+                    .accessibilityHidden(hidden)
             }
             HStack {
                 if verse.sajdah != .none {
@@ -240,7 +246,6 @@ struct QuranAyahText: View {
 
     /// The ayah followed by its number, which the font draws inside the end-of-ayah ornament.
     private var displayedText: AttributedString {
-        guard !hidden else { return AttributedString(QuranScript.hiddenPlaceholder) }
         var number = AttributedString(QuranScript.ayahNumber(verse.ayahInSurah))
         number.foregroundColor = Color.bronze
         return AttributedString(verse.text) + number
@@ -254,6 +259,55 @@ struct QuranAyahText: View {
             return Color.appCollectedFill
         }
         return Color.clear
+    }
+}
+
+/// Draws Quran text hidden for recall as soft bars over its lines and opens it the way continuous
+/// text does: the ink sweeps in from the right as the bars fade. The words keep their layout throughout.
+struct HiddenAyahRenderer: TextRenderer, Animatable {
+    /// 0 hidden, 1 in full view.
+    var shown: Double
+    /// False with Reduce Motion, which fades the ink in instead.
+    var sweeps = true
+
+    var animatableData: Double {
+        get { shown }
+        set { shown = newValue }
+    }
+
+    func draw(layout: Text.Layout, in context: inout GraphicsContext) {
+        guard shown < 1 else {
+            for line in layout { context.draw(line) }
+            return
+        }
+        let lines = layout.map(\.typographicBounds.rect)
+        var bars = context
+        bars.opacity = 1 - shown
+        for line in lines {
+            let height = line.height * HiddenAyahStyle.barHeight
+            let bar = CGRect(x: line.minX, y: line.midY - height / 2, width: line.width, height: height)
+            bars.fill(Path(roundedRect: bar, cornerRadius: min(height, line.width) / 2),
+                      with: .color(Color.appBrownText.opacity(HiddenAyahStyle.barOpacity)))
+        }
+        guard shown > 0 else { return }
+
+        var ink = context
+        if sweeps {
+            // A soft edge that starts past the right side and ends with the opaque part over every line.
+            let box = lines.reduce(CGRect.null) { $0.union($1) }
+            let edge = box.width * HiddenAyahStyle.sweepSoftness
+            let trailing = box.maxX - shown * (box.width + edge)
+            ink.clipToLayer { mask in
+                mask.fill(Path(box), with: .linearGradient(
+                    Gradient(colors: [.clear, .black]),
+                    startPoint: CGPoint(x: trailing, y: box.midY),
+                    endPoint: CGPoint(x: trailing + edge, y: box.midY)
+                ))
+            }
+        } else {
+            ink.opacity = shown
+        }
+        for line in layout { ink.draw(line) }
     }
 }
 

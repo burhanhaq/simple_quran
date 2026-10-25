@@ -29,6 +29,9 @@ struct QuranTextView<AyahMenu: View>: View {
     @State private var seededListPosition = false
     @State private var follow = AutoFollow()
     @State private var resumeTask: Task<Void, Never>?
+    /// The ayahs ayah-by-ayah layout draws hidden. It trails `hiddenAyahs` by a moment so ayahs
+    /// opening together can cascade in reading order, as they do in continuous text.
+    @State private var listHidden: Set<Int>?
 
     /// Translation always shows ayah by ayah; continuous text stays Arabic only.
     private var translation: BundledTranslation? {
@@ -63,6 +66,7 @@ struct QuranTextView<AyahMenu: View>: View {
         .onChange(of: environment.settings.displayedReadingLayout) { _, _ in seededListPosition = true }
         .onScrollPhaseChange { _, phase in scrollPhaseChanged(to: phase) }
         .onChange(of: followRequest) { _, _ in resumeFollowing() }
+        .onChange(of: hiddenAyahs) { old, new in showHiding(from: old, to: new) }
         .overlay(alignment: .top) { returnButton }
         .animation(.snappy, value: follow.showsReturnButton(isPlaying: isPlaying))
         .onDisappear { resumeTask?.cancel() }
@@ -86,6 +90,17 @@ struct QuranTextView<AyahMenu: View>: View {
             .transition(.move(edge: .top).combined(with: .opacity))
             .accessibilityHint(String(localized: "Scrolls back to the ayah being played"))
             .accessibilityIdentifier("quran.currentAyah")
+        }
+    }
+
+    private func showHiding(from old: Set<Int>, to new: Set<Int>) {
+        let revealed = old.subtracting(new)
+        withAnimation(.easeOut(duration: HiddenAyahStyle.hideDuration)) {
+            listHidden = (listHidden ?? old).union(new.subtracting(old))
+        }
+        let delays = reduceMotion ? revealed.reduce(into: [:]) { $0[$1] = 0 } : HiddenAyahStyle.revealDelays(for: revealed)
+        for (ayah, delay) in delays {
+            withAnimation(.easeOut(duration: HiddenAyahStyle.revealDuration).delay(delay)) { _ = listHidden?.remove(ayah) }
         }
     }
 
@@ -136,7 +151,7 @@ struct QuranTextView<AyahMenu: View>: View {
                         VStack(spacing: 0) {
                             if verse.showsBasmalaBefore { BasmalaHeader() }
                             QuranAyahText(verse: verse, isCurrent: verse.globalAyah == currentAyah,
-                                          hidden: hiddenAyahs.contains(verse.globalAyah),
+                                          hidden: (listHidden ?? hiddenAyahs).contains(verse.globalAyah),
                                           marked: markedAyahs.contains(verse.globalAyah),
                                           translation: translation?.text(globalAyah: verse.globalAyah))
                         }
