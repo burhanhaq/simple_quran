@@ -40,35 +40,31 @@ final class AppSettings {
         static let streamWhenMissing = "settings.streamWhenMissing"
         static let downloadWhilePlaying = "settings.downloadWhilePlaying"
         static let reciterID = "settings.reciterID"
-        static let lastTab = "settings.lastTab"
         static let quranReadingLayout = "settings.quranReadingLayout"
         static let showsTranslation = "settings.showsTranslation"
         static let hasSeenTranslationLayoutNote = "settings.hasSeenTranslationLayoutNote"
         static let hasSeenQuranHint = "settings.hasSeenQuranHint"
         static let appearance = "settings.appearance"
-        static let showsStatusChangeNote = "settings.showsStatusChangeNote"
         static let startTab = "settings.startTab"
         static let hasCompletedOnboarding = "settings.hasCompletedOnboarding"
+        static let learningTargets = "learning.targets"
+        static let activeTargetID = "learning.activeTarget"
         static let pieceSize = "learning.pieceSize"
-        static let legacyPracticeByPage = "learning.byPage"
         static let memorizePlayback = "learning.playback"
-        static let piecesAdopted = "learning.piecesAdopted"
         static let revisionCycle = "learning.revisionCycle"
-        static let revisionClocksStarted = "learning.revisionClocksStarted"
-        static let legacyLearningStart = "learning.start"
-        static let legacyLearningEnd = "learning.end"
         static let dailyLog = "learning.dailyLog"
+        static let readingAyah = "reading.ayah"
     }
 
     var learningTargets: [LearningTarget] {
         didSet {
             if let data = try? JSONEncoder().encode(learningTargets) {
-                defaults.set(data, forKey: "learning.targets")
+                defaults.set(data, forKey: Key.learningTargets)
             }
         }
     }
     var activeTargetID: UUID? {
-        didSet { defaults.set(activeTargetID?.uuidString, forKey: "learning.activeTarget") }
+        didSet { defaults.set(activeTargetID?.uuidString, forKey: Key.activeTargetID) }
     }
 
     /// The one plan that drives "New" each day; other targets wait as "Up next".
@@ -128,35 +124,8 @@ final class AppSettings {
         learningTargets[index].resumeRange = range
     }
 
-    /// Earlier versions kept a single learning place outside any plan; turn it into the
-    /// surah plan it belonged to so the user keeps their place.
-    func adoptLegacyLearningPlace(catalog: some QuranCatalog) {
-        let start = defaults.integer(forKey: Key.legacyLearningStart)
-        let end = defaults.integer(forKey: Key.legacyLearningEnd)
-        defaults.removeObject(forKey: Key.legacyLearningStart)
-        defaults.removeObject(forKey: Key.legacyLearningEnd)
-        guard learningTargets.isEmpty, start > 0, end >= start,
-              let verse = catalog.verse(globalAyah: start),
-              let surah = catalog.surah(number: verse.surahNumber) else { return }
-        var plan = LearningTarget(range: surah.range)
-        if surah.range.contains(end) { plan.resumeRange = .clamped(start: start, end: end) }
-        setActivePlan(plan)
-    }
-
-    /// Plans saved before passages followed the mushaf page resume at the piece holding their place.
-    func adoptPagePieces(catalog: some QuranCatalog) {
-        guard !defaults.bool(forKey: Key.piecesAdopted) else { return }
-        defaults.set(true, forKey: Key.piecesAdopted)
-        for index in learningTargets.indices {
-            guard let resume = learningTargets[index].resumeRange else { continue }
-            var target = learningTargets[index]
-            target.resumeRange = nil
-            learningTargets[index].resumeRange = target.passage(from: resume.startGlobalAyah, catalog: catalog, size: pieceSize)
-        }
-    }
-
     var readingAyah: Int {
-        didSet { defaults.set(readingAyah, forKey: "reading.ayah") }
+        didSet { defaults.set(readingAyah, forKey: Key.readingAyah) }
     }
     /// How much of a page each memorize piece covers, for every plan and passage.
     var pieceSize: PieceSize {
@@ -166,18 +135,11 @@ final class AppSettings {
     var revisionCycle: RevisionCycle {
         didSet { defaults.set(revisionCycle.rawValue, forKey: Key.revisionCycle) }
     }
-    /// Memorized ayahs from before revision dates were kept have had their clocks started.
-    var revisionClocksStarted: Bool {
-        didSet { defaults.set(revisionClocksStarted, forKey: Key.revisionClocksStarted) }
-    }
     /// How memorize passages play: one setting for all of them, so a new passage never resets it.
     var memorizePlayback: PracticeSettings {
         didSet {
             if let data = try? JSONEncoder().encode(memorizePlayback) { defaults.set(data, forKey: Key.memorizePlayback) }
         }
-    }
-    var generatedPracticeIDs: [String] {
-        didSet { defaults.set(generatedPracticeIDs, forKey: "learning.generatedIDs") }
     }
 
     var wifiOnly: Bool {
@@ -198,21 +160,16 @@ final class AppSettings {
         didSet { defaults.set(reciterID, forKey: Key.reciterID) }
     }
 
-    /// Earlier versions only offered Sudais, so people updating keep him and their downloads;
-    /// everyone else starts on the catalog's default.
+    /// Settles on the catalog's default the first time, so a later catalog with a new default
+    /// never switches the reciter someone is used to.
     func resolveFirstReciter(catalog: ReciterCatalog) {
         guard reciterID == nil else { return }
-        reciterID = isReturningUser ? ReciterID.sudais : catalog.defaultReciterID
+        reciterID = catalog.defaultReciterID
     }
 
     /// The chosen reciter, or the catalog's default when the catalog no longer offers them.
     func reciter(in catalog: ReciterCatalog) -> Reciter {
         catalog.reciter(id: reciterID) ?? catalog.defaultReciter
-    }
-
-    /// Someone who used an earlier version of the app.
-    var isReturningUser: Bool {
-        hasCompletedOnboarding || showsStatusChangeNote || !learningTargets.isEmpty || readingAyah > 0
     }
 
     /// The layout the user chose. Translation shows ayah by ayah without changing it.
@@ -262,26 +219,18 @@ final class AppSettings {
         didSet { defaults.set(hasCompletedOnboarding, forKey: Key.hasCompletedOnboarding) }
     }
 
-    /// Shown once to people whose earlier progress was recounted under explicit memorization.
-    var showsStatusChangeNote: Bool {
-        didSet { defaults.set(showsStatusChangeNote, forKey: Key.showsStatusChangeNote) }
-    }
-
     init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
-        learningTargets = defaults.data(forKey: "learning.targets")
+        learningTargets = defaults.data(forKey: Key.learningTargets)
             .flatMap { try? JSONDecoder().decode([LearningTarget].self, from: $0) } ?? []
-        activeTargetID = defaults.string(forKey: "learning.activeTarget").flatMap(UUID.init(uuidString:))
+        activeTargetID = defaults.string(forKey: Key.activeTargetID).flatMap(UUID.init(uuidString:))
         dailyLog = defaults.data(forKey: Key.dailyLog)
             .flatMap { try? JSONDecoder().decode(DailyLog.self, from: $0) } ?? .empty(on: .now)
-        readingAyah = defaults.integer(forKey: "reading.ayah")
-        pieceSize = defaults.string(forKey: Key.pieceSize).flatMap(PieceSize.init(rawValue:))
-            ?? (defaults.bool(forKey: Key.legacyPracticeByPage) ? .fullPage : .default)
+        readingAyah = defaults.integer(forKey: Key.readingAyah)
+        pieceSize = defaults.string(forKey: Key.pieceSize).flatMap(PieceSize.init(rawValue:)) ?? .default
         revisionCycle = RevisionCycle(rawValue: defaults.integer(forKey: Key.revisionCycle)) ?? .default
-        revisionClocksStarted = defaults.bool(forKey: Key.revisionClocksStarted)
         memorizePlayback = defaults.data(forKey: Key.memorizePlayback)
             .flatMap { try? JSONDecoder().decode(PracticeSettings.self, from: $0) } ?? .default
-        generatedPracticeIDs = defaults.stringArray(forKey: "learning.generatedIDs") ?? []
         self.wifiOnly = defaults.object(forKey: Key.wifiOnly) as? Bool ?? false
         self.streamWhenMissing = defaults.object(forKey: Key.streamWhenMissing) as? Bool ?? true
         self.downloadWhilePlaying = defaults.object(forKey: Key.downloadWhilePlaying) as? Bool ?? true
@@ -293,7 +242,6 @@ final class AppSettings {
         self.hasSeenQuranHint = defaults.bool(forKey: Key.hasSeenQuranHint)
         self.appearance = defaults.string(forKey: Key.appearance)
             .flatMap(AppAppearance.init(rawValue:)) ?? .system
-        self.showsStatusChangeNote = defaults.bool(forKey: Key.showsStatusChangeNote)
         self.startTab = defaults.string(forKey: Key.startTab).flatMap(AppTab.init(rawValue:)) ?? .memorize
         self.hasCompletedOnboarding = defaults.bool(forKey: Key.hasCompletedOnboarding)
     }
@@ -310,6 +258,7 @@ final class AppEnvironment {
     let playback: PlaybackCoordinator
     let recorder: RecitationRecordingController
     let settings: AppSettings
+    let reviewPrompt: ReviewPrompt
     let translations = TranslationLibrary()
     var selectedTab: AppTab
     var route: AppRoute?
@@ -326,7 +275,8 @@ final class AppEnvironment {
         downloads: AudioDownloadManager,
         playback: PlaybackCoordinator,
         recorder: RecitationRecordingController,
-        settings: AppSettings
+        settings: AppSettings,
+        reviewPrompt: ReviewPrompt
     ) {
         self.quran = quran
         self.store = store
@@ -336,13 +286,8 @@ final class AppEnvironment {
         self.playback = playback
         self.recorder = recorder
         self.settings = settings
+        self.reviewPrompt = reviewPrompt
         selectedTab = settings.startTab
-        settings.adoptLegacyLearningPlace(catalog: quran)
-        settings.adoptPagePieces(catalog: quran)
-        // People updating from an earlier version get the one-time note instead of onboarding.
-        if !settings.hasCompletedOnboarding, settings.isReturningUser {
-            settings.hasCompletedOnboarding = true
-        }
         playback.configure(catalog: quran, allowStreaming: settings.streamWhenMissing)
         playback.onWillStartAudio = { [weak recorder] in
             recorder?.cancelComparisonPlayback()
@@ -354,16 +299,10 @@ final class AppEnvironment {
                 catch { playback?.userMessage = .from(.persistenceFailure) }
             } else { settings?.readingAyah = ayah }
         }
+        playback.onListened = { [weak reviewPrompt] in reviewPrompt?.recordListen() }
         playback.onAyahHeard = { [weak playback, weak store] ayah in
             do { try store?.recordHeard(globalAyah: ayah, at: .now) }
             catch { playback?.userMessage = .from(.persistenceFailure) }
-        }
-        if !settings.revisionClocksStarted {
-            // Retried on the next launch if it fails.
-            do {
-                try store.startRevisionClocks()
-                settings.revisionClocksStarted = true
-            } catch {}
         }
         playback.downloadMissingAudio = { [weak downloads, weak settings] ayahs in
             guard settings?.downloadWhilePlaying == true, let downloads else { return false }
@@ -411,14 +350,6 @@ final class AppEnvironment {
         route = .session(SessionRoute(range: first, kind: .review, reviewQueue: Array(passages.dropFirst())))
     }
 
-    /// A session for a passage saved by an earlier version of the app.
-    func savedPracticeRoute(_ set: PracticeSet) -> SessionRoute? {
-        let ranges = set.orderedPassages.map(\.range)
-        guard let first = ranges.first, let last = ranges.last else { return nil }
-        return SessionRoute(range: .clamped(start: first.startGlobalAyah, end: last.endGlobalAyah), savedPractice: set,
-                            resumePlayback: playback.activeSet?.id == set.id)
-    }
-
     func reopenPlayer() {
         guard let ayah = playback.snapshot.currentGlobalAyah,
               let verse = quran.verse(globalAyah: ayah) else { return }
@@ -431,21 +362,17 @@ final class AppEnvironment {
     }
 
     func practice(for range: VerseRange) throws -> PracticeSet {
-        if let existing = try store.activeSets().first(where: { $0.orderedPassages.map(\.range) == [range] }) {
-            // Passages the app made follow the one memorize setting; ones the user saved keep their own.
-            if settings.generatedPracticeIDs.contains(existing.id.uuidString) {
-                let playback = settings.memorizePlayback.keepingHideArabic(of: existing.settings)
-                if existing.settings != playback {
-                    existing.settings = playback
-                    try store.save()
-                }
+        if let existing = try store.allSets().first(where: { $0.orderedPassages.map(\.range) == [range] }) {
+            // Every passage follows the one memorize setting, keeping only whether its Arabic is hidden.
+            let playback = settings.memorizePlayback.keepingHideArabic(of: existing.settings)
+            if existing.settings != playback {
+                existing.settings = playback
+                try store.save()
             }
             return existing
         }
         let title = PassageLabel.passage(range, catalog: quran)
-        let created = try store.createSet(title: title, passages: [range], settings: settings.memorizePlayback)
-        settings.generatedPracticeIDs.append(created.id.uuidString)
-        return created
+        return try store.createSet(title: title, passages: [range], settings: settings.memorizePlayback)
     }
 
 }

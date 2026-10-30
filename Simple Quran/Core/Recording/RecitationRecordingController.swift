@@ -15,7 +15,7 @@ enum RecordingPhase: Equatable {
 @MainActor
 @Observable
 final class RecitationRecordingController: NSObject, AVAudioRecorderDelegate, AVAudioPlayerDelegate {
-    private let logger = Logger(subsystem: "com.simpleAzaan.Simple-Quran1", category: "recording")
+    private let logger = Log.recording
     private var recorder: AVAudioRecorder?
     private var player: AVAudioPlayer?
     private var context: ModelContext?

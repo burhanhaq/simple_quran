@@ -3,15 +3,11 @@ import SwiftUI
 struct SettingsView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.dismiss) private var dismiss
-    @State private var showAcknowledgements = false
-    @State private var showPrivacy = false
-    @State private var confirmRemoveDownloads = false
-    @State private var confirmRemoveRecordings = false
 
     var body: some View {
         NavigationStack {
             List {
-                Section(String(localized: "Make it yours")) {
+                Section {
                     Picker(String(localized: "Open the app to"), selection: Bindable(environment.settings).startTab) {
                         ForEach([AppTab.memorize, AppTab.quran], id: \.self) { tab in
                             Text(tab.title).tag(tab)
@@ -35,8 +31,10 @@ struct SettingsView: View {
                     Toggle(String(localized: "Show translation"), isOn: Bindable(environment.settings).showsTranslation)
                         .accessibilityIdentifier("settings.translation")
                         .warmListRow()
+                } header: {
+                    Text(String(localized: "Make it yours")).warmSectionText()
                 }
-                Section(String(localized: "Audio")) {
+                Section {
                     NavigationLink {
                         ReciterPickerView()
                     } label: {
@@ -58,10 +56,9 @@ struct SettingsView: View {
                         Text(ByteCountFormatter.string(fromByteCount: environment.downloads.fileStore.totalByteCountAllReciters(), countStyle: .file))
                     }
                     .warmListRow()
-                    Button(String(localized: "Remove downloaded recitation"), role: .destructive) {
-                        confirmRemoveDownloads = true
-                    }
-                    .warmListRow()
+                    RemoveDownloadsButton().warmListRow()
+                } header: {
+                    Text(String(localized: "Audio")).warmSectionText()
                 }
                 Section {
                     Picker(String(localized: "Piece size"), selection: Bindable(environment.settings).pieceSize) {
@@ -79,29 +76,40 @@ struct SettingsView: View {
                     }
                     .accessibilityIdentifier("settings.revisionCycle")
                     .warmListRow()
-                    NavigationLink(String(localized: "Older saved passages")) { SetListView() }.warmListRow()
                 } header: {
-                    Text(String(localized: "Memorize"))
+                    Text(String(localized: "Memorize")).warmSectionText()
                 } footer: {
-                    Text(String(localized: "Pieces follow the Madani mushaf page. A short surah is always one piece. Memorized surahs fade when they go longer than this without a revision; listening, reciting, and \u{201C}Revised today\u{201D} all count."))
+                    Text(String(localized: "Pieces follow the Madani mushaf page. A short surah is always one piece. Memorized surahs fade when they go longer than this without a revision; listening, reciting, and \u{201C}Revised today\u{201D} all count.")).warmSectionText()
                 }
-                Section(String(localized: "Recordings")) {
-                    Button(String(localized: "Delete all recordings"), role: .destructive) {
-                        confirmRemoveRecordings = true
+                Section {
+                    DeleteRecordingsButton().warmListRow()
+                } header: {
+                    Text(String(localized: "Recordings")).warmSectionText()
+                } footer: {
+                    Text(String(localized: "Recordings stay on this iPhone and are never uploaded.")).warmSectionText()
+                }
+                Section {
+                    NavigationLink(String(localized: "Privacy")) { PrivacyView() }
+                        .accessibilityIdentifier("settings.privacy")
+                        .warmListRow()
+                    NavigationLink(String(localized: "Acknowledgements")) { AcknowledgementsView() }
+                        .accessibilityIdentifier("settings.acknowledgements")
+                        .warmListRow()
+                    Link(destination: AppLinks.mail(.support)) {
+                        ExternalLinkLabel(String(localized: "Contact support"), systemImage: "envelope")
                     }
                     .warmListRow()
-                    Text(String(localized: "Recordings stay on this device and are never uploaded."))
-                        .font(.footnote)
-                        .foregroundStyle(Color.secondaryWarm)
+                    Link(destination: AppLinks.website) {
+                        ExternalLinkLabel(String(localized: "Website"))
+                    }
+                    .warmListRow()
+                    LabeledContent(String(localized: "Version"), value: AppIdentity.displayVersion)
+                        .accessibilityIdentifier("settings.version")
                         .warmListRow()
-                }
-                Section(String(localized: "About")) {
-                    Button(String(localized: "Acknowledgements")) { showAcknowledgements = true }
-                        .warmListRow()
-                    Button(String(localized: "Privacy")) { showPrivacy = true }
-                        .warmListRow()
-                    LabeledContent(String(localized: "Page convention"), value: String(localized: "604-page Madani Hafs"))
-                        .warmListRow()
+                } header: {
+                    Text(String(localized: "About")).warmSectionText()
+                } footer: {
+                    Text(String(localized: "Made by \(AppIdentity.publisher)")).warmSectionText()
                 }
             }
             .warmListChrome()
@@ -111,102 +119,18 @@ struct SettingsView: View {
                     Button(String(localized: "Done")) { dismiss() }
                 }
             }
-            .sheet(isPresented: $showAcknowledgements) { AcknowledgementsView() }
-            .sheet(isPresented: $showPrivacy) { PrivacyView() }
-            .confirmationDialog(
-                String(localized: "Remove downloaded recitation for every reciter?"),
-                isPresented: $confirmRemoveDownloads,
-                titleVisibility: .visible
-            ) {
-                Button(String(localized: "Remove downloads"), role: .destructive) {
-                    environment.downloads.removeAll()
-                }
-                Button(String(localized: "Cancel"), role: .cancel) {}
-            }
-            .confirmationDialog(
-                String(localized: "Delete all personal recordings?"),
-                isPresented: $confirmRemoveRecordings,
-                titleVisibility: .visible
-            ) {
-                Button(String(localized: "Delete recordings"), role: .destructive) {
-                    environment.recorder.deleteAll()
-                }
-                Button(String(localized: "Cancel"), role: .cancel) {}
-            }
-            .alert(
-                environment.downloads.userMessage?.title ?? "",
-                isPresented: Binding(
-                    get: { environment.downloads.userMessage != nil },
-                    set: { if !$0 { environment.downloads.userMessage = nil } }
-                )
-            ) {
-                Button(String(localized: "OK"), role: .cancel) {}
-            } message: {
-                Text(environment.downloads.userMessage?.message ?? "")
-            }
         }
-    }
-}
-
-struct AcknowledgementsView: View {
-    @Environment(AppEnvironment.self) private var environment
-    private let edition = TranslationEdition.default
-
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text(String(localized: "Quran text"))
-                        .font(.headline)
-                    Text("Uthmani Hafs text published by the King Fahd Glorious Quran Printing Complex (qurancomplex.gov.sa), distributed by the Quranic Universal Library (qul.tarteel.ai). It is bundled unchanged, except that ayah numbers are drawn separately.")
-                    Text(String(localized: "Typography"))
-                        .font(.headline)
-                    Text("KFGQPC HAFS Uthmanic Script font © King Fahd Glorious Quran Printing Complex, used free of charge under its license and bundled unmodified.")
-                    Text(String(localized: "Translation"))
-                        .font(.headline)
-                    Text("\(edition.title) English translation, issued by \(edition.publisher), from QuranEnc.com\(translationVersion). Bundled unchanged; footnotes are not shown.")
-                    Link(edition.sourceURL.absoluteString, destination: edition.sourceURL)
-                        .tint(Color.bronze)
-                    Text(String(localized: "Audio"))
-                        .font(.headline)
-                    Text("Recitations by \(reciterNames) are streamed or downloaded from Al Quran Cloud / islamic.network for personal and educational use. Copyright remains with each reciter.")
-                }
-                .padding()
-                .foregroundStyle(Color.appBrownText)
-            }
-            .background(Color.parchment)
-            .parchmentNavigationBar()
-            .navigationTitle(String(localized: "Acknowledgements"))
-            .task { await environment.translations.loadIfNeeded(edition) }
-        }
-    }
-
-    private var reciterNames: String {
-        ListFormatter.localizedString(byJoining: environment.reciters.catalog.reciters.map(\.englishName))
-    }
-
-    private var translationVersion: String {
-        guard let version = environment.translations.current?.version else { return "" }
-        return ", version \(version)"
-    }
-}
-
-struct PrivacyView: View {
-    var body: some View {
-        NavigationStack {
-            ScrollView {
-                VStack(alignment: .leading, spacing: 16) {
-                    Text(String(localized: "Simple Quran is local-first. Saved passages, progress, downloads, and recordings stay on this device."))
-                    Text(String(localized: "The microphone is used only when you record a passage. Recordings never leave the device unless you later choose a backup feature."))
-                    Text(String(localized: "Downloaded recitation can be deleted in Settings. Personal recordings can be deleted per passage or all at once."))
-                    Text(String(localized: "No account is required. No analytics SDK is included."))
-                }
-                .padding()
-                .foregroundStyle(Color.appBrownText)
-            }
-            .background(Color.parchment)
-            .parchmentNavigationBar()
-            .navigationTitle(String(localized: "Privacy"))
+        // On the stack, not the list, so a failed removal shows from Privacy too.
+        .alert(
+            environment.downloads.userMessage?.title ?? "",
+            isPresented: Binding(
+                get: { environment.downloads.userMessage != nil },
+                set: { if !$0 { environment.downloads.userMessage = nil } }
+            )
+        ) {
+            Button(String(localized: "OK"), role: .cancel) {}
+        } message: {
+            Text(environment.downloads.userMessage?.message ?? "")
         }
     }
 }

@@ -1,9 +1,13 @@
 import Foundation
 import SwiftData
 
-/// The current models. V2 added when each ayah was last heard, recited, and marked revised.
-enum AppSchemaV2: VersionedSchema {
-    static let versionIdentifier = Schema.Version(2, 0, 0)
+/// The models as they shipped in 1.0. Never change them: add AppSchemaV2 with a migration stage instead.
+///
+/// They follow CloudKit's rules so iCloud sync can be turned on later without a migration:
+/// no unique attributes, a default for every stored property, and optional relationships.
+/// Without unique attributes, every insert looks for an existing record first.
+enum AppSchemaV1: VersionedSchema {
+    static let versionIdentifier = Schema.Version(1, 0, 0)
 
     static var models: [any PersistentModel.Type] {
         [
@@ -18,32 +22,29 @@ enum AppSchemaV2: VersionedSchema {
 }
 
 enum AppMigrationPlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [AppSchemaV1.self, AppSchemaV2.self] }
-    static var stages: [MigrationStage] { [.lightweight(fromVersion: AppSchemaV1.self, toVersion: AppSchemaV2.self)] }
+    static var schemas: [any VersionedSchema.Type] { [AppSchemaV1.self] }
+    static var stages: [MigrationStage] { [] }
 }
 
 @Model
 final class PracticeSet {
-    @Attribute(.unique) var id: UUID
-    var title: String
-    var createdAt: Date
-    var updatedAt: Date
-    var archivedAt: Date?
-    var deletedAt: Date?
+    var id = UUID()
+    var title = ""
+    var createdAt = Date.now
+    var updatedAt = Date.now
     var lastPractisedAt: Date?
     var lastGlobalAyah: Int?
-    var lastQueueIndex: Int?
-    var ayahRepeatRaw: String
-    var setRepeatRaw: String
-    var pauseSeconds: Int
-    var hideArabic: Bool
-    var advanceManually: Bool
+    var ayahRepeatRaw = String(RepeatCount.one.rawValue)
+    var setRepeatRaw = String(RepeatCount.one.rawValue)
+    var pauseSeconds = 0
+    var hideArabic = false
+    var advanceManually = false
 
     @Relationship(deleteRule: .cascade, inverse: \PracticePassage.set)
-    var passages: [PracticePassage]
+    var passages: [PracticePassage]? = []
 
     @Relationship(deleteRule: .cascade, inverse: \PracticeSession.set)
-    var sessions: [PracticeSession]
+    var sessions: [PracticeSession]? = []
 
     init(
         id: UUID = UUID(),
@@ -85,10 +86,8 @@ final class PracticeSet {
     }
 
     var orderedPassages: [PracticePassage] {
-        passages.sorted { $0.order < $1.order }
+        (passages ?? []).sorted { $0.order < $1.order }
     }
-
-    var isActive: Bool { deletedAt == nil && archivedAt == nil }
 
     private static func encode(_ value: RepeatCount) -> String {
         String(value.rawValue)
@@ -101,10 +100,10 @@ final class PracticeSet {
 
 @Model
 final class PracticePassage {
-    @Attribute(.unique) var id: UUID
-    var order: Int
-    var startGlobalAyah: Int
-    var endGlobalAyah: Int
+    var id = UUID()
+    var order = 0
+    var startGlobalAyah = 1
+    var endGlobalAyah = 1
     var set: PracticeSet?
 
     init(id: UUID = UUID(), order: Int, range: VerseRange) {
@@ -127,16 +126,17 @@ final class PracticePassage {
 
 @Model
 final class VerseProgress {
-    @Attribute(.unique) var globalAyah: Int
-    var recallStateRaw: String
+    /// One record per ayah; `PracticeStore` looks it up before inserting.
+    var globalAyah = 1
+    var recallStateRaw = RecallState.new.rawValue
     var lastRatingRaw: String?
-    var streak: Int
-    var isWeak: Bool
+    var streak = 0
+    var isWeak = false
     var lastPractisedAt: Date?
     var nextReviewAt: Date?
-    var exposureCount: Int
-    var listeningSeconds: Double
-    var recallAttempts: Int
+    var exposureCount = 0
+    var listeningSeconds = 0.0
+    var recallAttempts = 0
     /// Audio played through this ayah, in the reader or while memorizing.
     var lastHeardAt: Date?
     /// The user recited it from memory and said how it went.
@@ -190,12 +190,12 @@ final class VerseProgress {
 
 @Model
 final class PracticeSession {
-    @Attribute(.unique) var id: UUID
-    var startedAt: Date
+    var id = UUID()
+    var startedAt = Date.now
     var endedAt: Date?
-    var coveredAyahCount: Int
-    var repetitionCount: Int
-    var completed: Bool
+    var coveredAyahCount = 0
+    var repetitionCount = 0
+    var completed = false
     var finalRatingRaw: String?
     var lastGlobalAyah: Int?
     var set: PracticeSet?
@@ -212,13 +212,13 @@ final class PracticeSession {
 
 @Model
 final class AudioDownloadRecord {
-    var reciterID: String
-    var quality: Int
-    var globalAyah: Int
-    var relativePath: String
-    var byteCount: Int64
+    var reciterID = ""
+    var quality = 0
+    var globalAyah = 1
+    var relativePath = ""
+    var byteCount: Int64 = 0
     var downloadedAt: Date?
-    var statusRaw: String
+    var statusRaw = DownloadStatus.pending.rawValue
     var lastError: String?
 
     init(reciterID: String, quality: Int, globalAyah: Int, relativePath: String) {
@@ -245,26 +245,22 @@ enum DownloadStatus: String, Codable {
 
 @Model
 final class RecitationRecordingRecord {
-    @Attribute(.unique) var id: UUID
-    // Optional for existing ayah recordings. New records are scoped to a practice
-    // collection; legacy records remain removable from Settings.
+    var id = UUID()
+    /// The `PracticeSet` the recording belongs to.
     var collectionID: UUID?
-    var globalAyah: Int
-    var createdAt: Date
-    var isPinned: Bool
-    var isLatest: Bool
-    var relativePath: String
+    var createdAt = Date.now
+    var isPinned = false
+    var isLatest = true
+    var relativePath = ""
 
     init(
         id: UUID = UUID(),
         collectionID: UUID? = nil,
-        globalAyah: Int = 0,
         relativePath: String,
         isLatest: Bool = true
     ) {
         self.id = id
         self.collectionID = collectionID
-        self.globalAyah = globalAyah
         self.createdAt = .now
         self.isPinned = false
         self.isLatest = isLatest

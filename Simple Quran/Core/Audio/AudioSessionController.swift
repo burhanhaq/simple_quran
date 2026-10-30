@@ -40,7 +40,7 @@ enum AudioInterruptionPolicy {
 @MainActor
 final class AudioSessionController {
     static let shared = AudioSessionController()
-    private let logger = Logger(subsystem: "com.simpleAzaan.Simple-Quran1", category: "audio")
+    private let logger = Log.audio
     private var observers: [NSObjectProtocol] = []
     var onEvent: ((AudioSessionEvent) -> Void)?
 

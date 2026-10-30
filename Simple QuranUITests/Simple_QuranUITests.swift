@@ -10,7 +10,7 @@ final class Simple_QuranUITests: XCTestCase {
         app.launchArguments = ["-ui-testing", "-ui-testing-reset-focus", "-ui-testing-skip-onboarding",
                                "-settings.appearance", appearance, "-settings.quranReadingLayout", "ayahByAyah",
                                "-settings.startTab", "memorize", "-progress.order", "fromAlFatiha",
-                               "-learning.start", "0", "-learning.end", "0", "-reading.ayah", "0", "-learning.pieceSize", "halfPage"] + extra
+                               "-reading.ayah", "0", "-learning.pieceSize", "halfPage"] + extra
         app.launch()
         return app
     }
@@ -78,6 +78,7 @@ final class Simple_QuranUITests: XCTestCase {
     }
 
     /// Moves a piece that opens on Listen to Recite, which hides the text.
+    @MainActor
     private func recite(_ app: XCUIApplication) {
         let recite = app.buttons["session.recite"]
         XCTAssertTrue(recite.waitForExistence(timeout: 3))
@@ -85,6 +86,7 @@ final class Simple_QuranUITests: XCTestCase {
     }
 
     /// Moves a piece that opens on Listen through Recite to Check, which shows the answers.
+    @MainActor
     private func check(_ app: XCUIApplication) {
         recite(app)
         let check = app.buttons["session.check"]
@@ -451,7 +453,7 @@ final class Simple_QuranUITests: XCTestCase {
         let app = XCUIApplication()
         app.launchArguments = ["-ui-testing", "-ui-testing-reset-focus", "-ui-testing-reset-onboarding",
                                "-settings.appearance", "light", "-settings.quranReadingLayout", "ayahByAyah",
-                               "-learning.start", "0", "-learning.end", "0", "-reading.ayah", "0", "-learning.pieceSize", "halfPage"]
+                               "-reading.ayah", "0", "-learning.pieceSize", "halfPage"]
         app.launch()
         return app
     }

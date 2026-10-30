@@ -6,7 +6,7 @@ enum PersistenceController {
 
     /// `url` places the store somewhere specific, for migration tests.
     static func makeContainer(inMemory: Bool = false, url: URL? = nil) throws -> ModelContainer {
-        let schema = Schema(versionedSchema: AppSchemaV2.self)
+        let schema = Schema(versionedSchema: AppSchemaV1.self)
         let configuration = url.map { ModelConfiguration(storeName, schema: schema, url: $0) }
             ?? ModelConfiguration(storeName, schema: schema, isStoredInMemoryOnly: inMemory)
         return try ModelContainer(
@@ -19,13 +19,8 @@ enum PersistenceController {
 
 @MainActor
 protocol PracticeStoring: AnyObject {
-    func activeSets() throws -> [PracticeSet]
-    func set(id: UUID) throws -> PracticeSet?
+    func allSets() throws -> [PracticeSet]
     func createSet(title: String, passages: [VerseRange], settings: PracticeSettings) throws -> PracticeSet
-    func updateSet(_ set: PracticeSet, title: String, passages: [VerseRange], settings: PracticeSettings) throws
-    func archive(_ set: PracticeSet, archived: Bool) throws
-    func delete(_ set: PracticeSet) throws
-    func recordExposure(ayahs: [Int], seconds: Double) throws
     func recordHeard(globalAyah: Int, at now: Date) throws
     func markRevised(ayahs: [Int], now: Date) throws
     func markWeak(globalAyah: Int, weak: Bool) throws
@@ -35,11 +30,6 @@ protocol PracticeStoring: AnyObject {
     func markMemorized(ayahs: [Int], now: Date) throws
     func markNeedsRevision(ayahs: [Int], now: Date) throws
     func restoreProgress(_ previous: [Int: VerseProgressSnapshot], ayahs: [Int]) throws
-    func startSession(for set: PracticeSet) throws -> PracticeSession
-    func finishSession(_ session: PracticeSession, coveredAyahs: Int, repetitions: Int, lastAyah: Int?, completed: Bool, rating: RecallRating?) throws
-    func continueSet() throws -> PracticeSet?
-    func dueSets(now: Date) throws -> [PracticeSet]
-    func recentSets(limit: Int) throws -> [PracticeSet]
     func progress(for globalAyah: Int) throws -> VerseProgressSnapshot
     func allProgress() throws -> [VerseProgressSnapshot]
     func save() throws
@@ -54,17 +44,11 @@ final class PracticeStore: PracticeStoring {
         self.context = context
     }
 
-    func activeSets() throws -> [PracticeSet] {
+    func allSets() throws -> [PracticeSet] {
         let descriptor = FetchDescriptor<PracticeSet>(
-            predicate: #Predicate { $0.deletedAt == nil && $0.archivedAt == nil },
             sortBy: [SortDescriptor(\.updatedAt, order: .reverse)]
         )
         return try context.fetch(descriptor)
-    }
-
-    func set(id: UUID) throws -> PracticeSet? {
-        let descriptor = FetchDescriptor<PracticeSet>(predicate: #Predicate { $0.id == id })
-        return try context.fetch(descriptor).first
     }
 
     func createSet(title: String, passages: [VerseRange], settings: PracticeSettings) throws -> PracticeSet {
@@ -73,37 +57,6 @@ final class PracticeStore: PracticeStoring {
         replacePassages(on: set, with: passages)
         try context.save()
         return set
-    }
-
-    func updateSet(_ set: PracticeSet, title: String, passages: [VerseRange], settings: PracticeSettings) throws {
-        set.title = sanitizedTitle(title)
-        set.settings = settings
-        set.updatedAt = .now
-        replacePassages(on: set, with: passages)
-        try context.save()
-    }
-
-    func archive(_ set: PracticeSet, archived: Bool) throws {
-        set.archivedAt = archived ? .now : nil
-        set.updatedAt = .now
-        try context.save()
-    }
-
-    func delete(_ set: PracticeSet) throws {
-        set.deletedAt = .now
-        set.updatedAt = .now
-        try context.save()
-    }
-
-    func recordExposure(ayahs: [Int], seconds: Double) throws {
-        let share = seconds / Double(max(ayahs.count, 1))
-        for ayah in ayahs {
-            let progress = try progressModel(for: ayah)
-            progress.exposureCount += 1
-            progress.listeningSeconds += share
-            progress.lastPractisedAt = .now
-        }
-        try context.save()
     }
 
     func markWeak(globalAyah: Int, weak: Bool) throws {
@@ -188,16 +141,6 @@ final class PracticeStore: PracticeStoring {
         try save()
     }
 
-    /// Memorized ayahs from before revision dates were kept start their clock now,
-    /// so an update doesn't mark everything as needing revision at once.
-    func startRevisionClocks(now: Date = .now) throws {
-        let models = try context.fetch(FetchDescriptor<VerseProgress>())
-        for model in models where model.snapshot.status == .memorized && model.snapshot.lastTouchedAt == nil {
-            model.lastRevisedAt = now
-        }
-        try save()
-    }
-
     /// Memorized ayahs keep their status and need revision now; others become learning.
     func markNeedsRevision(ayahs: [Int], now: Date = .now) throws {
         for ayah in Set(ayahs) {
@@ -221,56 +164,6 @@ final class PracticeStore: PracticeStoring {
             }
         }
         try save()
-    }
-
-    /// One-time cleanup for progress recorded before memorization became an explicit claim.
-    /// Returns whether the user had any earlier progress, so the app can explain the change.
-    @discardableResult
-    func migrateToExplicitMemorization() throws -> Bool {
-        let models = try context.fetch(FetchDescriptor<VerseProgress>())
-        for model in models {
-            let state = RecallState(rawValue: model.recallStateRaw) ?? .new
-            if state == .review, model.lastRatingRaw != RecallRating.solid.rawValue {
-                // Reached by repeated "comfortable" answers, never an explicit "memorized".
-                model.recallStateRaw = RecallState.strengthening.rawValue
-            } else if state == .new, model.exposureCount > 0 {
-                // Practiced in a session the user started, so they were learning it.
-                model.recallStateRaw = RecallState.learning.rawValue
-            }
-        }
-        try save()
-        return models.contains { $0.exposureCount > 0 || $0.recallAttempts > 0 }
-    }
-
-    func startSession(for set: PracticeSet) throws -> PracticeSession {
-        let session = PracticeSession(set: set)
-        context.insert(session)
-        set.lastPractisedAt = .now
-        set.updatedAt = .now
-        try context.save()
-        return session
-    }
-
-    func finishSession(
-        _ session: PracticeSession,
-        coveredAyahs: Int,
-        repetitions: Int,
-        lastAyah: Int?,
-        completed: Bool,
-        rating: RecallRating?
-    ) throws {
-        session.endedAt = .now
-        session.coveredAyahCount = coveredAyahs
-        session.repetitionCount = repetitions
-        session.completed = completed
-        session.finalRatingRaw = rating?.rawValue
-        session.lastGlobalAyah = lastAyah
-        if let set = session.set {
-            set.lastGlobalAyah = lastAyah
-            set.lastPractisedAt = .now
-            set.updatedAt = .now
-        }
-        try context.save()
     }
 
     /// Commit the user's explicit passage-level reflection as one transaction.
@@ -314,32 +207,6 @@ final class PracticeStore: PracticeStoring {
         }
     }
 
-    func continueSet() throws -> PracticeSet? {
-        try activeSets()
-            .filter { $0.lastPractisedAt != nil }
-            .sorted { ($0.lastPractisedAt ?? .distantPast) > ($1.lastPractisedAt ?? .distantPast) }
-            .first
-    }
-
-    func dueSets(now: Date) throws -> [PracticeSet] {
-        let dueProgress = try context.fetch(FetchDescriptor<VerseProgress>()).filter { snapshot in
-            let item = snapshot.snapshot
-            if item.isWeak { return true }
-            if let next = item.nextReviewAt { return next <= now }
-            return false
-        }
-        let dueAyahs = Set(dueProgress.map(\.globalAyah))
-        return try activeSets().filter { set in
-            set.orderedPassages.contains { passage in
-                (passage.startGlobalAyah...passage.endGlobalAyah).contains { dueAyahs.contains($0) }
-            }
-        }
-    }
-
-    func recentSets(limit: Int) throws -> [PracticeSet] {
-        Array(try activeSets().prefix(limit))
-    }
-
     func progress(for globalAyah: Int) throws -> VerseProgressSnapshot {
         try progressModel(for: globalAyah).snapshot
     }
@@ -371,7 +238,7 @@ final class PracticeStore: PracticeStoring {
     }
 
     private func replacePassages(on set: PracticeSet, with ranges: [VerseRange]) {
-        for passage in set.passages {
+        for passage in set.passages ?? [] {
             context.delete(passage)
         }
         set.passages = ranges.enumerated().map { index, range in

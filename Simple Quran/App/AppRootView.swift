@@ -1,8 +1,10 @@
+import StoreKit
 import SwiftUI
 
 struct AppRootView: View {
     @Environment(AppEnvironment.self) private var environment
     @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.requestReview) private var requestReview
 
     var body: some View {
         if let error = environment.persistenceLoadError {
@@ -25,9 +27,16 @@ struct AppRootView: View {
         .tabViewBottomAccessory(isEnabled: environment.playback.snapshot.currentGlobalAyah != nil) {
             GlobalMiniPlayer()
         }
-        .fullScreenCover(item: $environment.route) { route in
+        // Asked only once the reader or session has closed, so it never interrupts recitation.
+        .fullScreenCover(item: $environment.route, onDismiss: askForReviewIfDue) { route in
             SurahScreen(route: route, environment: environment)
         }
+    }
+
+    private func askForReviewIfDue() {
+        guard environment.reviewPrompt.isDue else { return }
+        environment.reviewPrompt.markRequested()
+        requestReview()
     }
 
     private func tabLabel(_ tab: AppTab) -> some View {

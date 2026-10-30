@@ -66,6 +66,7 @@ struct QuranBrowserView: View {
                                 }
                                 Spacer(minLength: 8)
                                 Text(surah.arabicName).font(.quran(.listName)).multilineTextAlignment(.trailing)
+                                    .arabicAccessibilityLabel(surah.arabicName)
                             }.padding(.vertical, 10).foregroundStyle(Color.appBrownText)
                         }.warmListRow().accessibilityIdentifier("quran.surah.\(surah.number)")
                     }

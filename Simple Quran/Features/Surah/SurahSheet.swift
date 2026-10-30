@@ -138,7 +138,8 @@ private struct ReadingOverview: View {
             Circle().fill(statusColor).frame(width: 8, height: 8)
             Text(status).lineLimit(1)
             if let position {
-                Text(verbatim: "·")
+                // Drawn rather than typed, so VoiceOver and the contrast audit skip it.
+                Circle().fill(Color.secondaryWarm).frame(width: 3, height: 3)
                 Text(position).monospacedDigit().lineLimit(1).accessibilityIdentifier("reader.position")
             }
         }
@@ -178,6 +179,7 @@ private struct ReadingOverview: View {
                 }
                 Spacer(minLength: 8)
                 Text(surah.arabicName).font(.quran(.listName)).multilineTextAlignment(.trailing)
+                    .arabicAccessibilityLabel(surah.arabicName)
             }
         } else if let span {
             Text(LearningPassage.referenceLabel(span, catalog: environment.quran))

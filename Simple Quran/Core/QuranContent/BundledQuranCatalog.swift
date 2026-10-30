@@ -1,5 +1,4 @@
 import Foundation
-import OSLog
 
 nonisolated struct QuranIntegrityReport: Equatable, Sendable {
     var surahCount: Int
@@ -262,11 +261,4 @@ nonisolated private struct FileAyah: Decodable, Sendable {
     var j: Int
     var p: Int
     var s: Int?
-}
-
-nonisolated enum QuranLog {
-    static let catalog = Logger(subsystem: "com.simpleAzaan.Simple-Quran1", category: "quran")
-    static let translation = Logger(subsystem: "com.simpleAzaan.Simple-Quran1", category: "translation")
-    /// Intervals for Instruments' os_signpost track, to see what opening a long surah costs.
-    static let rendering = OSSignposter(subsystem: "com.simpleAzaan.Simple-Quran1", category: "rendering")
 }

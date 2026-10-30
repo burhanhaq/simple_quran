@@ -55,7 +55,7 @@ struct ReciterCatalogTests {
 }
 
 struct ReciterSettingTests {
-    @Test @MainActor func newUsersStartOnTheDefaultAndReturningUsersKeepSudais() throws {
+    @Test @MainActor func newUsersStartOnTheCatalogDefaultAndKeepIt() throws {
         let catalog = try ReciterCatalog.bundled()
 
         let fresh = try isolatedDefaults()
@@ -63,17 +63,10 @@ struct ReciterSettingTests {
         let newcomer = AppSettings(defaults: fresh.defaults)
         newcomer.resolveFirstReciter(catalog: catalog)
         #expect(newcomer.reciter(in: catalog).id == ReciterID.husary)
-        // Using the app afterwards never moves them to Sudais.
+        // Once settled, it's kept even if a later catalog names a different default.
         newcomer.readingAyah = 10
         newcomer.resolveFirstReciter(catalog: catalog)
         #expect(AppSettings(defaults: fresh.defaults).reciterID == ReciterID.husary)
-
-        let updating = try isolatedDefaults()
-        defer { updating.defaults.removePersistentDomain(forName: updating.name) }
-        let returning = AppSettings(defaults: updating.defaults)
-        returning.hasCompletedOnboarding = true
-        returning.resolveFirstReciter(catalog: catalog)
-        #expect(returning.reciter(in: catalog).id == ReciterID.sudais)
     }
 
     @Test @MainActor func aReciterTheCatalogDropsFallsBackToTheDefault() throws {

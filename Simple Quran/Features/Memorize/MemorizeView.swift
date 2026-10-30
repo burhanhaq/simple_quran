@@ -20,7 +20,6 @@ struct MemorizeView: View {
                     if let error = environment.catalogLoadError { FriendlyErrorView(message: error) }
                     // Searching is for finding a surah on the map, so only the map shows.
                     if search.isEmpty {
-                        if environment.settings.showsStatusChangeNote { statusChangeNote }
                         TodayCard(snapshots: snapshots, picker: $picker, showKnown: $showKnown)
                     }
                     JourneySection(snapshots: snapshots, search: search)
@@ -48,10 +47,7 @@ struct MemorizeView: View {
             .sheet(isPresented: $showSettings) { SettingsView().preferredColorScheme(colorScheme) }
             .sheet(isPresented: $showKnown) {
                 NavigationStack {
-                    KnownSurahsView(continueTitle: String(localized: "Save")) {
-                        environment.settings.showsStatusChangeNote = false
-                        showKnown = false
-                    }
+                    KnownSurahsView(continueTitle: String(localized: "Save")) { showKnown = false }
                     .toolbar { ToolbarItem(placement: .cancellationAction) { Button("Cancel") { showKnown = false } } }
                 }.tint(Color.bronze)
             }
@@ -62,23 +58,6 @@ struct MemorizeView: View {
                 }
             }) { purpose in
                 PlanPickerView(purpose: purpose) { pendingStart = PendingStart(passage: $0, scope: $1) }
-            }
-        }
-    }
-
-    /// Shown once after the update that made memorization an explicit claim.
-    private var statusChangeNote: some View {
-        WarmCard(emphasized: true) {
-            VStack(alignment: .leading, spacing: 12) {
-                Text("Your progress now counts only what you mark as memorized").font(.headline)
-                Text("Listening and practice still show as activity. If you already know some surahs, mark them so your progress is right.")
-                    .font(.subheadline).foregroundStyle(Color.secondaryWarm)
-                HStack(spacing: 12) {
-                    Button("Mark what I know") { showKnown = true }
-                        .buttonStyle(WarmButtonStyle()).accessibilityIdentifier("note.markKnown")
-                    Button("Got it") { environment.settings.showsStatusChangeNote = false }
-                        .font(.subheadline.weight(.semibold)).frame(minHeight: 44).accessibilityIdentifier("note.dismiss")
-                }
             }
         }
     }

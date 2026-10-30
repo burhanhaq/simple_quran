@@ -3,6 +3,8 @@ import Observation
 import OSLog
 
 /// Where the reciter catalog is published. While this is nil, only the bundled catalog is used.
+/// Setting it adds a request the app makes on its own, so update Settings → Privacy and the
+/// website's privacy policy in the same release.
 nonisolated enum RemoteCatalog {
     static let url: URL? = nil
     static let refreshInterval: TimeInterval = 24 * 60 * 60
@@ -21,7 +23,7 @@ final class ReciterCatalogStore {
     private let session: URLSession
     private let defaults: UserDefaults
     private let cacheURL: URL?
-    private let logger = Logger(subsystem: "com.simpleAzaan.Simple-Quran1", category: "reciters")
+    private let logger = Log.reciters
 
     private enum Key {
         static let lastChecked = "reciters.lastChecked"

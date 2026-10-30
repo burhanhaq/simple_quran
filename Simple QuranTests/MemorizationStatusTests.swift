@@ -100,33 +100,6 @@ struct MemorizationStatusTests {
         #expect(try store.progress(for: 2).status == .learning)
     }
 
-    @Test @MainActor func migrationOnlyKeepsExplicitClaimsAndIsIdempotent() throws {
-        let container = try PersistenceController.makeContainer(inMemory: true)
-        let context = container.mainContext
-        let store = PracticeStore(context: context)
-        #expect(try store.migrateToExplicitMemorization() == false)
-
-        func insert(_ ayah: Int, _ state: RecallState, rating: RecallRating? = nil, exposure: Int = 0) {
-            let model = VerseProgress(globalAyah: ayah)
-            model.recallStateRaw = state.rawValue
-            model.lastRatingRaw = rating?.rawValue
-            model.exposureCount = exposure
-            context.insert(model)
-        }
-        insert(1, .review, rating: .solid, exposure: 2)
-        insert(2, .review, rating: .comfortable, exposure: 3)
-        insert(3, .new, exposure: 1)
-        insert(4, .learning, rating: .needsWork, exposure: 1)
-        try context.save()
-
-        #expect(try store.migrateToExplicitMemorization())
-        #expect(try store.migrateToExplicitMemorization())
-        #expect(try store.progress(for: 1).status == .memorized)
-        #expect(try store.progress(for: 2).status == .learning)
-        #expect(try store.progress(for: 3).status == .learning)
-        #expect(try store.progress(for: 4).status == .learning)
-    }
-
     /// The container must outlive the store, so callers keep both.
     @MainActor private func makeStore() throws -> (ModelContainer, PracticeStore) {
         let container = try PersistenceController.makeContainer(inMemory: true)

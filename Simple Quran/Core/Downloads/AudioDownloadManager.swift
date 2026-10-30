@@ -41,11 +41,11 @@ private nonisolated struct DownloadTaskMetadata: Equatable, Sendable {
 @MainActor
 @Observable
 final class AudioDownloadManager: NSObject, URLSessionDownloadDelegate {
-    static let sessionIdentifier = "com.simpleAzaan.Simple-Quran1.audio"
+    static let sessionIdentifier = "\(AppIdentity.bundleID).audio"
 
     private(set) var source: AudioSource
     private(set) var fileStore: AudioFileStore
-    private let logger = Logger(subsystem: "com.simpleAzaan.Simple-Quran1", category: "downloads")
+    private let logger = Log.downloads
     private var session: URLSession!
     private var taskAyahs: [Int: Int] = [:]
     /// Ayahs fetched automatically during playback; playback reports their failures itself.

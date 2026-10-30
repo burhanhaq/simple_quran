@@ -444,6 +444,7 @@ final class SurahScreenModel {
         do {
             try environment.store.markRevised(ayahs: range.globalAyahs, now: .now)
             environment.settings.recordRevised()
+            environment.reviewPrompt.recordRevision()
         } catch { errorMessage = .from(.persistenceFailure) }
     }
 
@@ -679,7 +680,9 @@ final class SurahScreenModel {
             switch focus.kind {
             case .learn where focus.planID != nil: environment.settings.recordLearned(focus.range)
             case .learn: break
-            case .review: environment.settings.recordRevised()
+            case .review:
+                environment.settings.recordRevised()
+                environment.reviewPrompt.recordRevision()
             }
         } catch { errorMessage = .from(.persistenceFailure) }
         self.focus?.engaged = false
@@ -707,15 +710,13 @@ final class SurahScreenModel {
         }
     }
 
-    /// Changes to an app-made passage become the memorize preference, so the next piece plays the same way.
+    /// Changes to a passage become the memorize preference, so the next piece plays the same way.
     func setting<Value>(_ keyPath: WritableKeyPath<PracticeSettings, Value>, in practice: PracticeSet) -> Binding<Value> {
         Binding(get: { practice.settings[keyPath: keyPath] }, set: { [self] value in
             var settings = practice.settings
             settings[keyPath: keyPath] = value
             if ownsFocus { playback.applySettingsAndRestart(settings) } else { practice.settings = settings }
-            if environment.settings.generatedPracticeIDs.contains(practice.id.uuidString) {
-                environment.settings.memorizePlayback = settings.keepingHideArabic(of: environment.settings.memorizePlayback)
-            }
+            environment.settings.memorizePlayback = settings.keepingHideArabic(of: environment.settings.memorizePlayback)
             do { try environment.store.save() } catch { errorMessage = .from(.persistenceFailure) }
         })
     }

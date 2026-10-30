@@ -139,11 +139,14 @@ struct TodayCard: View {
                 .accessibilityIdentifier("memorize.startSuggested")
         }
         VStack(spacing: 0) {
+            // The shape makes the whole 44-point row the button, for touch and for VoiceOver, not just its text.
             Button { picker = .plan } label: {
                 Text("Choose a different surah").frame(maxWidth: .infinity, minHeight: 44)
+                    .contentShape([.interaction, .accessibility], Rectangle())
             }.accessibilityIdentifier("memorize.choosePlan")
             Button { showKnown = true } label: {
                 Text("I already know some surahs").frame(maxWidth: .infinity, minHeight: 44)
+                    .contentShape([.interaction, .accessibility], Rectangle())
             }.accessibilityIdentifier("memorize.markKnown")
         }
         .buttonStyle(.plain).font(.subheadline.weight(.medium)).foregroundStyle(.white.opacity(0.9))

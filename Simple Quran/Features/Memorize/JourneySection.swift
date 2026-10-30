@@ -7,6 +7,8 @@ struct JourneySection: View {
     let snapshots: [VerseProgressSnapshot]
     let search: String
     @State private var browse = PlanBrowse.surahs
+    /// The memorized count's size, grown and shrunk with Dynamic Type.
+    @ScaledMetric(relativeTo: .largeTitle) private var countSize: CGFloat = 56
     @AppStorage(ProgressLayout.storageKey) private var layout = ProgressLayout.map
     @AppStorage(ProgressOrder.storageKey) private var order = ProgressOrder.fromAnNas
     /// Juz the user unfolded from a "not started" line.
@@ -31,7 +33,7 @@ struct JourneySection: View {
     private func memorizedSummary(_ insights: ProgressInsights) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("\(insights.memorizedCount)")
-                .font(.system(size: 56, weight: .medium, design: .serif)).monospacedDigit()
+                .font(.system(size: countSize, weight: .medium, design: .serif)).monospacedDigit()
                 .accessibilityIdentifier("progress.memorizedCount")
             Text(insights.memorizedCount == 1 ? "ayah memorized" : "ayahs memorized").font(.headline)
             let details = [
@@ -239,6 +241,7 @@ private struct ProgressListRow: View {
             Spacer(minLength: 8)
             if let arabicName {
                 Text(arabicName).font(.quran(.listName)).foregroundStyle(Color.appBrownText).multilineTextAlignment(.trailing)
+                    .arabicAccessibilityLabel(arabicName)
             }
         }
         .padding(.vertical, 10).padding(.horizontal, 14)

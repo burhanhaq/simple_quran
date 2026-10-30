@@ -505,6 +505,8 @@ private struct MushafPageView: UIViewRepresentable {
         let textView = host.textView
         textView.delegate = context.coordinator
         textView.backgroundColor = .clear
+        // The page is Arabic only, so VoiceOver reads all of it with an Arabic voice.
+        textView.accessibilityLanguage = QuranScript.speechLanguage
         textView.isEditable = false
         textView.isSelectable = selectionEnabled
         textView.isScrollEnabled = false
@@ -686,8 +688,8 @@ private final class MushafPageTextView: UITextView {
 
         if renderKey != key {
             let ayahCount = pendingVerses.count
-            let signpost = QuranLog.rendering.beginInterval("Page build", "\(ayahCount) ayahs")
-            defer { QuranLog.rendering.endInterval("Page build", signpost) }
+            let signpost = Log.rendering.beginInterval("Page build", "\(ayahCount) ayahs")
+            defer { Log.rendering.endInterval("Page build", signpost) }
             let document = MushafTextBuilder.make(
                 verses: pendingVerses,
                 basmala: pendingBasmala,

@@ -26,31 +26,3 @@ struct PassageLabelTests {
         #expect(PassageLabel.collection([fatiha, kursi], catalog: catalog) == "\(fatihaName), \(baqaraName) 255")
     }
 }
-
-struct SetDraftTitleTests {
-    @Test @MainActor func generatedTitleTracksPassagesUntilTheUserEdits() throws {
-        let catalog = try BundledQuranCatalog.loadFromBundle()
-        let fatihaName = try #require(catalog.surah(number: 1)).englishName
-        let baqaraName = try #require(catalog.surah(number: 2)).englishName
-        let fatiha = try catalog.range(surah: 1, startAyah: 1, endAyah: 7)
-        let kursi = try catalog.range(surah: 2, startAyah: 255, endAyah: 255)
-
-        let draft = SetDraft()
-        draft.append(fatiha)
-        #expect(draft.displayTitle(catalog: catalog) == fatihaName)
-        #expect(draft.hasCustomTitle == false)
-
-        draft.append(kursi)
-        #expect(draft.displayTitle(catalog: catalog) == "\(fatihaName), \(baqaraName) 255")
-
-        draft.setTitle("Morning review", catalog: catalog)
-        #expect(draft.hasCustomTitle)
-        draft.append(try catalog.range(surah: 112, startAyah: 1, endAyah: 4))
-        #expect(draft.displayTitle(catalog: catalog) == "Morning review")
-        #expect(draft.resolvedTitle(catalog: catalog) == "Morning review")
-
-        draft.setTitle("", catalog: catalog)
-        #expect(draft.hasCustomTitle == false)
-        #expect(draft.displayTitle(catalog: catalog) == PassageLabel.collection(draft.passages.map(\.range), catalog: catalog))
-    }
-}

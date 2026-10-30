@@ -41,7 +41,7 @@ enum QuranScript {
         }
     }
 
-    private static let logger = Logger(subsystem: "com.simpleAzaan.Simple-Quran1", category: "quran-script")
+    private static let logger = Log.quranScript
     private static var fontCache: [FontKey: UIFont] = [:]
 
     private struct FontKey: Hashable {
@@ -131,5 +131,26 @@ enum HiddenAyahStyle {
         guard ordered.count > 1 else { return Dictionary(uniqueKeysWithValues: ordered.map { ($0, 0) }) }
         let step = min(revealStagger, maxRevealSpread / TimeInterval(ordered.count - 1))
         return Dictionary(uniqueKeysWithValues: ordered.enumerated().map { ($1, TimeInterval($0) * step) })
+    }
+}
+
+extension QuranScript {
+    /// The language VoiceOver should speak Arabic in; without it, Arabic is read with the English voice.
+    nonisolated static let speechLanguage = "ar"
+}
+
+extension AttributedString {
+    /// Arabic text tagged with its language, so VoiceOver can pick an Arabic voice for it.
+    static func arabicSpeech(_ text: String) -> AttributedString {
+        var string = AttributedString(text)
+        string.languageIdentifier = QuranScript.speechLanguage
+        return string
+    }
+}
+
+extension View {
+    /// Gives VoiceOver `text` tagged as Arabic, for Quran text and Arabic names.
+    func arabicAccessibilityLabel(_ text: String) -> some View {
+        accessibilityLabel(Text(AttributedString.arabicSpeech(text)))
     }
 }

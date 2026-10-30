@@ -97,40 +97,4 @@ struct FreshnessTests {
         #expect(list.count == 2)
         #expect(ProgressIndex(snapshots).needsRevisionCount(in: .clamped(start: 1, end: 7), cycle: .twoWeeks, now: now) == 1)
     }
-
-    @Test @MainActor func memorizedAyahsWithoutDatesStartTheirClockOnce() throws {
-        let container = try PersistenceController.makeContainer(inMemory: true)
-        let store = PracticeStore(context: container.mainContext)
-        try store.markMemorized(ayahs: [20], now: now)
-        try store.restoreProgress([20: memorized(20, touched: nil)], ayahs: [20])
-        #expect(try store.progress(for: 20).lastTouchedAt == nil)
-
-        try store.startRevisionClocks(now: now)
-        #expect(try store.progress(for: 20).lastRevisedAt == now)
-    }
-
-    @Test @MainActor func version1StoresMigrateAndKeepTheirProgress() throws {
-        let folder = FileManager.default.temporaryDirectory.appending(path: "Migration-\(UUID().uuidString)", directoryHint: .isDirectory)
-        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-        defer { try? FileManager.default.removeItem(at: folder) }
-        let url = folder.appending(path: "SimpleQuran.store")
-
-        do {
-            let schema = Schema(versionedSchema: AppSchemaV1.self)
-            let container = try ModelContainer(for: schema, configurations: ModelConfiguration(PersistenceController.storeName, schema: schema, url: url))
-            let progress = AppSchemaV1.VerseProgress(globalAyah: 5, recallStateRaw: RecallState.review.rawValue)
-            progress.lastPractisedAt = now
-            container.mainContext.insert(progress)
-            container.mainContext.insert(AppSchemaV1.PracticeSet(title: "Al-Fatiha"))
-            try container.mainContext.save()
-        }
-
-        let migrated = try PersistenceController.makeContainer(url: url)
-        let rows = try migrated.mainContext.fetch(FetchDescriptor<VerseProgress>())
-        #expect(rows.count == 1)
-        #expect(rows.first?.snapshot.status == .memorized)
-        #expect(rows.first?.lastPractisedAt == now)
-        #expect(rows.first?.lastHeardAt == nil)
-        #expect(try migrated.mainContext.fetch(FetchDescriptor<PracticeSet>()).first?.title == "Al-Fatiha")
-    }
 }

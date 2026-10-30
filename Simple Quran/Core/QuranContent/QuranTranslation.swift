@@ -94,7 +94,7 @@ final class TranslationLibrary {
             do {
                 return try BundledTranslation.load(edition, bundle: bundle)
             } catch {
-                QuranLog.translation.error("Couldn't load the \(edition.rawValue, privacy: .public) translation: \(String(describing: error), privacy: .public)")
+                Log.translation.error("Couldn't load the \(edition.rawValue, privacy: .public) translation: \(String(describing: error), privacy: .public)")
                 return nil
             }
         }

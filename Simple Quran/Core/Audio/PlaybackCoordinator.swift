@@ -23,7 +23,7 @@ final class PlaybackCoordinator {
     private var source: AudioSource
     private var fileStore: AudioFileStore
     private let nowPlaying: NowPlayingBridge
-    private let logger = Logger(subsystem: "com.simpleAzaan.Simple-Quran1", category: "playback")
+    private let logger = Log.playback
 
     private var player: AVQueuePlayer
     private var endObserver: NSObjectProtocol?
@@ -49,6 +49,9 @@ final class PlaybackCoordinator {
     private var countedCurrentItem = false
     private var playbackBeganAt: Date?
     private(set) var listeningSeconds: Double = 0
+    /// How long one playback has to run before it counts as a listening session.
+    static let listenSeconds: TimeInterval = 60
+    private var countedListen = false
 
     var snapshot = PlaybackSnapshot(
         setID: nil,
@@ -73,6 +76,8 @@ final class PlaybackCoordinator {
     var onPositionChanged: ((Int) -> Void)?
     /// An ayah's audio played to its end (not skipped), in the reader or while memorizing.
     var onAyahHeard: ((Int) -> Void)?
+    /// A playback has run for `listenSeconds`. Fires once per playback, wherever it was started.
+    var onListened: (() -> Void)?
     /// Asks for missing ayahs to be saved, nearest first; returns false when automatic downloads are off.
     var downloadMissingAudio: (([Int]) -> Bool)?
     var passageRanges: [VerseRange] { preparedPassages }
@@ -350,6 +355,7 @@ final class PlaybackCoordinator {
         repetitionCount = 0
         listeningSeconds = 0
         playbackBeganAt = nil
+        countedListen = false
         userMessage = nil
         shouldAutoplay = false
         downloadsMissingAudio = false
@@ -657,6 +663,10 @@ final class PlaybackCoordinator {
         guard let playbackBeganAt else { return }
         listeningSeconds += max(0, Date.now.timeIntervalSince(playbackBeganAt))
         self.playbackBeganAt = nil
+        if !countedListen, listeningSeconds >= Self.listenSeconds {
+            countedListen = true
+            onListened?()
+        }
     }
 
     private func publishNowPlaying() {

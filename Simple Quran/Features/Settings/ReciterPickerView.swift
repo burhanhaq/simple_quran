@@ -18,6 +18,7 @@ struct ReciterPickerView: View {
                 }
             } footer: {
                 Text(String(localized: "Downloads are kept for each reciter, so switching back still works offline."))
+                    .warmSectionText()
             }
         }
         .warmListChrome()
@@ -39,6 +40,7 @@ struct ReciterPickerView: View {
                         Text(reciter.englishName)
                             .foregroundStyle(Color.appBrownText)
                         Text(reciter.arabicName)
+                            .arabicAccessibilityLabel(reciter.arabicName)
                             .font(.subheadline)
                             .foregroundStyle(Color.secondaryWarm)
                         if bytes > 0 {

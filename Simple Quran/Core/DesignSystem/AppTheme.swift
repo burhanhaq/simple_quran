@@ -212,7 +212,7 @@ struct QuranAyahText: View {
                 .multilineTextAlignment(.leading)
                 .frame(maxWidth: .infinity, alignment: .leading)
                 .environment(\.layoutDirection, .rightToLeft)
-                .accessibilityLabel(hidden ? String(localized: "Arabic hidden for recall") : verse.text)
+                .accessibilityLabel(hidden ? Text(String(localized: "Arabic hidden for recall")) : Text(AttributedString.arabicSpeech(verse.text)))
                 .accessibilityValue(marked ? String(localized: "Marked as slipped") : "")
             // Laid out even while hidden, so opening the ayah doesn't push the rows below.
             if let translation {
@@ -389,6 +389,7 @@ struct ReadingBanner: View {
                 .multilineTextAlignment(.center)
                 .frame(maxWidth: .infinity)
                 .environment(\.layoutDirection, isArabic ? .rightToLeft : .leftToRight)
+                .accessibilityLabel(isArabic ? Text(AttributedString.arabicSpeech(title)) : Text(title))
             rule
         }
         .accessibilityElement(children: .combine)
@@ -416,6 +417,11 @@ extension View {
 
     func warmListRow() -> some View {
         listRowBackground(Color.appWarmSurface)
+    }
+
+    /// For section headers and footers in warm lists: the system's gray falls just short of AA on parchment.
+    func warmSectionText() -> some View {
+        foregroundStyle(Color.secondaryWarm)
     }
 }
 
