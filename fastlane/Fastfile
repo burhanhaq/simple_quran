@@ -1,0 +1,196 @@
+default_platform(:ios)
+
+APP_IDENTIFIER = "com.dumblemon.SimpleQuran"
+PROJECT = "Simple Quran.xcodeproj"
+SCHEME = "Simple Quran"
+APP_PLATFORM = "ios"
+CONFIGURATION = "Release"
+EXPORT_METHOD = "app-store"
+OUTPUT_DIRECTORY = "build/fastlane"
+IPA_NAME = "SimpleQuran.ipa"
+
+# App Store Connect API key. The .p8 stays outside the repo.
+API_KEY_ID = "4CXZBFY8C3"
+API_KEY_ISSUER_ID = "64434334-ca1f-4252-a5f9-d3538bb45c69"
+API_KEY_PATH = File.expand_path("~/.appstoreconnect/private_keys/AuthKey_#{API_KEY_ID}.p8")
+# Backup of the Apple Distribution certificate and its private key.
+CERTIFICATES_DIR = File.expand_path("~/.appstoreconnect/certificates")
+DISTRIBUTION_CERTIFICATE = "Apple Distribution"
+
+# External testers join through the public link on this group.
+PUBLIC_GROUP_NAME = "Public Beta"
+PUBLIC_LINK_LIMIT = 10_000
+
+BETA_LOCALE = "en-US"
+FEEDBACK_EMAIL = "hello@dumblemon.com"
+MARKETING_URL = "https://dumblemon.com/apps/simple-quran/"
+PRIVACY_POLICY_URL = "https://dumblemon.com/apps/simple-quran/privacy/"
+
+BETA_DESCRIPTION = <<~TEXT.strip
+  Simple Quran helps you memorize the Quran a piece at a time, and read and listen to it.
+
+  Memorize opens on today's checklist: the next piece to learn and what to revise. Each session moves from Listen, to Recite with the Arabic hidden, to Check. Your journey maps every surah by juz and shows how fresh each memorized one is.
+
+  Quran lets you browse by surah, juz, or the 604-page Madani layout, with the Saheeh International translation. Listen with six reciters, in the background, on the lock screen, and in CarPlay.
+
+  No account, no analytics, no tracking. Everything stays on your iPhone.
+TEXT
+
+DEFAULT_WHAT_TO_TEST = <<~TEXT.strip
+  Please try:
+  - Memorizing a short surah from start to finish: Listen, Recite, Check.
+  - Revising from today's checklist on the following days.
+  - Reading by surah, juz, and page, and searching (for example "18:1-10").
+  - Listening with the screen locked, switching reciters, and playing in CarPlay if you have it.
+
+  Send feedback from TestFlight or to hello@dumblemon.com.
+TEXT
+
+REVIEW_CONTACT = {
+  contact_first_name: "Burhan",
+  contact_last_name: "Ul Haq",
+  contact_email: "hello@dumblemon.com",
+  contact_phone: "2405809477",
+  demo_account_required: false,
+  notes: "No account or sign-in. All features work without one. Audio streams from cdn.islamic.network."
+}.freeze
+
+platform :ios do
+  desc "Build, upload to TestFlight, and submit for external testing on the public link"
+  desc "Options: changelog:\"What to test\""
+  lane :beta do |options|
+    UI.user_error!("Set API_KEY_ISSUER_ID in fastlane/Fastfile") if API_KEY_ISSUER_ID.empty?
+
+    api_key = app_store_connect_api_key(
+      key_id: API_KEY_ID,
+      issuer_id: API_KEY_ISSUER_ID,
+      key_filepath: API_KEY_PATH
+    )
+
+    build_number = latest_testflight_build_number(
+      api_key: api_key,
+      app_identifier: APP_IDENTIFIER,
+      initial_build_number: 0
+    ) + 1
+
+    # Signs locally with an Apple Distribution certificate, creating one if the keychain has none.
+    FileUtils.mkdir_p(CERTIFICATES_DIR)
+    get_certificates(
+      api_key: api_key,
+      development: false,
+      output_path: CERTIFICATES_DIR
+    )
+
+    # The API key has no access to cloud-managed certificates, so export signs manually
+    # with an App Store profile tied to the certificate above.
+    get_provisioning_profile(
+      api_key: api_key,
+      app_identifier: APP_IDENTIFIER,
+      cert_id: lane_context[SharedValues::CERT_CERTIFICATE_ID],
+      output_path: CERTIFICATES_DIR
+    )
+
+    xcode_auth_args = [
+      "-allowProvisioningUpdates",
+      "-authenticationKeyPath #{API_KEY_PATH}",
+      "-authenticationKeyID #{API_KEY_ID}",
+      "-authenticationKeyIssuerID #{API_KEY_ISSUER_ID}"
+    ].join(" ")
+
+    build_app(
+      project: PROJECT,
+      scheme: SCHEME,
+      configuration: CONFIGURATION,
+      export_method: EXPORT_METHOD,
+      output_directory: OUTPUT_DIRECTORY,
+      output_name: IPA_NAME,
+      clean: true,
+      export_options: {
+        signingStyle: "manual",
+        signingCertificate: DISTRIBUTION_CERTIFICATE,
+        provisioningProfiles: { APP_IDENTIFIER => lane_context[SharedValues::SIGH_NAME] }
+      },
+      # gym also passes xcargs to the export step, so the auth args cover both.
+      xcargs: "CURRENT_PROJECT_VERSION=#{build_number} #{xcode_auth_args}"
+    )
+
+    group = ensure_public_group
+
+    upload_to_testflight(**external_testing_options(api_key, options[:changelog]))
+
+    UI.success("Build #{build_number} submitted. Public link: #{group.public_link}")
+  end
+
+  desc "Submit an already uploaded build for external testing, without rebuilding"
+  desc "Options: build_number:1 changelog:\"What to test\" (defaults to the latest build)"
+  lane :beta_distribute do |options|
+    api_key = app_store_connect_api_key(
+      key_id: API_KEY_ID,
+      issuer_id: API_KEY_ISSUER_ID,
+      key_filepath: API_KEY_PATH
+    )
+    group = ensure_public_group
+
+    upload_to_testflight(
+      **external_testing_options(api_key, options[:changelog]),
+      distribute_only: true,
+      app_platform: APP_PLATFORM,
+      build_number: options[:build_number]&.to_s
+    )
+
+    UI.success("Submitted. Public link: #{group.public_link}")
+  end
+
+  desc "Print the public TestFlight link"
+  lane :beta_link do
+    app_store_connect_api_key(
+      key_id: API_KEY_ID,
+      issuer_id: API_KEY_ISSUER_ID,
+      key_filepath: API_KEY_PATH
+    )
+    UI.success("Public link: #{ensure_public_group.public_link}")
+  end
+end
+
+# Test information, review contact, and the public group for an external TestFlight submission.
+def external_testing_options(api_key, changelog)
+  {
+    api_key: api_key,
+    app_identifier: APP_IDENTIFIER,
+    changelog: changelog || DEFAULT_WHAT_TO_TEST,
+    # Keyed by locale, not "default": "default" only updates localizations that already
+    # exist, and a new app has none, so the description would never be saved.
+    localized_app_info: {
+      BETA_LOCALE => {
+        description: BETA_DESCRIPTION,
+        feedback_email: FEEDBACK_EMAIL,
+        marketing_url: MARKETING_URL,
+        privacy_policy_url: PRIVACY_POLICY_URL
+      }
+    },
+    beta_app_review_info: REVIEW_CONTACT,
+    groups: [PUBLIC_GROUP_NAME],
+    distribute_external: true,
+    submit_beta_review: true,
+    notify_external_testers: true,
+    uses_non_exempt_encryption: false
+  }
+end
+
+# Finds the external group with the public link, creating it on first run.
+def ensure_public_group
+  app = Spaceship::ConnectAPI::App.find(APP_IDENTIFIER)
+  UI.user_error!("No app for #{APP_IDENTIFIER} in App Store Connect") unless app
+
+  group = app.get_beta_groups.find { |g| g.name == PUBLIC_GROUP_NAME }
+  return group if group
+
+  UI.message("Creating external group '#{PUBLIC_GROUP_NAME}' with a public link")
+  app.create_beta_group(
+    group_name: PUBLIC_GROUP_NAME,
+    is_internal_group: false,
+    public_link_enabled: true,
+    public_link_limit: PUBLIC_LINK_LIMIT,
+    public_link_limit_enabled: false
+  )
+end
