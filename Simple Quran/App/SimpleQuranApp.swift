@@ -92,6 +92,7 @@ struct SimpleQuranApp: App {
         environment.persistenceLoadError = persistenceLoadError
         self.environment = environment
         appDelegate.downloads = downloads
+        CarPlaySceneDelegate.environment = environment
     }
 
     var body: some Scene {

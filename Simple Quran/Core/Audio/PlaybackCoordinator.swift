@@ -52,6 +52,9 @@ final class PlaybackCoordinator {
     /// How long one playback has to run before it counts as a listening session.
     static let listenSeconds: TimeInterval = 60
     private var countedListen = false
+    private static let startAudioSignpost: StaticString = "Start audio"
+    /// Open from asking for audio until it plays, fails, or is paused.
+    private var startAudioInterval: OSSignpostIntervalState?
 
     var snapshot = PlaybackSnapshot(
         setID: nil,
@@ -181,6 +184,7 @@ final class PlaybackCoordinator {
     }
 
     func pause() {
+        endStartAudioInterval()
         shouldAutoplay = false
         accumulateListeningTime()
         player.pause()
@@ -393,6 +397,7 @@ final class PlaybackCoordinator {
 
         do {
             if autoplay {
+                beginStartAudioInterval()
                 try AudioSessionController.shared.configure(.playback)
             }
             updateSnapshot(for: step)
@@ -429,6 +434,7 @@ final class PlaybackCoordinator {
                     if player.items().isEmpty {
                         snapshot.isPlaying = false
                         snapshot.isLoading = shouldAutoplay
+                        if shouldAutoplay { publishNowPlaying() }
                     }
                     return
                 } else {
@@ -464,21 +470,23 @@ final class PlaybackCoordinator {
         }
     }
 
+    /// Keeps the next few ayahs downloading, nearest first. Ayahs that already failed wait for Play to retry them.
     private func requestMissingAudio() {
         guard let downloadMissingAudio else { return }
-        let ayahs = versesInSet.map(\.globalAyah)
-        let start = snapshot.currentGlobalAyah.flatMap { ayahs.firstIndex(of: $0) } ?? 0
-        let missing = (ayahs[start...] + ayahs[..<start]).filter { !fileStore.isReady($0) }
+        let missing = AudioPrefetch.ayahsToFetch(order: versesInSet.map(\.globalAyah), current: snapshot.currentGlobalAyah) {
+            fileStore.isReady($0) || unavailableAyahs.contains($0)
+        }
         guard !missing.isEmpty else { return }
         downloadsMissingAudio = downloadMissingAudio(missing)
     }
 
     private func observeReadiness(of item: AVPlayerItem, autoplay: Bool) {
         snapshot.isPlaying = false
+        shouldAutoplay = autoplay
         if autoplay {
             snapshot.isLoading = true
+            publishNowPlaying()
         }
-        shouldAutoplay = autoplay
         itemStatusObserver = item.observe(\.status, options: [.initial, .new]) { [weak self, weak item] _, _ in
             Task { @MainActor in
                 guard let self, let item, self.player.currentItem === item else { return }
@@ -521,8 +529,11 @@ final class PlaybackCoordinator {
         timeControlObserver = player.observe(\.timeControlStatus, options: [.new]) { [weak self] player, _ in
             Task { @MainActor in
                 guard let self, self.shouldAutoplay else { return }
+                let wasLoading = self.snapshot.isLoading
                 self.snapshot.isLoading = player.timeControlStatus == .waitingToPlayAtSpecifiedRate
                 self.snapshot.isPlaying = player.timeControlStatus == .playing
+                // A stall mid-playback reads "Loading…" until the audio catches up.
+                if self.snapshot.isLoading != wasLoading { self.refreshNowPlayingIfPublished() }
             }
         }
     }
@@ -547,6 +558,8 @@ final class PlaybackCoordinator {
         if let step = cursor?.current {
             updateSnapshot(for: step)
         }
+        // The download window moves along with playback, ahead of what fillQueue will need.
+        requestMissingAudio()
         countedCurrentItem = false
         if shouldAutoplay {
             markCurrentAyahStarted()
@@ -584,6 +597,7 @@ final class PlaybackCoordinator {
     }
 
     private func failPlayback(_ error: Error) {
+        endStartAudioInterval()
         shouldAutoplay = false
         accumulateListeningTime()
         player.pause()
@@ -622,7 +636,19 @@ final class PlaybackCoordinator {
         self.player = player
     }
 
+    private func beginStartAudioInterval() {
+        endStartAudioInterval()
+        startAudioInterval = Log.playbackSignposts.beginInterval(Self.startAudioSignpost)
+    }
+
+    private func endStartAudioInterval() {
+        guard let startAudioInterval else { return }
+        Log.playbackSignposts.endInterval(Self.startAudioSignpost, startAudioInterval)
+        self.startAudioInterval = nil
+    }
+
     private func startPlayer() {
+        endStartAudioInterval()
         markCurrentAyahStarted()
         if playbackBeganAt == nil { playbackBeganAt = .now }
         player.play()
@@ -677,7 +703,7 @@ final class PlaybackCoordinator {
             setTitle: snapshot.setTitle,
             verse: verse,
             reciter: source.reciter,
-            isPlaying: snapshot.isPlaying,
+            state: snapshot.isPlaying ? .playing : (snapshot.isLoading ? .loading : .paused),
             elapsedTime: player.currentTime().seconds,
             duration: player.currentItem?.duration.seconds
         )

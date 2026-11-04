@@ -40,6 +40,8 @@ nonisolated enum Log {
     static let downloads = logger(.downloads)
     /// Intervals for Instruments' os_signpost track, to see what opening a long surah costs.
     static let rendering = OSSignposter(subsystem: AppIdentity.bundleID, category: Category.rendering.rawValue)
+    /// Intervals for how long a tap on Play takes to become sound.
+    static let playbackSignposts = OSSignposter(subsystem: AppIdentity.bundleID, category: Category.playback.rawValue)
 
     private static func logger(_ category: Category) -> Logger {
         Logger(subsystem: AppIdentity.bundleID, category: category.rawValue)

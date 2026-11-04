@@ -1,5 +1,14 @@
 import Foundation
 import MediaPlayer
+import UIKit
+
+/// What the lock screen and CarPlay show playback doing.
+nonisolated enum NowPlayingState: Equatable, Sendable {
+    case playing
+    case paused
+    /// Waiting for audio to download or buffer before it can play.
+    case loading
+}
 
 @MainActor
 final class NowPlayingBridge {
@@ -7,6 +16,8 @@ final class NowPlayingBridge {
     private let commandCenter = MPRemoteCommandCenter.shared()
     private var commandTargets: [(command: MPRemoteCommand, target: Any)] = []
     private(set) var isPublished = false
+    /// Shown on the lock screen and in CarPlay.
+    private let artwork = NowPlayingBridge.makeArtwork()
 
     init() {
         commandCenter.playCommand.isEnabled = true
@@ -67,16 +78,17 @@ final class NowPlayingBridge {
         setTitle: String,
         verse: QuranVerse,
         reciter: Reciter,
-        isPlaying: Bool,
+        state: NowPlayingState,
         elapsedTime: Double?,
         duration: Double?
     ) {
         var info: [String: Any] = [
             MPMediaItemPropertyTitle: verse.reference,
             MPMediaItemPropertyAlbumTitle: setTitle,
-            MPMediaItemPropertyArtist: reciter.englishName,
+            // In place of the reciter while waiting, so a slow start doesn't look like nothing happened.
+            MPMediaItemPropertyArtist: state == .loading ? String(localized: "Loading…") : reciter.englishName,
             MPNowPlayingInfoPropertyMediaType: MPNowPlayingInfoMediaType.audio.rawValue,
-            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0,
+            MPNowPlayingInfoPropertyPlaybackRate: state == .playing ? 1.0 : 0.0,
             MPNowPlayingInfoPropertyDefaultPlaybackRate: 1.0
         ]
         if let elapsedTime, elapsedTime.isFinite, elapsedTime >= 0 {
@@ -85,9 +97,17 @@ final class NowPlayingBridge {
         if let duration, duration.isFinite, duration > 0 {
             info[MPMediaItemPropertyPlaybackDuration] = duration
         }
+        if let artwork { info[MPMediaItemPropertyArtwork] = artwork }
         infoCenter.nowPlayingInfo = info
-        infoCenter.playbackState = isPlaying ? .playing : .paused
+        // Loading shows Pause, like the phone's mini player, so the driver can cancel a slow start.
+        infoCenter.playbackState = state == .paused ? .paused : .playing
         isPublished = true
+    }
+
+    /// The artwork's image is requested off the main thread, so it's built outside the main actor.
+    nonisolated private static func makeArtwork() -> MPMediaItemArtwork? {
+        guard let image = UIImage(named: "NowPlayingArtwork") else { return nil }
+        return MPMediaItemArtwork(boundsSize: image.size) { @Sendable _ in image }
     }
 
     private func bind(

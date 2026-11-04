@@ -54,6 +54,7 @@ final class AppSettings {
         static let revisionCycle = "learning.revisionCycle"
         static let dailyLog = "learning.dailyLog"
         static let readingAyah = "reading.ayah"
+        static let recentSurahs = "reading.recentSurahs"
     }
 
     var learningTargets: [LearningTarget] {
@@ -126,6 +127,16 @@ final class AppSettings {
 
     var readingAyah: Int {
         didSet { defaults.set(readingAyah, forKey: Key.readingAyah) }
+    }
+    /// Surahs the user last listened to, most recent first, for CarPlay's Recent list.
+    private(set) var recentSurahs: [Int] {
+        didSet { defaults.set(recentSurahs, forKey: Key.recentSurahs) }
+    }
+    static let recentSurahLimit = 5
+
+    func noteListened(surah: Int) {
+        guard recentSurahs.first != surah else { return }
+        recentSurahs = Array(([surah] + recentSurahs.filter { $0 != surah }).prefix(Self.recentSurahLimit))
     }
     /// How much of a page each memorize piece covers, for every plan and passage.
     var pieceSize: PieceSize {
@@ -227,6 +238,7 @@ final class AppSettings {
         dailyLog = defaults.data(forKey: Key.dailyLog)
             .flatMap { try? JSONDecoder().decode(DailyLog.self, from: $0) } ?? .empty(on: .now)
         readingAyah = defaults.integer(forKey: Key.readingAyah)
+        recentSurahs = defaults.array(forKey: Key.recentSurahs) as? [Int] ?? []
         pieceSize = defaults.string(forKey: Key.pieceSize).flatMap(PieceSize.init(rawValue:)) ?? .default
         revisionCycle = RevisionCycle(rawValue: defaults.integer(forKey: Key.revisionCycle)) ?? .default
         memorizePlayback = defaults.data(forKey: Key.memorizePlayback)
@@ -298,6 +310,7 @@ final class AppEnvironment {
                 do { try store?.save() }
                 catch { playback?.userMessage = .from(.persistenceFailure) }
             } else { settings?.readingAyah = ayah }
+            if let surah = quran.verse(globalAyah: ayah)?.surahNumber { settings?.noteListened(surah: surah) }
         }
         playback.onListened = { [weak reviewPrompt] in reviewPrompt?.recordListen() }
         playback.onAyahHeard = { [weak playback, weak store] ayah in

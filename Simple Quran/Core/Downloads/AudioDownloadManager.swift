@@ -122,6 +122,7 @@ final class AudioDownloadManager: NSObject, URLSessionDownloadDelegate {
         for ayah in unique {
             if reportsFailures { quietAyahs.remove(ayah) } else if jobs[ayah]?.status != .downloading { quietAyahs.insert(ayah) }
         }
+        var started: [Int] = []
         for ayah in unique where !fileStore.isReady(ayah) && jobs[ayah]?.status != .downloading {
             do {
                 let metadata = DownloadTaskMetadata(reciter: source.reciter, globalAyah: ayah)
@@ -132,14 +133,27 @@ final class AudioDownloadManager: NSObject, URLSessionDownloadDelegate {
                 request.setValue("audio/mpeg,audio/*;q=0.9", forHTTPHeaderField: "Accept")
                 let task = session.downloadTask(with: request)
                 task.taskDescription = metadata.taskDescription
+                // The first ayah asked for is the one playback is waiting on.
+                if started.isEmpty { task.priority = URLSessionTask.highPriority }
                 taskAyahs[task.taskIdentifier] = ayah
                 jobs[ayah] = DownloadJob(globalAyah: ayah, fraction: 0, status: .downloading)
-                upsertRecord(ayah: ayah, status: .downloading)
+                started.append(ayah)
                 task.resume()
             } catch {
                 markFailed(ayah: ayah, error: error)
             }
         }
+        recordStarted(started)
+    }
+
+    /// Records a batch of new downloads with one fetch and one save, so a long passage doesn't save once per ayah.
+    private func recordStarted(_ ayahs: [Int]) {
+        guard !ayahs.isEmpty else { return }
+        let existing = records(for: Set(ayahs))
+        for ayah in ayahs {
+            apply(status: .downloading, to: existing[ayah] ?? insertRecord(ayah: ayah))
+        }
+        saveContext()
     }
 
     func cancelAll() {
@@ -361,6 +375,52 @@ final class AudioDownloadManager: NSObject, URLSessionDownloadDelegate {
         return (try? context?.fetch(descriptor)) ?? []
     }
 
+    /// One record per ayah for the current reciter; duplicates are deleted.
+    private func records(for ayahs: Set<Int>) -> [Int: AudioDownloadRecord] {
+        let reciterID = source.reciter.id
+        let quality = source.reciter.qualityKbps
+        let ayahList = Array(ayahs)
+        let descriptor = FetchDescriptor<AudioDownloadRecord>(
+            predicate: #Predicate {
+                $0.reciterID == reciterID && $0.quality == quality && ayahList.contains($0.globalAyah)
+            }
+        )
+        var byAyah: [Int: AudioDownloadRecord] = [:]
+        for record in (try? context?.fetch(descriptor)) ?? [] {
+            if byAyah[record.globalAyah] == nil {
+                byAyah[record.globalAyah] = record
+            } else {
+                context?.delete(record)
+            }
+        }
+        return byAyah
+    }
+
+    private func insertRecord(ayah: Int, path: String? = nil) -> AudioDownloadRecord {
+        let created = AudioDownloadRecord(
+            reciterID: source.reciter.id,
+            quality: source.reciter.qualityKbps,
+            globalAyah: ayah,
+            relativePath: path ?? "\(ayah).mp3"
+        )
+        context?.insert(created)
+        return created
+    }
+
+    private func apply(
+        status: DownloadStatus,
+        to record: AudioDownloadRecord,
+        bytes: Int64 = 0,
+        path: String? = nil,
+        lastError: String? = nil
+    ) {
+        record.status = status
+        record.byteCount = bytes
+        if let path { record.relativePath = path }
+        if status == .ready { record.downloadedAt = .now }
+        record.lastError = lastError
+    }
+
     private func upsertRecord(
         ayah: Int,
         status: DownloadStatus,
@@ -369,22 +429,9 @@ final class AudioDownloadManager: NSObject, URLSessionDownloadDelegate {
         lastError: String? = nil
     ) {
         let matches = records(for: ayah)
-        let existing = matches.first ?? {
-            let created = AudioDownloadRecord(
-                reciterID: source.reciter.id,
-                quality: source.reciter.qualityKbps,
-                globalAyah: ayah,
-                relativePath: path ?? "\(ayah).mp3"
-            )
-            context?.insert(created)
-            return created
-        }()
+        let existing = matches.first ?? insertRecord(ayah: ayah, path: path)
         for duplicate in matches.dropFirst() { context?.delete(duplicate) }
-        existing.status = status
-        existing.byteCount = bytes
-        if let path { existing.relativePath = path }
-        if status == .ready { existing.downloadedAt = .now }
-        existing.lastError = lastError
+        apply(status: status, to: existing, bytes: bytes, path: path, lastError: lastError)
         saveContext()
     }
 
