@@ -53,6 +53,11 @@ struct MushafHighlightState: Equatable {
     var hiddenAyahs: Set<Int> = []
 
     static let empty = MushafHighlightState()
+
+    /// Hidden and dimmed ayahs are colors inside the text; the rest is drawn over or under it.
+    func changesTextColors(from previous: MushafHighlightState) -> Bool {
+        hiddenAyahs != previous.hiddenAyahs || dimmedAyahs != previous.dimmedAyahs
+    }
 }
 
 struct MushafAttributedPage {

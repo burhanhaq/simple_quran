@@ -12,15 +12,16 @@ final class MushafPageCanvas: UIView, MushafAyahContentView {
     private(set) var hiddenAyahs: Set<Int> = []
 
     private var content = Content()
+    private var lines: [MushafComposedLine] = []
     private var highlight = MushafHighlightState.empty
     private var metrics: MushafPageMetrics?
     private var laidOutSize: CGSize?
     private var placed: [PlacedLine] = []
 
-    /// What decides where the lines go. Anything else only recolors.
+    /// What decides where the lines go. Anything else only recolors. A page number always means
+    /// the same lines, so they're never compared: comparing Arabic strings is slow.
     private struct Content: Equatable {
         var page = 0
-        var lines: [MushafComposedLine] = []
         var widestLine: CGFloat = 0
         var referenceWidth: CGFloat = 0
     }
@@ -73,9 +74,10 @@ final class MushafPageCanvas: UIView, MushafAyahContentView {
         referenceWidth: CGFloat,
         highlight next: MushafHighlightState
     ) {
-        let nextContent = Content(page: page, lines: lines, widestLine: widestLine, referenceWidth: referenceWidth)
+        let nextContent = Content(page: page, widestLine: widestLine, referenceWidth: referenceWidth)
         if nextContent != content {
             content = nextContent
+            self.lines = lines
             highlight = next
             hiddenAyahs = next.hiddenAyahs
             laidOutSize = nil
@@ -86,7 +88,8 @@ final class MushafPageCanvas: UIView, MushafAyahContentView {
         let previous = highlight
         highlight = next
         hiddenAyahs = next.hiddenAyahs
-        placeLines()
+        // A moved highlight or a slip mark only needs drawing again; the lines stay as they are.
+        if next.changesTextColors(from: previous) { placeLines() }
         setNeedsDisplay()
         let revealed = previous.hiddenAyahs.subtracting(next.hiddenAyahs)
         let covered = next.hiddenAyahs.subtracting(previous.hiddenAyahs)
@@ -109,8 +112,8 @@ final class MushafPageCanvas: UIView, MushafAyahContentView {
     private func placeLines() {
         guard let metrics else { placed = []; return }
         let body = CTFontCreateWithName(QuranScript.postScriptName as CFString, metrics.fontSize, nil)
-        placed = content.lines.enumerated().map { index, composed in
-            let slot = metrics.slot(index, of: content.lines.count)
+        placed = lines.enumerated().map { index, composed in
+            let slot = metrics.slot(index, of: lines.count)
             let band = slot.insetBy(dx: 0, dy: slot.height * (1 - Style.bandHeight) / 2)
             switch composed.kind {
             case .surahHeader:
@@ -304,13 +307,13 @@ final class MushafPageCanvas: UIView, MushafAyahContentView {
     /// The page read in an Arabic voice, saying a hidden ayah is hidden instead of reading it.
     override var accessibilityAttributedValue: NSAttributedString? {
         get {
-            let lines = content.lines.filter { $0.kind != .surahHeader }.map { line -> String in
+            let spokenLines = lines.filter { $0.kind != .surahHeader }.map { line -> String in
                 let spoken = NSMutableString(string: line.text)
                 let hidden = line.bodyRanges.filter { highlight.hiddenAyahs.contains($0.key) }.values.sorted { $0.location > $1.location }
                 for range in hidden { spoken.replaceCharacters(in: range, with: String(localized: "Arabic hidden for recall")) }
                 return spoken as String
             }
-            return NSAttributedString(string: lines.joined(separator: "\n"), attributes: [.accessibilitySpeechLanguage: QuranScript.speechLanguage])
+            return NSAttributedString(string: spokenLines.joined(separator: "\n"), attributes: [.accessibilitySpeechLanguage: QuranScript.speechLanguage])
         }
         set { super.accessibilityAttributedValue = newValue }
     }

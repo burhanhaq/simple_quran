@@ -27,17 +27,27 @@ nonisolated struct MushafLine: Equatable, Hashable, Sendable {
     var isJustified: Bool { kind == .text(centered: false) }
 }
 
+/// Its facts are worked out once, when the layout loads, since the pager reads them on every update.
 nonisolated struct MushafPage: Equatable, Hashable, Sendable, Identifiable {
-    var number: Int
-    var lines: [MushafLine]
+    let number: Int
+    let lines: [MushafLine]
+    /// The widest justified line, at `MushafLayout.measuringSize`.
+    let widestJustifiedWidth: CGFloat
+    /// Every ayah with words or a number here, in reading order. Every page opens on a new ayah.
+    let orderedAyahs: [Int]
+    let ayahs: Set<Int>
+
     var id: Int { number }
 
-    /// The widest justified line, at `MushafLayout.measuringSize`.
-    var widestJustifiedWidth: CGFloat {
-        lines.filter(\.isJustified).compactMap(\.naturalWidth).max() ?? 0
+    init(number: Int, lines: [MushafLine]) {
+        self.number = number
+        self.lines = lines
+        widestJustifiedWidth = lines.filter(\.isJustified).compactMap(\.naturalWidth).max() ?? 0
+        let segments = lines.flatMap(\.segments)
+        var seen: Set<Int> = []
+        orderedAyahs = segments.map(\.globalAyah).filter { seen.insert($0).inserted }
+        ayahs = seen
     }
-
-    var ayahs: Set<Int> { Set(lines.flatMap { $0.segments.map(\.globalAyah) }) }
 }
 
 /// Where each line of the 15-line Madani mushaf breaks, pointing at words of the bundled text.
@@ -103,6 +113,14 @@ nonisolated struct MushafLayout: Sendable {
     func page(_ number: Int) -> MushafPage? {
         guard number >= 1, number <= pages.count else { return nil }
         return pages[number - 1]
+    }
+
+    /// The pages in the range that exist, in order.
+    func pages(in range: ClosedRange<Int>) -> ArraySlice<MushafPage> {
+        let first = max(range.lowerBound, 1)
+        let last = min(range.upperBound, pages.count)
+        guard first <= last else { return [] }
+        return pages[(first - 1)...(last - 1)]
     }
 
     /// The page an ayah starts on.

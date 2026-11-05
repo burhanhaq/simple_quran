@@ -43,9 +43,11 @@ nonisolated struct MushafComposedLine: Equatable, Sendable {
     }
 }
 
-/// Turns a layout page into the text of its lines, from the bundled ayahs.
+/// Turns a layout page into the text of its lines, from the bundled ayahs. Works in UTF-16 offsets
+/// throughout: splitting Arabic with stacked marks by `Character` is slow, and nothing here needs it.
 nonisolated enum MushafPageComposer {
     static let space: UTF16.CodeUnit = 0x20
+    private static let noBreakSpace: Unicode.Scalar = "\u{00A0}"
 
     static func compose(_ page: MushafPage, catalog: BundledQuranCatalog) -> [MushafComposedLine] {
         page.lines.map { compose($0, catalog: catalog) }
@@ -59,31 +61,47 @@ nonisolated enum MushafPageComposer {
             return MushafComposedLine(kind: .basmala, text: catalog.basmala)
         case .text(let centered):
             var composed = MushafComposedLine(kind: .text(justified: !centered), text: "", naturalWidth: line.naturalWidth)
-            var text = ""
-            var length = 0
+            let text = NSMutableString()
             func append(_ piece: String) -> NSRange {
-                let range = NSRange(location: length, length: (piece as NSString).length)
-                text += piece
-                length += range.length
+                let range = NSRange(location: text.length, length: (piece as NSString).length)
+                text.append(piece)
                 return range
             }
             for segment in line.segments {
                 guard let verse = catalog.verse(globalAyah: segment.globalAyah) else { continue }
-                let words = verse.text.split(separator: " ", omittingEmptySubsequences: false)
-                let clamped = segment.words.clamped(to: 0..<words.count)
-                if !clamped.isEmpty {
-                    if length > 0 { _ = append(" ") }
-                    composed.bodyRanges[verse.globalAyah] = append(words[clamped].joined(separator: " "))
+                if let words = utf16Range(ofWords: segment.words, in: verse.text) {
+                    if text.length > 0 { _ = append(" ") }
+                    composed.bodyRanges[verse.globalAyah] = append((verse.text as NSString).substring(with: words))
                 }
                 if segment.endsAyah {
                     // The number keeps to its ayah with a no-break space, unless it starts the line.
                     let number = QuranScript.ayahNumber(verse.ayahInSurah)
-                    let piece = length > 0 ? number : String(number.drop { $0 == "\u{00A0}" })
+                    let piece = text.length > 0 ? number
+                        : String(String.UnicodeScalarView(number.unicodeScalars.drop { $0 == noBreakSpace }))
                     composed.numberRanges[verse.globalAyah] = append(piece)
                 }
             }
-            composed.text = text
+            composed.text = text as String
             return composed
         }
+    }
+
+    /// Where a run of an ayah's words falls in its text, as UTF-16 offsets. Words are split on
+    /// regular spaces, as the layout counts them; nil when the run is empty or out of range.
+    static func utf16Range(ofWords words: Range<Int>, in text: String) -> NSRange? {
+        var starts = [0]
+        var ends: [Int] = []
+        var offset = 0
+        for unit in text.utf16 {
+            if unit == space {
+                ends.append(offset)
+                starts.append(offset + 1)
+            }
+            offset += 1
+        }
+        ends.append(offset)
+        let clamped = words.clamped(to: 0..<starts.count)
+        guard let first = clamped.first, let last = clamped.last else { return nil }
+        return NSRange(location: starts[first], length: ends[last] - starts[first])
     }
 }

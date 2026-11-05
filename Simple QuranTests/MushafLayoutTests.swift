@@ -65,6 +65,33 @@ struct MushafLayoutTests {
         #expect(pages.upperBound >= 49)
     }
 
+    @Test func pagesKnowTheirAyahsInReadingOrder() throws {
+        for page in Self.layout.pages {
+            let segmentAyahs = page.lines.flatMap(\.segments).map(\.globalAyah)
+            #expect(page.ayahs == Set(segmentAyahs))
+            #expect(page.orderedAyahs == page.orderedAyahs.sorted())
+            #expect(page.orderedAyahs.count == page.ayahs.count)
+            #expect(page.widestJustifiedWidth == (page.lines.filter(\.isJustified).compactMap(\.naturalWidth).max() ?? 0))
+        }
+        let first = try #require(Self.layout.page(1))
+        #expect(first.orderedAyahs == Array(1...7))
+    }
+
+    @Test func pagesInARangeAreClampedToTheMushaf() {
+        #expect(Self.layout.pages(in: 1...3).map(\.number) == [1, 2, 3])
+        #expect(Self.layout.pages(in: 602...700).map(\.number) == [602, 603, 604])
+        #expect(Self.layout.pages(in: -2...0).isEmpty)
+        #expect(Self.layout.pages(in: 1...MushafLayout.pageCount).count == MushafLayout.pageCount)
+    }
+
+    /// So a page's first ayah is always where reading it begins, never one carried over.
+    @Test func everyPageOpensOnANewAyah() throws {
+        for page in Self.layout.pages {
+            let first = try #require(page.lines.flatMap(\.segments).first)
+            #expect(first.words.lowerBound == 0 && !first.words.isEmpty, "page \(page.number)")
+        }
+    }
+
     @Test @MainActor func storedWidthsMatchTheBundledFont() throws {
         let font = CTFontCreateWithName(QuranScript.postScriptName as CFString, MushafLayout.measuringSize, nil)
         let page = try #require(Self.layout.page(3))

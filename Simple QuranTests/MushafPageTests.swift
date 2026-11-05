@@ -105,6 +105,72 @@ struct MushafPageComposerTests {
         #expect(lines[0] == MushafComposedLine(kind: .surahHeader, text: try #require(Self.catalog.surah(number: 2)).arabicName))
         #expect(lines[1] == MushafComposedLine(kind: .basmala, text: Self.catalog.basmala))
     }
+
+    /// Each ayah's words, read across every line they fall on, give back its bundled text exactly.
+    @Test func everyAyahIsRebuiltFromItsLines() throws {
+        var pieces: [Int: [String]] = [:]
+        for line in Self.layout.pages.flatMap(\.lines) {
+            let composed = MushafPageComposer.compose(line, catalog: Self.catalog)
+            let text = composed.text as NSString
+            for (ayah, range) in composed.bodyRanges.sorted(by: { $0.value.location < $1.value.location }) {
+                pieces[ayah, default: []].append(text.substring(with: range))
+            }
+        }
+        #expect(pieces.count == QuranCatalogMetrics.ayahCount)
+        for verse in Self.catalog.verses {
+            #expect(pieces[verse.globalAyah]?.joined(separator: " ") == verse.text, "\(verse.reference)")
+        }
+    }
+
+    @Test func wordRangesAreFoundInUTF16() {
+        let text = "ab cd\u{00A0}ef gh"
+        #expect(MushafPageComposer.utf16Range(ofWords: 0..<1, in: text) == NSRange(location: 0, length: 2))
+        #expect(MushafPageComposer.utf16Range(ofWords: 1..<3, in: text) == NSRange(location: 3, length: 8))
+        #expect(MushafPageComposer.utf16Range(ofWords: 2..<9, in: text) == NSRange(location: 9, length: 2))
+        #expect(MushafPageComposer.utf16Range(ofWords: 1..<1, in: text) == nil)
+        #expect(MushafPageComposer.utf16Range(ofWords: 5..<6, in: text) == nil)
+    }
+}
+
+@MainActor
+struct MushafPageLibraryTests {
+    private static let catalog = try! BundledQuranCatalog.loadFromBundle()
+    private static let layout = try! MushafLayout.loadFromBundle()
+
+    @Test func composesEachPageOnceAsTheComposerWould() throws {
+        let library = MushafPageLibrary(layout: Self.layout, catalog: Self.catalog)
+        let pages = try [1, 2, 3, 255, 446, 604].map { try #require(Self.layout.page($0)) }
+        for page in pages {
+            #expect(library.lines(for: page) == MushafPageComposer.compose(page, catalog: Self.catalog))
+        }
+        for page in pages { _ = library.lines(for: page) }
+        #expect(library.composedCount == pages.count)
+    }
+
+    @Test func referenceWidthIsTheTunedPercentile() {
+        let library = MushafPageLibrary(layout: Self.layout, catalog: Self.catalog)
+        #expect(library.referenceWidth == Self.layout.justifiedWidth(atPercentile: MushafPageMetrics.Tuning.referencePercentile))
+    }
+}
+
+@MainActor
+struct MushafHighlightTests {
+    @Test func onlyHiddenAndDimmedAyahsRecolorTheText() {
+        let base = MushafHighlightState(highlightedAyah: 1, dimmedAyahs: [2], markedAyahs: [3], hiddenAyahs: [4])
+        var moved = base
+        moved.highlightedAyah = 5
+        moved.collectedAyahs = [6]
+        moved.markedAyahs = [7]
+        #expect(!moved.changesTextColors(from: base))
+
+        var hidden = base
+        hidden.hiddenAyahs = []
+        #expect(hidden.changesTextColors(from: base))
+
+        var dimmed = base
+        dimmed.dimmedAyahs = [2, 8]
+        #expect(dimmed.changesTextColors(from: base))
+    }
 }
 
 struct MushafPageSettlingTests {

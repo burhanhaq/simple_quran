@@ -93,7 +93,7 @@ struct QuranTextView<AyahMenu: View>: View {
 
     /// While memorizing, only the piece's pages turn; reading, the whole Quran does.
     private var pageRange: ClosedRange<Int> {
-        guard let focusRange, let layout = environment.mushafLayout else { return 1...MushafLayout.pageCount }
+        guard let focusRange, let layout = environment.mushafPages?.layout else { return 1...MushafLayout.pageCount }
         return layout.pages(touching: focusRange)
     }
 

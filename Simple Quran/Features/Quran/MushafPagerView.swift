@@ -29,8 +29,8 @@ struct MushafPagerView: View {
     private var followTarget: Int? { currentGlobalAyah ?? focusedAyah }
 
     var body: some View {
-        if let layout = environment.mushafLayout {
-            pager(layout)
+        if let library = environment.mushafPages {
+            pager(library)
         } else {
             ContentUnavailableView(
                 String(localized: "Mushaf pages are unavailable"),
@@ -40,23 +40,23 @@ struct MushafPagerView: View {
         }
     }
 
-    private func pager(_ layout: MushafLayout) -> some View {
-        let referenceWidth = layout.justifiedWidth(atPercentile: MushafPageMetrics.Tuning.referencePercentile)
+    /// The rows only look up what's already worked out, since this runs on every update while a
+    /// page turns: each page's text is composed once, by the library.
+    private func pager(_ library: MushafPageLibrary) -> some View {
+        let layout = library.layout
         return ScrollView(.horizontal) {
             LazyHStack(spacing: 0) {
-                ForEach(pageRange, id: \.self) { number in
-                    if let mushafPage = layout.page(number) {
-                        MushafPageView(
-                            page: mushafPage,
-                            lines: MushafPageComposer.compose(mushafPage, catalog: environment.quran),
-                            referenceWidth: referenceWidth,
-                            highlight: highlight(on: mushafPage),
-                            selectionEnabled: selectionEnabled,
-                            onSelect: onSelect
-                        )
-                        .containerRelativeFrame([.horizontal, .vertical])
-                        .id(number)
-                    }
+                ForEach(layout.pages(in: pageRange)) { mushafPage in
+                    MushafPageView(
+                        page: mushafPage,
+                        lines: library.lines(for: mushafPage),
+                        referenceWidth: library.referenceWidth,
+                        highlight: highlight(on: mushafPage),
+                        selectionEnabled: selectionEnabled,
+                        onSelect: onSelect
+                    )
+                    .containerRelativeFrame([.horizontal, .vertical])
+                    .id(mushafPage.number)
                 }
             }
             .scrollTargetLayout()

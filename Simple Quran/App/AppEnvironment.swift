@@ -279,8 +279,9 @@ final class AppEnvironment {
     let settings: AppSettings
     let reviewPrompt: ReviewPrompt
     let translations = TranslationLibrary()
-    /// The 15-line page layout, loaded the first time "Mushaf pages" is shown. Nil if it's missing or corrupt.
-    @ObservationIgnored private(set) lazy var mushafLayout: MushafLayout? = try? MushafLayout.loadFromBundle()
+    /// The 15-line pages, loaded the first time "Mushaf pages" is shown. Nil if the layout is missing or corrupt.
+    @ObservationIgnored private(set) lazy var mushafPages: MushafPageLibrary? = (try? MushafLayout.loadFromBundle())
+        .map { MushafPageLibrary(layout: $0, catalog: self.quran) }
     var selectedTab: AppTab
     var route: AppRoute?
     /// The session behind the current practice playback, so the mini player can return to it.

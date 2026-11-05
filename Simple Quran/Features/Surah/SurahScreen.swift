@@ -136,12 +136,14 @@ struct SurahScreen: View {
     /// Paging past the surah being read moves the reader to the surah now on the page; within it,
     /// the page becomes the reading place.
     private func pageSettled(on page: Int, toward side: ReaderNeighbor) {
-        guard let mushafPage = environment.mushafLayout?.page(page) else { return }
-        let ayahs = mushafPage.ayahs.sorted()
+        guard let mushafPage = environment.mushafPages?.layout.page(page) else { return }
+        let ayahs = mushafPage.orderedAyahs
         guard model.canSwitchSurah,
               let destination = model.destination.settling(onPage: page, holding: ayahs, toward: side, in: environment.quran)
         else {
-            if let first = ayahs.first(where: { model.passage.indexByAyah[$0] != nil }) { model.pageTurned(to: first) }
+            if let ayah = mushafPage.orderedAyahs.first(where: { model.passage.indexByAyah[$0] != nil }) {
+                model.pageTurned(to: ayah)
+            }
             return
         }
         arriveQuietly(at: .reader(ReaderRoute(destination: destination, sheet: .keeping(model.detent))))
@@ -357,12 +359,15 @@ struct SurahScreen: View {
     }
 
     /// Moves to another surah without sliding the text, for mushaf pages that already show it.
+    /// Nothing animates, so the sheet changes to the new surah at once instead of cross-fading.
     private func arriveQuietly(at route: AppRoute) {
         model.leaveForNeighbor()
         let next = SurahScreenModel(route: route, environment: environment)
         next.prefersFullCoach = prefersFullCoach
-        model = next
-        model.start()
+        withTransaction(Transaction(animation: nil)) {
+            model = next
+            model.start()
+        }
         model.savePosition()
         AccessibilityNotification.Announcement(model.title).post()
     }
