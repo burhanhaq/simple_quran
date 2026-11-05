@@ -6,6 +6,14 @@ enum AppTheme {
     static let controlHeight: CGFloat = 50
 }
 
+/// The deep green of the Today card, which the mushaf's surah headers share. The same in light and dark.
+enum DeepGreen {
+    static let top = UIColor(red: 0.15, green: 0.33, blue: 0.26, alpha: 1)
+    static let bottom = UIColor(red: 0.07, green: 0.23, blue: 0.18, alpha: 1)
+    /// The light green drawn on it.
+    static let accent = UIColor(red: 0.62, green: 0.88, blue: 0.69, alpha: 1)
+}
+
 extension Color {
     static let parchment = Color("ParchmentBackground")
     static let appWarmSurface = Color("WarmSurface")

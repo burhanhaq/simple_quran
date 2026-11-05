@@ -64,6 +64,8 @@ struct MushafPagerView: View {
         .scrollTargetBehavior(.paging)
         .scrollPosition(id: $page)
         .scrollIndicators(.hidden)
+        // A page never scrolls up under the bar, so the bar keeps the parchment instead of an edge effect.
+        .scrollEdgeEffectHidden(true, for: .top)
         .environment(\.layoutDirection, .rightToLeft)
         .onAppear {
             let opening = clamped(layout.page(containing: startAyah ?? followTarget ?? 1))

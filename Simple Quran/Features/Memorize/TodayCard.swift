@@ -170,11 +170,11 @@ struct TodayCard: View {
 
 /// The Today card's own greens, drawn on its dark background in light and dark mode alike.
 private enum TodayPalette {
-    static let top = Color(red: 0.15, green: 0.33, blue: 0.26)
-    static let bottom = Color(red: 0.07, green: 0.23, blue: 0.18)
+    static let top = Color(uiColor: DeepGreen.top)
+    static let bottom = Color(uiColor: DeepGreen.bottom)
     static let highlight = Color(red: 0.85, green: 0.93, blue: 0.84)
     static let onHighlight = Color(red: 0.08, green: 0.23, blue: 0.17)
-    static let tick = Color(red: 0.62, green: 0.88, blue: 0.69)
+    static let tick = Color(uiColor: DeepGreen.accent)
 }
 
 /// One line of today's checklist.

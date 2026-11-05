@@ -33,16 +33,17 @@ final class MushafPageCanvas: UIView, MushafAyahContentView {
         var origin: CGPoint
         /// The band the line's words fill, for highlights, bars and slip marks.
         var band: CGRect
-        /// The frame a surah's name sits in.
+        /// The band a surah's name sits in.
         var frame: CGRect?
+        /// The surah this header or basmala opens is outside the piece being memorized.
+        var isDimmed = false
     }
 
     private enum Style {
         /// The band a line's highlight fills, as a share of its slot.
         static let bandHeight: CGFloat = 0.8
-        static let frameInset: CGFloat = 0.08
-        static let frameCornerRadius: CGFloat = 6
-        static let frameLineWidth: CGFloat = 1.2
+        /// Keeps the filled band a little shorter than its slot, so it doesn't read as a toolbar.
+        static let frameInset: CGFloat = 0.1
         static let underlineWidth: CGFloat = 2
         static let highlightCornerRadius: CGFloat = 4
         static let footerFont = UIFont.systemFont(ofSize: 13, weight: .medium)
@@ -117,13 +118,21 @@ final class MushafPageCanvas: UIView, MushafAyahContentView {
             let band = slot.insetBy(dx: 0, dy: slot.height * (1 - Style.bandHeight) / 2)
             switch composed.kind {
             case .surahHeader:
+                let dimmed = opensDimmedAyah(after: index)
                 let font = CTFontCreateCopyWithAttributes(body, metrics.fontSize * MushafPageMetrics.Tuning.headerScale, nil, nil)
-                let line = CTLineCreateWithAttributedString(attributed(composed, font: font))
+                let text = faded(resolved(MushafPalette.headerText), dimmed)
+                let line = CTLineCreateWithAttributedString(attributed(composed, font: font, color: text))
                 let frame = slot.insetBy(dx: 0, dy: slot.height * Style.frameInset)
                 let glyphs = CTLineGetBoundsWithOptions(line, .useGlyphPathBounds)
                 let origin = MushafPageMetrics.centeredOrigin(glyphBounds: glyphs, in: frame)
-                return PlacedLine(composed: composed, line: line, origin: origin, band: band, frame: frame)
-            case .basmala, .text(justified: false):
+                return PlacedLine(composed: composed, line: line, origin: origin, band: band, frame: frame, isDimmed: dimmed)
+            case .basmala:
+                let dimmed = opensDimmedAyah(after: index)
+                let color = faded(resolved(MushafPalette.body), dimmed)
+                let line = CTLineCreateWithAttributedString(attributed(composed, font: body, color: color))
+                let width = CTLineGetTypographicBounds(line, nil, nil, nil)
+                return PlacedLine(composed: composed, line: line, origin: origin(in: slot, x: slot.midX - width / 2, font: body), band: band, isDimmed: dimmed)
+            case .text(justified: false):
                 let line = CTLineCreateWithAttributedString(attributed(composed, font: body))
                 let width = CTLineGetTypographicBounds(line, nil, nil, nil)
                 return PlacedLine(composed: composed, line: line, origin: origin(in: slot, x: slot.midX - width / 2, font: body), band: band)
@@ -155,12 +164,23 @@ final class MushafPageCanvas: UIView, MushafAyahContentView {
         return CTLineGetTypographicBounds(space, nil, nil, nil)
     }
 
+    /// Whether the surah a header or basmala opens is faded, judged by the first ayah after it.
+    private func opensDimmedAyah(after index: Int) -> Bool {
+        guard let ayah = lines[(index + 1)...].lazy.compactMap({ $0.bodyRanges.keys.min() }).first else { return false }
+        return highlight.dimmedAyahs.contains(ayah)
+    }
+
+    private func faded(_ color: UIColor, _ dimmed: Bool) -> UIColor {
+        dimmed ? color.withAlphaComponent(MushafPalette.dimmedAlpha) : color
+    }
+
     /// The line's text in its colors: dimmed outside the piece, words undrawn while hidden.
-    private func attributed(_ composed: MushafComposedLine, font: CTFont) -> NSMutableAttributedString {
+    /// `color` is for lines without ayahs, such as a surah's name.
+    private func attributed(_ composed: MushafComposedLine, font: CTFont, color: UIColor? = nil) -> NSMutableAttributedString {
         let fontKey = NSAttributedString.Key(kCTFontAttributeName as String)
         let colorKey = NSAttributedString.Key(kCTForegroundColorAttributeName as String)
         let body = resolved(MushafPalette.body)
-        let string = NSMutableAttributedString(string: composed.text, attributes: [fontKey: font, colorKey: body.cgColor])
+        let string = NSMutableAttributedString(string: composed.text, attributes: [fontKey: font, colorKey: (color ?? body).cgColor])
         for (ayah, range) in composed.bodyRanges {
             let color: UIColor = highlight.hiddenAyahs.contains(ayah) ? .clear
                 : highlight.dimmedAyahs.contains(ayah) ? body.withAlphaComponent(MushafPalette.dimmedAlpha) : body
@@ -220,7 +240,7 @@ final class MushafPageCanvas: UIView, MushafAyahContentView {
     override func draw(_ rect: CGRect) {
         guard let context = UIGraphicsGetCurrentContext() else { return }
         drawHighlights(in: context)
-        drawFrames(in: context)
+        drawHeaders(in: context)
 
         context.saveGState()
         context.textMatrix = .identity
@@ -248,14 +268,13 @@ final class MushafPageCanvas: UIView, MushafAyahContentView {
         }
     }
 
-    private func drawFrames(in context: CGContext) {
-        context.setStrokeColor(resolved(MushafPalette.frame).cgColor)
-        context.setLineWidth(Style.frameLineWidth)
-        for frame in placed.compactMap(\.frame) {
-            let inset = frame.insetBy(dx: Style.frameLineWidth / 2, dy: Style.frameLineWidth / 2)
-            context.addPath(UIBezierPath(roundedRect: inset, cornerRadius: Style.frameCornerRadius).cgPath)
+    private func drawHeaders(in context: CGContext) {
+        for placedLine in placed {
+            guard let frame = placedLine.frame else { continue }
+            let nameWidth = CTLineGetBoundsWithOptions(placedLine.line, .useGlyphPathBounds).width
+            let alpha = placedLine.isDimmed ? MushafPalette.dimmedAlpha : 1
+            MushafHeaderOrnament.draw(in: frame, nameWidth: nameWidth, alpha: alpha, in: context)
         }
-        context.strokePath()
     }
 
     private func drawSlipMarks(in context: CGContext) {
