@@ -19,16 +19,23 @@ enum AppAppearance: String, CaseIterable, Identifiable {
 
 enum QuranReadingLayout: String, CaseIterable, Identifiable {
     case ayahByAyah
-    case mushaf
+    /// Saved as "mushaf" from when it was the only mushaf-style layout.
+    case continuous = "mushaf"
+    /// Whole 15-line Madani pages, one per screen.
+    case page
 
     var id: String { rawValue }
 
     var title: String {
         switch self {
         case .ayahByAyah: String(localized: "Ayah by Ayah")
-        case .mushaf: String(localized: "Continuous text")
+        case .continuous: String(localized: "Continuous text")
+        case .page: String(localized: "Mushaf pages")
         }
     }
+
+    /// Only ayah by ayah has room for a translation under each ayah.
+    var showsTranslation: Bool { self == .ayahByAyah }
 }
 
 @MainActor
@@ -187,8 +194,8 @@ final class AppSettings {
     var quranReadingLayout: QuranReadingLayout {
         didSet {
             defaults.set(quranReadingLayout.rawValue, forKey: Key.quranReadingLayout)
-            // Continuous text can't show translations, so choosing it turns them off.
-            if quranReadingLayout == .mushaf { showsTranslation = false }
+            // Only ayah by ayah can show translations, so choosing another layout turns them off.
+            if !quranReadingLayout.showsTranslation { showsTranslation = false }
         }
     }
 
@@ -208,9 +215,9 @@ final class AppSettings {
         didSet { defaults.set(hasSeenTranslationLayoutNote, forKey: Key.hasSeenTranslationLayoutNote) }
     }
 
-    /// Translation just took continuous text to ayah by ayah, which is explained once.
+    /// Translation just took another layout to ayah by ayah, which is explained once.
     var needsTranslationLayoutNote: Bool {
-        showsTranslation && quranReadingLayout == .mushaf && !hasSeenTranslationLayoutNote
+        showsTranslation && !quranReadingLayout.showsTranslation && !hasSeenTranslationLayoutNote
     }
 
     var hasSeenQuranHint: Bool {
@@ -272,6 +279,8 @@ final class AppEnvironment {
     let settings: AppSettings
     let reviewPrompt: ReviewPrompt
     let translations = TranslationLibrary()
+    /// The 15-line page layout, loaded the first time "Mushaf pages" is shown. Nil if it's missing or corrupt.
+    @ObservationIgnored private(set) lazy var mushafLayout: MushafLayout? = try? MushafLayout.loadFromBundle()
     var selectedTab: AppTab
     var route: AppRoute?
     /// The session behind the current practice playback, so the mini player can return to it.

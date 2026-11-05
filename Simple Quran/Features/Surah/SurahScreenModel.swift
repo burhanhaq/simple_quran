@@ -394,6 +394,14 @@ final class SurahScreenModel {
         savePosition()
     }
 
+    /// Paging to another page of this passage makes it the reading place, unless audio is
+    /// keeping the place or a piece is being memorized.
+    func pageTurned(to ayah: Int) {
+        guard focus == nil, !ownsReading, selectedAyah != ayah else { return }
+        selectedAyah = ayah
+        savePosition()
+    }
+
     func step(by offset: Int) {
         let ayahs = stepAyahs
         guard let ayah = currentAyah, let index = ayahs.firstIndex(of: ayah), ayahs.indices.contains(index + offset) else { return }

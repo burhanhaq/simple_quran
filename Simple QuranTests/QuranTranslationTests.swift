@@ -30,15 +30,15 @@ struct QuranTranslationTests {
         let isolated = try isolatedDefaults()
         defer { isolated.defaults.removePersistentDomain(forName: isolated.name) }
         let settings = AppSettings(defaults: isolated.defaults)
-        settings.quranReadingLayout = .mushaf
+        settings.quranReadingLayout = .continuous
 
         settings.showsTranslation = true
         #expect(settings.displayedReadingLayout == .ayahByAyah)
-        #expect(settings.quranReadingLayout == .mushaf)
+        #expect(settings.quranReadingLayout == .continuous)
         #expect(AppSettings(defaults: isolated.defaults).showsTranslation)
 
         settings.showsTranslation = false
-        #expect(settings.displayedReadingLayout == .mushaf)
+        #expect(settings.displayedReadingLayout == .continuous)
     }
 
     @Test @MainActor func choosingContinuousTextTurnsTranslationOff() throws {
@@ -47,9 +47,9 @@ struct QuranTranslationTests {
         let settings = AppSettings(defaults: isolated.defaults)
         settings.showsTranslation = true
 
-        settings.displayedReadingLayout = .mushaf
+        settings.displayedReadingLayout = .continuous
         #expect(!settings.showsTranslation)
-        #expect(settings.displayedReadingLayout == .mushaf)
+        #expect(settings.displayedReadingLayout == .continuous)
 
         // Choosing ayah by ayah keeps translation as it was.
         settings.showsTranslation = true
@@ -66,12 +66,35 @@ struct QuranTranslationTests {
         settings.showsTranslation = true
         #expect(!settings.needsTranslationLayoutNote)
 
-        settings.quranReadingLayout = .mushaf
+        settings.quranReadingLayout = .continuous
         settings.showsTranslation = true
         #expect(settings.needsTranslationLayoutNote)
 
         settings.hasSeenTranslationLayoutNote = true
         #expect(!AppSettings(defaults: isolated.defaults).needsTranslationLayoutNote)
+    }
+
+    @Test @MainActor func choosingMushafPagesTurnsTranslationOffAndNeedsTheNote() throws {
+        let isolated = try isolatedDefaults()
+        defer { isolated.defaults.removePersistentDomain(forName: isolated.name) }
+        let settings = AppSettings(defaults: isolated.defaults)
+        settings.showsTranslation = true
+
+        settings.displayedReadingLayout = .page
+        #expect(!settings.showsTranslation)
+        #expect(settings.displayedReadingLayout == .page)
+        #expect(AppSettings(defaults: isolated.defaults).quranReadingLayout == .page)
+
+        settings.showsTranslation = true
+        #expect(settings.displayedReadingLayout == .ayahByAyah)
+        #expect(settings.needsTranslationLayoutNote)
+    }
+
+    @Test @MainActor func continuousTextSavedBeforeMushafPagesStillLoads() throws {
+        let isolated = try isolatedDefaults()
+        defer { isolated.defaults.removePersistentDomain(forName: isolated.name) }
+        isolated.defaults.set("mushaf", forKey: "settings.quranReadingLayout")
+        #expect(AppSettings(defaults: isolated.defaults).quranReadingLayout == .continuous)
     }
 
     private func isolatedDefaults() throws -> (name: String, defaults: UserDefaults) {

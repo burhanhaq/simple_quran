@@ -315,10 +315,10 @@ struct HiddenAyahRenderer: TextRenderer, Animatable {
 struct ReadingLayoutMenu: View {
     @Environment(AppEnvironment.self) private var environment
 
-    /// Continuous text can't show translations, so while they're on the title says choosing it turns them off.
+    /// Only ayah by ayah shows translations, so while they're on the title says choosing another layout turns them off.
     private var title: String {
         environment.settings.showsTranslation
-            ? String(localized: "Continuous text turns translation off")
+            ? String(localized: "Other layouts turn translation off")
             : String(localized: "Reading Layout")
     }
 

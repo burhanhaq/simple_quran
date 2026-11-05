@@ -69,6 +69,32 @@ nonisolated enum QuranDestination: Hashable, Sendable {
         }
     }
 
+    /// Where the reader belongs after paging to a mushaf page, keeping to the same kind: nil while
+    /// the page still shows some of this surah or juz (or is this page). Otherwise, going forward,
+    /// the first surah on the page, and going back, the last, opened at its first ayah there.
+    /// - Parameter ayahs: the page's ayahs in order, including one running on from the page before.
+    func settling(
+        onPage page: Int,
+        holding ayahs: [Int],
+        toward side: ReaderNeighbor,
+        in catalog: BundledQuranCatalog
+    ) -> QuranDestination? {
+        if case .page(let number) = self { return number == page ? nil : .page(page) }
+        if let range = range(in: catalog), ayahs.contains(where: range.contains) { return nil }
+        guard let anchor = side == .next ? ayahs.first : ayahs.last,
+              let verse = catalog.verse(globalAyah: anchor)
+        else { return nil }
+        switch self {
+        case .surah:
+            let opening = ayahs.first { catalog.verse(globalAyah: $0)?.surahNumber == verse.surahNumber } ?? anchor
+            return .surah(number: verse.surahNumber, scrollToAyah: opening)
+        case .juz:
+            return .juz(verse.juz)
+        case .page:
+            return .page(page)
+        }
+    }
+
     /// The surah's name in Arabic, shown beside its English name.
     func arabicName(in catalog: BundledQuranCatalog) -> String? {
         guard case .surah(let number, _) = self else { return nil }

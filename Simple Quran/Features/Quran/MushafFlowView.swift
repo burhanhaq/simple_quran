@@ -63,13 +63,12 @@ struct MushafAttributedPage {
 }
 
 enum MushafTextBuilder {
-    static let highlightColor = UIColor(named: "HighlightFill") ?? .systemYellow
-    static let collectedColor = UIColor(named: "CollectedFill") ?? .secondarySystemBackground
-    private static let bodyColor = UIColor(named: "BrownText") ?? .label
-    private static let numberColor = UIColor(named: "Bronze") ?? bodyColor
-    static let dimmedAlpha: CGFloat = 0.3
-    static let hiddenBarColor = bodyColor.withAlphaComponent(HiddenAyahStyle.barOpacity)
-    private static let markedColor = UIColor(named: "DangerText") ?? .systemRed
+    static let highlightColor = MushafPalette.highlight
+    static let collectedColor = MushafPalette.collected
+    private static let bodyColor = MushafPalette.body
+    private static let numberColor = MushafPalette.number
+    static let dimmedAlpha = MushafPalette.dimmedAlpha
+    private static let markedColor = MushafPalette.marked
 
     private static let bodyParagraph: NSParagraphStyle = {
         let style = NSMutableParagraphStyle()
@@ -500,8 +499,8 @@ private struct MushafPageView: UIViewRepresentable {
         Coordinator(onSelect: onSelect, onAnchorRect: onAnchorRect)
     }
 
-    func makeUIView(context: Context) -> MushafPageHostView {
-        let host = MushafPageHostView()
+    func makeUIView(context: Context) -> MushafPageHostView<MushafPageTextView> {
+        let host = MushafPageHostView<MushafPageTextView>()
         let textView = host.textView
         textView.delegate = context.coordinator
         textView.backgroundColor = .clear
@@ -521,7 +520,7 @@ private struct MushafPageView: UIViewRepresentable {
         return host
     }
 
-    func updateUIView(_ host: MushafPageHostView, context: Context) {
+    func updateUIView(_ host: MushafPageHostView<MushafPageTextView>, context: Context) {
         context.coordinator.selectionEnabled = selectionEnabled
         context.coordinator.onSelect = onSelect
         context.coordinator.onAnchorRect = onAnchorRect
@@ -542,7 +541,7 @@ private struct MushafPageView: UIViewRepresentable {
         )
     }
 
-    func sizeThatFits(_ proposal: ProposedViewSize, uiView: MushafPageHostView, context: Context) -> CGSize? {
+    func sizeThatFits(_ proposal: ProposedViewSize, uiView: MushafPageHostView<MushafPageTextView>, context: Context) -> CGSize? {
         let width = proposal.width ?? uiView.bounds.width
         guard width > 0, width.isFinite else {
             return CGSize(width: 0, height: 1)
@@ -614,7 +613,7 @@ private extension DynamicTypeSize {
     }
 }
 
-private final class MushafPageTextView: UITextView {
+private final class MushafPageTextView: UITextView, MushafAyahContentView {
     var onAnchorRect: (@MainActor (CGRect) -> Void)?
     var anchorAyah: Int? {
         didSet {
@@ -623,9 +622,7 @@ private final class MushafPageTextView: UITextView {
         }
     }
 
-    /// The text was built anew, so anything drawn over it must be placed again.
     var onRebuild: (() -> Void)?
-    /// Ayahs opened or hidden on text that kept its layout, so the change can animate in place.
     var onHidingChange: ((_ revealed: Set<Int>, _ covered: Set<Int>) -> Void)?
 
     private var pendingVerses: [QuranVerse] = []
@@ -816,11 +813,26 @@ private final class MushafPageTextView: UITextView {
     }
 }
 
+/// A view that draws a page's ayahs and can say where each one's words are, so hidden ayahs can be
+/// covered and swept back in over it.
+@MainActor
+protocol MushafAyahContentView: UIView {
+    init(frame: CGRect)
+    /// Ayahs hidden for recall right now.
+    var hiddenAyahs: Set<Int> { get }
+    /// The page was laid out anew, so anything drawn over it must be placed again.
+    var onRebuild: (() -> Void)? { get set }
+    /// Ayahs opened or hidden without the layout changing, so the change can animate in place.
+    var onHidingChange: ((_ revealed: Set<Int>, _ covered: Set<Int>) -> Void)? { get set }
+    /// Where an ayah's words sit, one rect per line, in this view's coordinates.
+    func bodyRects(for globalAyah: Int) -> [CGRect]
+}
+
 /// A page's text with the bars that stand in for its hidden ayahs laid over it, above any highlight
 /// behind the words. The bars sit beside the text, not inside it, so the mask that sweeps an opening
 /// ayah's ink in never cuts them, and they let touches through to the ayah underneath.
-private final class MushafPageHostView: UIView {
-    let textView = MushafPageTextView()
+final class MushafPageHostView<Content: MushafAyahContentView>: UIView {
+    let textView = Content(frame: .zero)
     private let barsView = UIView()
     /// Bars over the ayahs hidden now. A bar fading out has already left.
     private var bars: [Int: CAShapeLayer] = [:]
@@ -828,8 +840,8 @@ private final class MushafPageHostView: UIView {
     private var barsSize: CGSize?
     private var sweepMask: CALayer?
 
-    private static let textFadeKey = "hiding"
-    private static let sweepKey = "sweep"
+    private static var textFadeKey: String { "hiding" }
+    private static var sweepKey: String { "sweep" }
 
     override init(frame: CGRect) {
         super.init(frame: frame)
@@ -870,7 +882,7 @@ private final class MushafPageHostView: UIView {
     // MARK: Bars
 
     private var barColor: CGColor {
-        MushafTextBuilder.hiddenBarColor.resolvedColor(with: traitCollection).cgColor
+        MushafPalette.hiddenBar.resolvedColor(with: traitCollection).cgColor
     }
 
     /// One bar per line the ayah's words take, so the page keeps its shape while they're hidden.

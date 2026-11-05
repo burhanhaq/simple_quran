@@ -21,6 +21,8 @@ struct QuranTextView<AyahMenu: View>: View {
     /// Changes when the user asks to see the current ayah, by picking one, stepping, or pressing play.
     var followRequest = 0
     let onSelect: (Int) -> Void
+    /// Mushaf pages came to rest on a page after a swipe, going the given way.
+    var onPageSettled: (Int, ReaderNeighbor) -> Void = { _, _ in }
     @ViewBuilder var ayahMenu: (QuranVerse) -> AyahMenu
 
     /// The ayah centered in ayah-by-ayah layout. Seeded before the first layout so a deep
@@ -33,7 +35,7 @@ struct QuranTextView<AyahMenu: View>: View {
     /// opening together can cascade in reading order, as they do in continuous text.
     @State private var listHidden: Set<Int>?
 
-    /// Translation always shows ayah by ayah; continuous text stays Arabic only.
+    /// Translation always shows ayah by ayah; the mushaf layouts stay Arabic only.
     private var translation: BundledTranslation? {
         environment.settings.showsTranslation ? environment.translations.current : nil
     }
@@ -47,7 +49,10 @@ struct QuranTextView<AyahMenu: View>: View {
 
     var body: some View {
         Group {
-            if environment.settings.displayedReadingLayout == .mushaf {
+            switch environment.settings.displayedReadingLayout {
+            case .ayahByAyah:
+                ayahList
+            case .continuous:
                 MushafFlowView(
                     verses: verses,
                     currentGlobalAyah: currentAyah,
@@ -60,7 +65,21 @@ struct QuranTextView<AyahMenu: View>: View {
                     isFollowing: !follow.isPaused,
                     onSelect: onSelect
                 )
-            } else { ayahList }
+            case .page:
+                MushafPagerView(
+                    currentGlobalAyah: currentAyah,
+                    hiddenAyahs: hiddenAyahs,
+                    selectionEnabled: selectionEnabled,
+                    focusedAyah: focusedAyah,
+                    focusRange: focusRange,
+                    markedAyahs: markedAyahs,
+                    isFollowing: !follow.isPaused,
+                    pageRange: pageRange,
+                    startAyah: focusRange?.startGlobalAyah ?? scrollToAyah ?? currentAyah ?? verses.first?.globalAyah,
+                    onSelect: onSelect,
+                    onPageSettled: onPageSettled
+                )
+            }
         }
         // Switching layouts, such as turning translation on, keeps the place instead of reopening the surah.
         .onChange(of: environment.settings.displayedReadingLayout) { _, _ in seededListPosition = true }
@@ -70,6 +89,12 @@ struct QuranTextView<AyahMenu: View>: View {
         .overlay(alignment: .top) { returnButton }
         .animation(.snappy, value: follow.showsReturnButton(isPlaying: isPlaying))
         .onDisappear { resumeTask?.cancel() }
+    }
+
+    /// While memorizing, only the piece's pages turn; reading, the whole Quran does.
+    private var pageRange: ClosedRange<Int> {
+        guard let focusRange, let layout = environment.mushafLayout else { return 1...MushafLayout.pageCount }
+        return layout.pages(touching: focusRange)
     }
 
     @ViewBuilder
@@ -126,8 +151,8 @@ struct QuranTextView<AyahMenu: View>: View {
         resumeTask = nil
         guard follow.isPaused else { return }
         follow.resume()
-        // Continuous text scrolls back itself when following resumes.
-        guard environment.settings.displayedReadingLayout != .mushaf, let ayah = currentAyah else { return }
+        // The mushaf layouts move back themselves when following resumes.
+        guard environment.settings.displayedReadingLayout == .ayahByAyah, let ayah = currentAyah else { return }
         let distance = listPosition.map { abs($0 - ayah) } ?? .max
         if reduceMotion || distance > Self.animatedResumeDistance {
             listPosition = ayah
@@ -155,7 +180,7 @@ struct QuranTextView<AyahMenu: View>: View {
                                           marked: markedAyahs.contains(verse.globalAyah),
                                           translation: translation?.text(globalAyah: verse.globalAyah))
                         }
-                        .opacity(focusRange.map { $0.contains(verse.globalAyah) ? 1 : MushafTextBuilder.dimmedAlpha } ?? 1)
+                        .opacity(focusRange.map { $0.contains(verse.globalAyah) ? 1 : MushafPalette.dimmedAlpha } ?? 1)
                     }
                     .buttonStyle(.plain).disabled(!selectionEnabled)
                     .id(verse.globalAyah)

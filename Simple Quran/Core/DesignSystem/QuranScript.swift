@@ -90,13 +90,18 @@ enum QuranScript {
 
     /// A no-break space keeps the number on the ayah's last line, and the font draws the
     /// end-of-ayah ornament around Arabic-Indic digits.
-    static func ayahNumber(_ number: Int) -> String {
-        "\u{00A0}" + String(number).map { digit in
-            digit.wholeNumberValue.map { arabicIndicDigits[$0] } ?? digit
-        }
+    nonisolated static func ayahNumber(_ number: Int) -> String {
+        "\u{00A0}" + arabicIndic(number)
     }
 
-    private static let arabicIndicDigits = Array("٠١٢٣٤٥٦٧٨٩")
+    /// A number in Arabic-Indic digits. The Quran font draws them inside an ayah ornament; other fonts draw plain digits.
+    nonisolated static func arabicIndic(_ number: Int) -> String {
+        String(String(number).map { digit in
+            digit.wholeNumberValue.map { arabicIndicDigits[$0] } ?? digit
+        })
+    }
+
+    nonisolated private static let arabicIndicDigits = Array("٠١٢٣٤٥٦٧٨٩")
 
     /// Loads the font's shaping tables once, off the main thread, so opening the first
     /// surah doesn't pay for it.

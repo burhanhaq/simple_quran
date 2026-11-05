@@ -36,10 +36,11 @@ struct SurahScreen: View {
         NavigationStack {
             GeometryReader { geometry in
                 ZStack {
-                    // A new surah gets new text, so scrolling and following start fresh.
+                    // A new surah gets new text, so scrolling and following start fresh. Mushaf pages
+                    // keep theirs: paging into the next surah mustn't rebuild the page being read.
                     text
                         .offset(x: swipe.offset)
-                        .id(ObjectIdentifier(model))
+                        .id(showsPages ? AnyHashable(QuranReadingLayout.page) : AnyHashable(ObjectIdentifier(model)))
                         .transition(arrival(width: geometry.size.width))
                 }
                 .safeAreaPadding(.bottom, textInset)
@@ -48,7 +49,8 @@ struct SurahScreen: View {
                 .overlay(alignment: .bottom) { fade.offset(y: -halfSheetTop(in: geometry)) }
                 .animation(.snappy, value: textInset)
                 .gesture(SurahSwipeGesture(
-                    isEnabled: model.canSwitchSurah && swipe.phase.acceptsDrag,
+                    // Mushaf pages turn with their own swipe, through the whole Quran.
+                    isEnabled: model.canSwitchSurah && swipe.phase.acceptsDrag && !showsPages,
                     onChange: {
                         dragChanged($0, width: geometry.size.width, revealY: visibleTextHeight(in: geometry) / 2)
                     },
@@ -116,8 +118,33 @@ struct SurahScreen: View {
             markedAyahs: model.focus?.slipped ?? [],
             isPlaying: model.isPlaying,
             followRequest: model.followRequest,
-            onSelect: model.select
+            onSelect: select,
+            onPageSettled: pageSettled
         ) { verse in ayahMenu(verse) }
+    }
+
+    private var showsPages: Bool { environment.settings.displayedReadingLayout == .page }
+
+    /// A tap on a neighbouring surah's ayah, sharing the page, moves the reader to that surah.
+    private func select(_ ayah: Int) {
+        guard model.passage.indexByAyah[ayah] == nil else { return model.select(ayah) }
+        guard model.canSwitchSurah, let surah = environment.quran.verse(globalAyah: ayah)?.surahNumber else { return }
+        arriveQuietly(at: .reader(ReaderRoute(destination: .surah(number: surah, scrollToAyah: ayah), sheet: .keeping(model.detent))))
+        model.select(ayah)
+    }
+
+    /// Paging past the surah being read moves the reader to the surah now on the page; within it,
+    /// the page becomes the reading place.
+    private func pageSettled(on page: Int, toward side: ReaderNeighbor) {
+        guard let mushafPage = environment.mushafLayout?.page(page) else { return }
+        let ayahs = mushafPage.ayahs.sorted()
+        guard model.canSwitchSurah,
+              let destination = model.destination.settling(onPage: page, holding: ayahs, toward: side, in: environment.quran)
+        else {
+            if let first = ayahs.first(where: { model.passage.indexByAyah[$0] != nil }) { model.pageTurned(to: first) }
+            return
+        }
+        arriveQuietly(at: .reader(ReaderRoute(destination: destination, sheet: .keeping(model.detent))))
     }
 
     /// The text fades into the sheet so the opening ayahs read as part of it.
@@ -178,7 +205,7 @@ struct SurahScreen: View {
                     Button("Repeat and pause", systemImage: "repeat") { model.showsOptions = true }
                     Button("Change passage", systemImage: "slider.horizontal.3") { model.showsPassagePicker = true }
                 }
-                // Shown in both layouts: turning it on in continuous text shows ayah by ayah.
+                // Shown in every layout: turning it on anywhere else shows ayah by ayah.
                 Toggle(isOn: $settings.showsTranslation) {
                     Label(String(localized: "Translation"), systemImage: "translate")
                 }
@@ -329,19 +356,30 @@ struct SurahScreen: View {
         AccessibilityNotification.Announcement(model.title).post()
     }
 
+    /// Moves to another surah without sliding the text, for mushaf pages that already show it.
+    private func arriveQuietly(at route: AppRoute) {
+        model.leaveForNeighbor()
+        let next = SurahScreenModel(route: route, environment: environment)
+        next.prefersFullCoach = prefersFullCoach
+        model = next
+        model.start()
+        model.savePosition()
+        AccessibilityNotification.Announcement(model.title).post()
+    }
+
     private func refreshAudioDownloaded() {
         let ids = model.passage.ayahIDs
         audioDownloaded = !ids.isEmpty && environment.downloads.downloadedCount(in: ids) == ids.count
     }
 }
 
-/// Shown once, when translation first switches continuous text to ayah by ayah.
+/// Shown once, when translation first switches another layout to ayah by ayah.
 private struct TranslationLayoutNote: View {
     var onDismiss: () -> Void
 
     private static var visibleDuration: Duration { .seconds(6) }
     private var message: String {
-        String(localized: "Translations show ayah by ayah. Turn translation off to go back to continuous text.")
+        String(localized: "Translations show ayah by ayah. Turn translation off to go back to your layout.")
     }
 
     var body: some View {
