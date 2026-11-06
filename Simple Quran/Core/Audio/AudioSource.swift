@@ -17,6 +17,13 @@ nonisolated struct Reciter: Codable, Equatable, Hashable, Sendable, Identifiable
     var averageAyahBytes: Int64?
     /// Overrides the catalog host when this reciter's files live elsewhere.
     var host: URL?
+    /// Whether to trim the dead air that opens each file and crossfade one ayah into the next.
+    /// On unless the catalog says `false`. Some files were cut with no pause and re-encoded with
+    /// silence baked into their starts (Shuraim's, Maher's), so their joins drop out for ~50 ms
+    /// without it; set `false` for a reciter whose files should play exactly as recorded.
+    var smoothsAyahJoins: Bool?
+
+    var smoothsJoins: Bool { smoothsAyahJoins ?? true }
 
     static let sudais = Reciter(
         id: ReciterID.sudais,
@@ -25,6 +32,12 @@ nonisolated struct Reciter: Codable, Equatable, Hashable, Sendable, Identifiable
         qualityKbps: 64,
         averageAyahBytes: 98_000
     )
+}
+
+/// What every request for an ayah's file asks the server for.
+nonisolated enum AudioRequestHeader {
+    static let acceptField = "Accept"
+    static let acceptValue = "audio/mpeg,audio/*;q=0.9"
 }
 
 nonisolated protocol AudioSource: Sendable {

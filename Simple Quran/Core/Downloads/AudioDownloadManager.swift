@@ -130,7 +130,7 @@ final class AudioDownloadManager: NSObject, URLSessionDownloadDelegate {
                 request.allowsCellularAccess = allowCellular
                 request.allowsConstrainedNetworkAccess = true
                 request.allowsExpensiveNetworkAccess = allowCellular
-                request.setValue("audio/mpeg,audio/*;q=0.9", forHTTPHeaderField: "Accept")
+                request.setValue(AudioRequestHeader.acceptValue, forHTTPHeaderField: AudioRequestHeader.acceptField)
                 let task = session.downloadTask(with: request)
                 task.taskDescription = metadata.taskDescription
                 // The first ayah asked for is the one playback is waiting on.

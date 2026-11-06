@@ -20,6 +20,14 @@ struct ReciterCatalogTests {
         #expect(catalog.reciter(id: ReciterID.sudais) == .sudais)
     }
 
+    @Test func everyBundledReciterSmoothsAyahJoinsUnlessTheCatalogSaysNot() throws {
+        let catalog = try ReciterCatalog.bundled()
+        #expect(catalog.reciters.allSatisfy { $0.smoothsJoins })
+        var asRecorded = Reciter.sudais
+        asRecorded.smoothsAyahJoins = false
+        #expect(!asRecorded.smoothsJoins)
+    }
+
     @Test func validationRejectsCatalogsTheAppCannotUse() {
         let good = ReciterCatalog.fallback
         #expect(throws: Never.self) { try good.validated() }

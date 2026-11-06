@@ -17,30 +17,31 @@ struct PlaybackSnapshot: Equatable {
     var repetitionLabel: String
 }
 
+/// Decides what plays: walks the practice cursor, keeps a few segments queued on the
+/// gapless player, and publishes the state the UI, Now Playing and CarPlay show.
 @MainActor
 @Observable
 final class PlaybackCoordinator {
-    private var source: AudioSource
-    private var fileStore: AudioFileStore
+    /// Segments kept queued ahead. Cheap (files open lazily), and leaves time to fetch the next ayah.
+    static let queueDepth = 4
+
+    private let resolver: AyahAudioResolver
     private let nowPlaying: NowPlayingBridge
     private let logger = Log.playback
 
-    private var player: AVQueuePlayer
-    private var endObserver: NSObjectProtocol?
-    private var failureObserver: NSObjectProtocol?
-    private var itemStatusObserver: NSKeyValueObservation?
-    private var timeControlObserver: NSKeyValueObservation?
+    private var player = GaplessAudioPlayer()
+    /// The step playing now.
     private var cursor: PracticePlaybackCursor?
+    /// The next step to queue; runs ahead of `cursor` by what's queued.
+    private var queueCursor: PracticePlaybackCursor?
+    /// What each queued segment plays. Each segment completes exactly one step.
+    private var queuedSteps: [Int: QueueItem] = [:]
+    private var lastSegmentID = 0
+    /// Fetching the next ayah to queue. Queuing waits for it, so segments stay in order.
+    private var fetchTask: Task<Void, Never>?
     private var preparedPassages: [VerseRange] = []
     private var preparedSettings: PracticeSettings = .listening
-    private var queueCursor: PracticePlaybackCursor?
-    private var queuedItems: [ObjectIdentifier: QueuedItemInfo] = [:]
     private var catalog: (any QuranCatalog)?
-    private var allowStreaming = true
-    /// Whether missing ayahs are being fetched, so playback can wait for them instead of failing.
-    private var downloadsMissingAudio = false
-    private var awaitedAyah: Int?
-    private var unavailableAyahs = Set<Int>()
     private var shouldAutoplay = false {
         didSet { updateIdleTimer() }
     }
@@ -82,16 +83,17 @@ final class PlaybackCoordinator {
     /// A playback has run for `listenSeconds`. Fires once per playback, wherever it was started.
     var onListened: (() -> Void)?
     /// Asks for missing ayahs to be saved, nearest first; returns false when automatic downloads are off.
-    var downloadMissingAudio: (([Int]) -> Bool)?
+    var downloadMissingAudio: (([Int]) -> Bool)? {
+        get { resolver.downloadMissingAudio }
+        set { resolver.downloadMissingAudio = newValue }
+    }
     var passageRanges: [VerseRange] { preparedPassages }
-    var hasPreparedQueue: Bool { player.currentItem != nil }
+    var hasPreparedQueue: Bool { queueCursor != nil }
 
     init(source: AudioSource, fileStore: AudioFileStore) {
-        self.source = source
-        self.fileStore = fileStore
-        let player = Self.makePlayer()
-        self.player = player
-        self.nowPlaying = NowPlayingBridge()
+        resolver = AyahAudioResolver(source: source, fileStore: fileStore)
+        nowPlaying = NowPlayingBridge()
+        bindPlayerEvents()
         bindRemoteCommands()
         AudioSessionController.shared.onEvent = { [weak self] event in
             guard let self else { return }
@@ -129,17 +131,13 @@ final class PlaybackCoordinator {
 
     func configure(catalog: any QuranCatalog, allowStreaming: Bool) {
         self.catalog = catalog
-        self.allowStreaming = allowStreaming
+        resolver.allowStreaming = allowStreaming
     }
 
     /// Switches reciter. Whatever is prepared carries on from the same ayah in the new voice.
     func use(source: AudioSource, fileStore: AudioFileStore) {
         let wasPlaying = snapshot.isPlaying || shouldAutoplay
-        self.source = source
-        self.fileStore = fileStore
-        unavailableAyahs = []
-        awaitedAyah = nil
-        downloadsMissingAudio = false
+        resolver.use(source: source, fileStore: fileStore)
         guard !preparedPassages.isEmpty, cursor?.current != nil else { return }
         rebuildQueue(autoplay: wasPlaying)
     }
@@ -202,10 +200,10 @@ final class PlaybackCoordinator {
         guard cursor?.current != nil else { return }
         userMessage = nil
         // Pressing Play retries ayahs whose download failed.
-        unavailableAyahs = []
+        resolver.retryFailedDownloads()
         onWillStartAudio?()
         shouldAutoplay = true
-        guard let item = player.currentItem, item.status != .failed else {
+        guard player.hasQueuedAudio || fetchTask != nil else {
             // Rebuilding activates the session; do not activate it twice on first play.
             rebuildQueue(autoplay: true)
             return
@@ -216,9 +214,10 @@ final class PlaybackCoordinator {
             failPlayback(error)
             return
         }
-        if player.currentItem?.status == .readyToPlay {
+        if player.hasQueuedAudio {
             startPlayer()
         } else {
+            // Starts as soon as the ayah being fetched is queued.
             snapshot.isLoading = true
         }
     }
@@ -243,45 +242,30 @@ final class PlaybackCoordinator {
         let resume = snapshot.isPlaying || shouldAutoplay
         if resume { onWillStartAudio?() }
         cursor?.skipForward()
-        refreshAfterNavigation(autoplay: resume)
+        rebuildQueue(autoplay: resume)
     }
 
     func skipBack() {
         let resume = snapshot.isPlaying || shouldAutoplay
         if resume { onWillStartAudio?() }
         cursor?.skipBack()
-        refreshAfterNavigation(autoplay: resume)
+        rebuildQueue(autoplay: resume)
     }
 
     func move(to globalAyah: Int) {
         let resume = snapshot.isPlaying || shouldAutoplay
         guard cursor?.move(to: globalAyah) == true else { return }
         if resume { onWillStartAudio?() }
-        refreshAfterNavigation(autoplay: resume)
+        rebuildQueue(autoplay: resume)
     }
 
-    /// Continues playback that was waiting for this ayah to download.
+    /// A background download finished; playback waiting for it carries on.
     func audioBecameAvailable(_ globalAyah: Int) {
-        guard awaitedAyah == globalAyah else { return }
-        awaitedAyah = nil
-        guard player.currentItem != nil else {
-            rebuildQueue(autoplay: shouldAutoplay)
-            return
-        }
-        do {
-            try fillQueue()
-        } catch {
-            failPlayback(error)
-        }
+        resolver.audioBecameAvailable(globalAyah)
     }
 
     func audioDownloadFailed(_ globalAyah: Int) {
-        unavailableAyahs.insert(globalAyah)
-        guard awaitedAyah == globalAyah else { return }
-        awaitedAyah = nil
-        if player.currentItem == nil {
-            failPlayback(AppError.downloadFailed)
-        }
+        resolver.audioDownloadFailed(globalAyah)
     }
 
     func toggleArabicHidden() {
@@ -305,13 +289,13 @@ final class PlaybackCoordinator {
         let ranges = activeSet.orderedPassages.map(\.range)
         cursor = PracticePlaybackCursor(passages: ranges, settings: settings, resumeAt: currentAyah)
         self.catalog = catalog
-        refreshAfterNavigation(autoplay: resumePlayback)
+        rebuildQueue(autoplay: resumePlayback)
     }
 
-    private struct QueuedItemInfo {
-        var step: QueueItem
-        var completesStep: Bool
-        var isLocal: Bool
+    private func bindPlayerEvents() {
+        player.onSegmentStarted = { [weak self] id in self?.segmentStarted(id) }
+        player.onSegmentFinished = { [weak self] id in self?.segmentFinished(id) }
+        player.onFailure = { [weak self] id, error in self?.segmentFailed(id, error: error) }
     }
 
     private func bindRemoteCommands() {
@@ -328,10 +312,6 @@ final class PlaybackCoordinator {
         )
     }
 
-    private func refreshAfterNavigation(autoplay: Bool) {
-        rebuildQueue(autoplay: autoplay)
-    }
-
     private func preparePlayback(
         title: String,
         passages: [VerseRange],
@@ -345,7 +325,7 @@ final class PlaybackCoordinator {
         nowPlaying.clear()
         session = nil
         self.catalog = catalog
-        self.allowStreaming = allowStreaming
+        resolver.allowStreaming = allowStreaming
         preparedPassages = passages
         preparedSettings = settings
         activeSet = set
@@ -362,8 +342,7 @@ final class PlaybackCoordinator {
         countedListen = false
         userMessage = nil
         shouldAutoplay = false
-        downloadsMissingAudio = false
-        unavailableAyahs = []
+        resolver.retryFailedDownloads()
         snapshot.setID = set?.id
         snapshot.setTitle = title
         snapshot.hideArabic = settings.hideArabic
@@ -386,6 +365,7 @@ final class PlaybackCoordinator {
         updateSnapshot(for: step)
     }
 
+    /// Throws away what's queued and queues again from the cursor.
     private func rebuildQueue(autoplay: Bool) {
         accumulateListeningTime()
         resetQueue()
@@ -394,184 +374,139 @@ final class PlaybackCoordinator {
             finishPlayback()
             return
         }
-
-        do {
-            if autoplay {
-                beginStartAudioInterval()
+        if autoplay {
+            beginStartAudioInterval()
+            do {
                 try AudioSessionController.shared.configure(.playback)
-            }
-            updateSnapshot(for: step)
-            requestMissingAudio()
-            countedCurrentItem = false
-            queueCursor = cursor
-            try fillQueue()
-            observeQueue()
-
-            guard let first = player.currentItem else {
-                // Playback resumes when the awaited ayah finishes downloading.
-                if awaitedAyah == nil { finishPlayback() }
+            } catch {
+                failPlayback(error)
                 return
             }
-            observeReadiness(of: first, autoplay: autoplay)
-            refreshNowPlayingIfPublished()
-        } catch {
-            failPlayback(error)
         }
+        updateSnapshot(for: step)
+        requestMissingAudio()
+        countedCurrentItem = false
+        queueCursor = cursor
+        snapshot.isPlaying = false
+        snapshot.isLoading = autoplay
+        if autoplay { publishNowPlaying() }
+        fillQueue()
     }
 
-    private func fillQueue() throws {
-        let targetDepth = snapshot.advanceManually ? 1 : 8
-        while player.items().count < targetDepth, let step = queueCursor?.current {
+    /// Queues steps from `queueCursor` until the queue is full or the next ayah has to be fetched first.
+    private func fillQueue() {
+        guard fetchTask == nil else { return }
+        let depth = snapshot.advanceManually ? 1 : Self.queueDepth
+        while queuedSteps.count < depth, let step = queueCursor?.current {
+            let source: AudioSegment.Source
             switch step {
-            case .ayah(let ayah, _, _):
-                let resolved: (url: URL, isLocal: Bool)
-                if let local = fileStore.urlIfReady(reciter: source.reciter, globalAyah: ayah) {
-                    resolved = (local, true)
-                } else if allowStreaming {
-                    resolved = (try source.remoteURL(for: ayah), false)
-                } else if downloadsMissingAudio, !unavailableAyahs.contains(ayah) {
-                    awaitedAyah = ayah
-                    if player.items().isEmpty {
-                        snapshot.isPlaying = false
-                        snapshot.isLoading = shouldAutoplay
-                        if shouldAutoplay { publishNowPlaying() }
-                    }
-                    return
-                } else {
-                    if player.items().isEmpty {
-                        throw downloadsMissingAudio ? AppError.downloadFailed : AppError.offlineAudioMissing
-                    }
-                    return
-                }
-                let item = AVPlayerItem(url: resolved.url)
-                item.preferredForwardBufferDuration = 10
-                queuedItems[ObjectIdentifier(item)] = QueuedItemInfo(
-                    step: step,
-                    completesStep: true,
-                    isLocal: resolved.isLocal
-                )
-                player.insert(item, after: nil)
             case .silence(let seconds):
-                guard seconds > 0, let url = silenceURL() else {
-                    queueCursor?.advanceAfterCompletion()
-                    continue
+                source = .silence(seconds: seconds)
+            case .ayah(let ayah, _, _):
+                switch resolver.availability(of: ayah) {
+                case .ready(let url):
+                    source = .file(url, smoothsJoins: resolver.source.reciter.smoothsJoins)
+                case .needsFetch:
+                    fetch(ayah)
+                    return
+                case .unavailable(let error):
+                    // With audio still queued, this is retried when the queue runs down.
+                    if queuedSteps.isEmpty { failPlayback(error) }
+                    return
                 }
-                for index in 0..<seconds {
-                    let item = AVPlayerItem(url: url)
-                    queuedItems[ObjectIdentifier(item)] = QueuedItemInfo(
-                        step: step,
-                        completesStep: index == seconds - 1,
-                        isLocal: true
-                    )
-                    player.insert(item, after: nil)
-                }
+            }
+            do {
+                try enqueue(source, for: step)
+            } catch {
+                // A saved file that won't decode is removed, and the loop fetches it again.
+                if case .ayah(let ayah, _, _) = step, resolver.discardUnreadable(ayah) { continue }
+                if queuedSteps.isEmpty { failPlayback(error) }
+                return
             }
             queueCursor?.advanceAfterCompletion()
+            if shouldAutoplay, !player.isPlaying { startPlayer() }
         }
     }
 
-    /// Keeps the next few ayahs downloading, nearest first. Ayahs that already failed wait for Play to retry them.
+    private func enqueue(_ source: AudioSegment.Source, for step: QueueItem) throws {
+        lastSegmentID += 1
+        let id = lastSegmentID
+        // Recorded first: the player reports a segment's start while it's being enqueued.
+        queuedSteps[id] = step
+        do {
+            try player.enqueue(AudioSegment(id: id, source: source))
+        } catch {
+            queuedSteps[id] = nil
+            throw error
+        }
+    }
+
+    private func fetch(_ ayah: Int) {
+        fetchTask = Task { [weak self] in
+            guard let self else { return }
+            do {
+                try await resolver.fetch(ayah)
+                guard !Task.isCancelled else { return }
+                fetchTask = nil
+                fillQueue()
+            } catch {
+                guard !Task.isCancelled else { return }
+                fetchTask = nil
+                // With audio still queued, the fetch is retried when the queue runs down.
+                if queuedSteps.isEmpty { failPlayback(error) }
+            }
+        }
+    }
+
+    /// Keeps the next few ayahs downloading, nearest first.
     private func requestMissingAudio() {
-        guard let downloadMissingAudio else { return }
-        let missing = AudioPrefetch.ayahsToFetch(order: versesInSet.map(\.globalAyah), current: snapshot.currentGlobalAyah) {
-            fileStore.isReady($0) || unavailableAyahs.contains($0)
-        }
-        guard !missing.isEmpty else { return }
-        downloadsMissingAudio = downloadMissingAudio(missing)
+        resolver.requestDownloads(order: versesInSet.map(\.globalAyah), current: snapshot.currentGlobalAyah)
     }
 
-    private func observeReadiness(of item: AVPlayerItem, autoplay: Bool) {
-        snapshot.isPlaying = false
-        shouldAutoplay = autoplay
-        if autoplay {
-            snapshot.isLoading = true
-            publishNowPlaying()
-        }
-        itemStatusObserver = item.observe(\.status, options: [.initial, .new]) { [weak self, weak item] _, _ in
-            Task { @MainActor in
-                guard let self, let item, self.player.currentItem === item else { return }
-                switch item.status {
-                case .readyToPlay:
-                    self.snapshot.isLoading = false
-                    if self.shouldAutoplay { self.startPlayer() }
-                case .failed:
-                    self.handleItemFailure(item.error, failedItem: item)
-                case .unknown:
-                    break
-                @unknown default:
-                    break
-                }
-            }
-        }
+    private func segmentStarted(_ id: Int) {
+        guard queuedSteps[id] != nil, shouldAutoplay, player.isPlaying else { return }
+        markCurrentAyahStarted()
+        snapshot.isPlaying = true
+        snapshot.isLoading = false
+        refreshNowPlayingIfPublished()
     }
 
-    private func observeQueue() {
-        endObserver = NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemDidPlayToEndTime,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            guard let item = notification.object as? AVPlayerItem else { return }
-            Task { @MainActor in self?.itemDidFinish(item) }
-        }
-        failureObserver = NotificationCenter.default.addObserver(
-            forName: .AVPlayerItemFailedToPlayToEndTime,
-            object: nil,
-            queue: .main
-        ) { [weak self] notification in
-            let error = notification.userInfo?[AVPlayerItemFailedToPlayToEndTimeErrorKey] as? Error
-            guard let item = notification.object as? AVPlayerItem else { return }
-            Task { @MainActor in
-                guard self?.queuedItems[ObjectIdentifier(item)] != nil else { return }
-                self?.handleItemFailure(error, failedItem: item)
-            }
-        }
-        timeControlObserver = player.observe(\.timeControlStatus, options: [.new]) { [weak self] player, _ in
-            Task { @MainActor in
-                guard let self, self.shouldAutoplay else { return }
-                let wasLoading = self.snapshot.isLoading
-                self.snapshot.isLoading = player.timeControlStatus == .waitingToPlayAtSpecifiedRate
-                self.snapshot.isPlaying = player.timeControlStatus == .playing
-                // A stall mid-playback reads "Loading…" until the audio catches up.
-                if self.snapshot.isLoading != wasLoading { self.refreshNowPlayingIfPublished() }
-            }
-        }
-    }
-
-    private func itemDidFinish(_ item: AVPlayerItem) {
-        guard let info = queuedItems.removeValue(forKey: ObjectIdentifier(item)) else { return }
+    private func segmentFinished(_ id: Int) {
+        guard let step = queuedSteps.removeValue(forKey: id) else { return }
         accumulateListeningTime()
-        if case .ayah(let ayah, _, _) = info.step { onAyahHeard?(ayah) }
-        if info.completesStep {
-            cursor?.advanceAfterCompletion()
-        }
+        if case .ayah(let ayah, _, _) = step { onAyahHeard?(ayah) }
+        cursor?.advanceAfterCompletion()
 
-        guard cursor?.current != nil else {
+        guard let next = cursor?.current else {
             finishPlayback()
             return
         }
-        if snapshot.advanceManually, info.completesStep {
+        if snapshot.advanceManually {
             rebuildQueue(autoplay: false)
             return
         }
-
-        if let step = cursor?.current {
-            updateSnapshot(for: step)
-        }
+        updateSnapshot(for: next)
         // The download window moves along with playback, ahead of what fillQueue will need.
         requestMissingAudio()
         countedCurrentItem = false
-        if shouldAutoplay {
-            markCurrentAyahStarted()
-            playbackBeganAt = .now
-            snapshot.isPlaying = true
+        if shouldAutoplay { playbackBeganAt = .now }
+        fillQueue()
+        if shouldAutoplay, !player.hasQueuedAudio {
+            // The next ayah is still being fetched.
+            snapshot.isPlaying = false
+            snapshot.isLoading = true
         }
         refreshNowPlayingIfPublished()
-        do {
-            try fillQueue()
-        } catch {
-            failPlayback(error)
+    }
+
+    private func segmentFailed(_ id: Int, error: Error) {
+        let step = queuedSteps[id]
+        resetQueue()
+        if case .ayah(let ayah, _, _) = step, resolver.discardUnreadable(ayah) {
+            rebuildQueue(autoplay: shouldAutoplay)
+            return
         }
+        failPlayback(error)
     }
 
     private func updateSnapshot(for step: QueueItem) {
@@ -579,21 +514,6 @@ final class PlaybackCoordinator {
         snapshot.currentGlobalAyah = ayah
         onPositionChanged?(ayah)
         snapshot.repetitionLabel = total == 0 ? "\(repetition)/∞" : (total == 1 ? "" : "\(repetition)/\(total)")
-    }
-
-    private func handleItemFailure(_ error: Error?, failedItem: AVPlayerItem? = nil) {
-        guard snapshot.isLoading || snapshot.isPlaying || shouldAutoplay else { return }
-        let failedInfo = failedItem.flatMap { queuedItems[ObjectIdentifier($0)] }
-        if let failedInfo,
-           failedInfo.isLocal,
-           case .ayah = failedInfo.step,
-           let ayah = snapshot.currentGlobalAyah,
-           allowStreaming {
-            try? fileStore.remove(globalAyah: ayah)
-            rebuildQueue(autoplay: shouldAutoplay)
-            return
-        }
-        failPlayback(error ?? AppError.audioUnavailable)
     }
 
     private func failPlayback(_ error: Error) {
@@ -622,18 +542,17 @@ final class PlaybackCoordinator {
     }
 
     private func resetQueue() {
-        removeItemObservers()
-        player.pause()
-        player.removeAllItems()
+        fetchTask?.cancel()
+        fetchTask = nil
+        player.reset()
         queueCursor = nil
-        queuedItems.removeAll()
-        awaitedAyah = nil
+        queuedSteps.removeAll()
     }
 
     private func replacePlayer() {
         resetQueue()
-        let player = Self.makePlayer()
-        self.player = player
+        player = GaplessAudioPlayer()
+        bindPlayerEvents()
     }
 
     private func beginStartAudioInterval() {
@@ -649,9 +568,14 @@ final class PlaybackCoordinator {
 
     private func startPlayer() {
         endStartAudioInterval()
+        do {
+            try player.play()
+        } catch {
+            failPlayback(error)
+            return
+        }
         markCurrentAyahStarted()
         if playbackBeganAt == nil { playbackBeganAt = .now }
-        player.play()
         snapshot.isPlaying = true
         snapshot.isLoading = false
         updateIdleTimer()
@@ -702,40 +626,15 @@ final class PlaybackCoordinator {
         nowPlaying.publish(
             setTitle: snapshot.setTitle,
             verse: verse,
-            reciter: source.reciter,
+            reciter: resolver.source.reciter,
             state: snapshot.isPlaying ? .playing : (snapshot.isLoading ? .loading : .paused),
-            elapsedTime: player.currentTime().seconds,
-            duration: player.currentItem?.duration.seconds
+            elapsedTime: player.elapsedInCurrentSegment,
+            duration: player.durationOfCurrentSegment
         )
     }
 
     private func refreshNowPlayingIfPublished() {
         guard nowPlaying.isPublished else { return }
         publishNowPlaying()
-    }
-
-    private func removeItemObservers() {
-        itemStatusObserver?.invalidate()
-        itemStatusObserver = nil
-        timeControlObserver?.invalidate()
-        timeControlObserver = nil
-        if let endObserver { NotificationCenter.default.removeObserver(endObserver) }
-        if let failureObserver { NotificationCenter.default.removeObserver(failureObserver) }
-        endObserver = nil
-        failureObserver = nil
-    }
-
-    private func silenceURL() -> URL? {
-        Bundle.main.url(forResource: "silence", withExtension: "m4a", subdirectory: "Resources/Audio")
-            ?? Bundle.main.url(forResource: "silence", withExtension: "m4a", subdirectory: "Audio")
-            ?? Bundle.main.url(forResource: "silence", withExtension: "m4a")
-    }
-
-    private static func makePlayer() -> AVQueuePlayer {
-        let player = AVQueuePlayer()
-        player.automaticallyWaitsToMinimizeStalling = true
-        player.audiovisualBackgroundPlaybackPolicy = .continuesIfPossible
-        player.preventsDisplaySleepDuringVideoPlayback = false
-        return player
     }
 }

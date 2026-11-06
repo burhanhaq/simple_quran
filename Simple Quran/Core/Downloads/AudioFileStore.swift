@@ -178,6 +178,24 @@ nonisolated struct AudioFileStore {
         }
     }
 
+    /// Keeps the `limit` most recently saved ayahs of this reciter and removes the rest.
+    func removeOldest(keeping limit: Int) {
+        guard let dir = try? directory(),
+              let files = try? fileManager.contentsOfDirectory(
+                  at: dir,
+                  includingPropertiesForKeys: [.creationDateKey],
+                  options: .skipsHiddenFiles
+              ),
+              files.count > limit
+        else { return }
+        func created(_ url: URL) -> Date {
+            (try? url.resourceValues(forKeys: [.creationDateKey]).creationDate) ?? .distantPast
+        }
+        for file in files.sorted(by: { created($0) < created($1) }).prefix(files.count - limit) {
+            try? fileManager.removeItem(at: file)
+        }
+    }
+
     func readyAyahs() -> Set<Int> {
         guard let dir = try? directory(),
               let files = try? fileManager.contentsOfDirectory(at: dir, includingPropertiesForKeys: nil)
