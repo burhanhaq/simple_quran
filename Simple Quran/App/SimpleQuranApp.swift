@@ -1,3 +1,4 @@
+import AppIntents
 import SwiftData
 import SwiftUI
 import UIKit
@@ -93,6 +94,9 @@ struct SimpleQuranApp: App {
         self.environment = environment
         appDelegate.downloads = downloads
         CarPlaySceneDelegate.environment = environment
+        // Siri and Shortcuts run their intents against the same playback as the phone and the car.
+        AppDependencyManager.shared.add(dependency: environment)
+        SimpleQuranShortcuts.updateAppShortcutParameters()
     }
 
     var body: some Scene {

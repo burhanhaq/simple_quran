@@ -357,6 +357,17 @@ final class AppEnvironment {
         playback.use(source: source, fileStore: files)
     }
 
+    /// Plays passages straight through, as the Quran tab, CarPlay and Siri listen. Asking again for what's
+    /// already loaded carries on from where it paused, unless `restart` starts it over from `fromAyah`.
+    func listen(title: String, passages: [VerseRange], fromAyah: Int? = nil, restart: Bool = false) {
+        if restart || playback.activeSet != nil || !playback.isPrepared(for: passages) {
+            playback.startListening(title: title, passages: passages, fromAyah: fromAyah,
+                                    catalog: quran, allowStreaming: settings.streamWhenMissing)
+        }
+        lastSession = nil
+        playback.resume()
+    }
+
     /// Opens the surah screen. Readers start with the text in full view; Progress opens the overview.
     func openReader(_ destination: QuranDestination, sheet: SurahSheetStart = .peek) {
         route = .reader(ReaderRoute(destination: destination, sheet: sheet))

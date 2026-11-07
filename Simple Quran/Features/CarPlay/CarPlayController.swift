@@ -221,21 +221,16 @@ final class CarPlayController: NSObject {
                 }
                 // The phone's mini player then reopens this passage in the memorize coach.
                 environment.lastSession = SessionRoute(range: passage, kind: .learn, planID: targetID)
+                playback.resume()
             } catch {
                 playback.userMessage = .from(.persistenceFailure)
                 completion()
                 return
             }
         case .revise, .memorized, .surah, .juz:
-            let passages = action.passages(in: quran)
             // Tapping what's already loaded carries on from where it paused.
-            if playback.activeSet != nil || !playback.isPrepared(for: passages) {
-                playback.startListening(title: action.title(in: quran), passages: passages, fromAyah: action.startAyah,
-                                        catalog: quran, allowStreaming: streaming)
-            }
-            environment.lastSession = nil
+            environment.listen(title: action.title(in: quran), passages: action.passages(in: quran), fromAyah: action.startAyah)
         }
-        playback.resume()
         let timeout = Task { [weak self] in
             try? await Task.sleep(for: Self.startSpinnerLimit)
             guard !Task.isCancelled else { return }
