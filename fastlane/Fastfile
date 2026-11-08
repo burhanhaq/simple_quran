@@ -52,7 +52,7 @@ REVIEW_CONTACT = {
   contact_email: "hello@dumblemon.com",
   contact_phone: "2405809477",
   demo_account_required: false,
-  notes: "No account or sign-in. All features work without one. Audio streams from cdn.islamic.network."
+  notes: "No account or sign-in. All features work without one. Audio streams from cdn.islamic.network and everyayah.com."
 }.freeze
 
 platform :ios do

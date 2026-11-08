@@ -6,6 +6,14 @@ nonisolated enum ReciterID {
     static let husary = "ar.husary"
 }
 
+/// How a host names its ayah files.
+nonisolated enum AudioFileLayout: String, Codable, Hashable, Sendable {
+    /// `{host}/{qualityKbps}/{reciterID}/{globalAyah}.mp3`, as on cdn.islamic.network.
+    case globalAyah
+    /// `{host}/{surah}{ayah}.mp3` with three digits each, as in an everyayah.com reciter folder.
+    case surahAyah
+}
+
 nonisolated struct Reciter: Codable, Equatable, Hashable, Sendable, Identifiable {
     var id: String
     var englishName: String
@@ -22,6 +30,8 @@ nonisolated struct Reciter: Codable, Equatable, Hashable, Sendable, Identifiable
     /// silence baked into their starts (Shuraim's, Maher's), so their joins drop out for ~50 ms
     /// without it; set `false` for a reciter whose files should play exactly as recorded.
     var smoothsAyahJoins: Bool?
+    /// How this reciter's host names its files; `.globalAyah` unless the catalog says otherwise.
+    var fileLayout: AudioFileLayout?
 
     var smoothsJoins: Bool { smoothsAyahJoins ?? true }
 
@@ -46,7 +56,7 @@ nonisolated protocol AudioSource: Sendable {
     var estimatedBytesPerAyah: Int64 { get }
 }
 
-/// Files laid out as `{host}/{qualityKbps}/{reciterID}/{globalAyah}.mp3`, as on cdn.islamic.network.
+/// Files at the catalog's host, or at the reciter's own, named by the reciter's `AudioFileLayout`.
 nonisolated struct AlQuranCloudAudioSource: AudioSource, Equatable {
     static let defaultHost = URL(string: "https://cdn.islamic.network/quran/audio")!
     /// A conservative display estimate for reciters the catalog hasn't measured.
@@ -62,9 +72,24 @@ nonisolated struct AlQuranCloudAudioSource: AudioSource, Equatable {
         guard (1...QuranCatalogMetrics.ayahCount).contains(globalAyah) else {
             throw AppError.invalidRange
         }
-        return (reciter.host ?? host)
-            .appending(path: "\(reciter.qualityKbps)")
-            .appending(path: reciter.id)
-            .appending(path: "\(globalAyah).mp3")
+        let base = reciter.host ?? host
+        switch reciter.fileLayout ?? .globalAyah {
+        case .globalAyah:
+            return base
+                .appending(path: "\(reciter.qualityKbps)")
+                .appending(path: reciter.id)
+                .appending(path: "\(globalAyah).mp3")
+        case .surahAyah:
+            return base.appending(path: try Self.surahAyahFileName(globalAyah: globalAyah))
+        }
+    }
+
+    private static func surahAyahFileName(globalAyah: Int) throws -> String {
+        var ayah = globalAyah
+        for (index, count) in QuranCatalogMetrics.surahAyahCounts.enumerated() {
+            if ayah <= count { return String(format: "%03d%03d.mp3", index + 1, ayah) }
+            ayah -= count
+        }
+        throw AppError.invalidRange
     }
 }

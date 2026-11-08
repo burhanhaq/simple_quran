@@ -44,6 +44,15 @@
       "arabicName": "أبو بكر الشاطري",
       "qualityKbps": 64,
       "averageAyahBytes": 120000
+    },
+    {
+      "id": "ar.mohamedtablawi",
+      "englishName": "Muhammad At-Tablawi",
+      "arabicName": "محمد الطبلاوي",
+      "qualityKbps": 64,
+      "averageAyahBytes": 137000,
+      "host": "https://everyayah.com/data/Mohammad_al_Tablaway_64kbps",
+      "fileLayout": "surahAyah"
     }
   ]
 }

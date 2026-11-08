@@ -125,7 +125,7 @@ Scripts/               BuildQuranText, BuildTranslation, CheckReciterAudio, Rend
   The only change to the text is moving each ayah's number out of it. Do not modify the verse text.
 - **Page, juz, and sajdah metadata.** Standard 604-page Madani Hafs layout, used for navigation and pieces. Verse display is flowing text, not a pixel-identical mushaf page.
 - **Translation.** Saheeh International, issued by Noor International Center, from [QuranEnc](https://quranenc.com/en/browse/english_saheeh). It is bundled unchanged. The app hides footnote markers because it doesn't show footnotes yet.
-- **Audio.** Recitations are streamed and downloaded from the Al Quran Cloud / islamic.network CDN for personal and educational use. Copyright remains with each reciter.
+- **Audio.** Recitations are streamed and downloaded from the Al Quran Cloud / islamic.network CDN and EveryAyah.com for personal and educational use. Copyright remains with each reciter.
 - **Font.** KFGQPC HAFS Uthmanic Script (V22) © King Fahd Glorious Quran Printing Complex. It is free to use and distribute, but not to sell or modify. Ship `UthmanicHafs_V22.ttf` byte-for-byte.
 
 See `Simple Quran/Resources/Quran/ATTRIBUTION.txt` and Settings → Acknowledgements.

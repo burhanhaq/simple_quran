@@ -35,4 +35,8 @@ nonisolated enum SourceLinks {
     static let audioServiceName = "Al Quran Cloud (islamic.network)"
     static let audioService = URL(string: "https://alquran.cloud")!
     static let audioServiceTerms = URL(string: "https://alquran.cloud/terms-and-conditions")!
+
+    /// Serves the reciters Al Quran Cloud doesn't have ayah by ayah.
+    static let everyAyahName = "EveryAyah.com"
+    static let everyAyah = URL(string: "https://everyayah.com")!
 }

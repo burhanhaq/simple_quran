@@ -71,11 +71,15 @@ struct AcknowledgementsView: View {
                     ExternalLinkLabel(SourceLinks.audioServiceName)
                 }
                 .warmListRow()
+                Link(destination: SourceLinks.everyAyah) {
+                    ExternalLinkLabel(SourceLinks.everyAyahName)
+                }
+                .warmListRow()
             } header: {
                 Text(String(localized: "Recitation"))
                     .warmSectionText()
             } footer: {
-                Text(String(localized: "Streamed and downloaded from \(SourceLinks.audioServiceName) for personal and educational use. Copyright remains with each reciter."))
+                Text(String(localized: "Streamed and downloaded from \(SourceLinks.audioServiceName) and \(SourceLinks.everyAyahName) for personal and educational use. Copyright remains with each reciter."))
                     .warmSectionText()
             }
 

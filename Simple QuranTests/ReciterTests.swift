@@ -14,7 +14,8 @@ struct ReciterCatalogTests {
             "ar.abdurrahmaansudais": 64,
             "ar.mahermuaiqly": 128,
             "ar.saoodshuraym": 64,
-            "ar.shaatree": 64
+            "ar.shaatree": 64,
+            "ar.mohamedtablawi": 64
         ])
         #expect(catalog.reciters.allSatisfy { ($0.averageAyahBytes ?? 0) > 0 && !$0.arabicName.isEmpty })
         #expect(catalog.reciter(id: ReciterID.sudais) == .sudais)

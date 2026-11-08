@@ -63,7 +63,7 @@ struct PrivacyView: View {
             Section {
                 PolicyRow(
                     title: String(localized: "Requests for recitation audio"),
-                    detail: String(localized: "When you play or download an ayah that isn’t on this iPhone, the app asks \(SourceLinks.audioServiceName) for that audio file. Like any internet request, it includes your IP address. No account, identifier, or personal content is sent, and nothing is sent to \(AppIdentity.publisher)."),
+                    detail: String(localized: "When you play or download an ayah that isn’t on this iPhone, the app asks \(SourceLinks.audioServiceName) or \(SourceLinks.everyAyahName), depending on the reciter, for that audio file. Like any internet request, it includes your IP address. No account, identifier, or personal content is sent, and nothing is sent to \(AppIdentity.publisher)."),
                     keep: nil
                 )
                 Link(destination: SourceLinks.audioServiceTerms) {

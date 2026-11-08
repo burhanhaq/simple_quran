@@ -26,6 +26,16 @@ private enum Expected {
     static let averageTolerance = 0.1
     /// On a cold cache the CDN can report its 1 MiB slice as a ranged file's total size.
     static let cdnSliceBytes: Int64 = 1 << 20
+    /// QuranCatalogMetrics.surahAyahCounts
+    static let surahAyahCounts = [
+        7, 286, 200, 176, 120, 165, 206, 75, 129, 109, 123, 111, 43, 52, 99, 128,
+        111, 110, 98, 135, 112, 78, 118, 64, 77, 227, 93, 88, 69, 60, 34, 30, 73,
+        54, 45, 83, 182, 88, 75, 85, 54, 53, 89, 59, 37, 35, 38, 29, 18, 45, 60,
+        49, 62, 55, 78, 96, 29, 22, 24, 13, 14, 11, 11, 18, 12, 12, 30, 52, 52,
+        44, 28, 28, 20, 56, 40, 31, 50, 40, 46, 42, 29, 19, 36, 25, 22, 17, 19,
+        26, 30, 20, 15, 21, 11, 8, 8, 19, 5, 8, 8, 11, 11, 8, 3, 9, 5, 4, 7, 3,
+        6, 3, 5, 4, 5, 6
+    ]
 }
 
 private enum Network {
@@ -34,7 +44,11 @@ private enum Network {
     static let timeout: TimeInterval = 30
 }
 
-// MARK: - Catalog schema (mirrors ReciterCatalog and Reciter)
+// MARK: - Catalog schema (mirrors ReciterCatalog, Reciter and AudioFileLayout)
+
+enum FileLayout: String, Codable {
+    case globalAyah, surahAyah
+}
 
 struct Catalog: Codable {
     var schemaVersion: Int
@@ -50,6 +64,7 @@ struct CatalogReciter: Codable {
     var qualityKbps: Int
     var averageAyahBytes: Int64?
     var host: URL?
+    var fileLayout: FileLayout?
 }
 
 // MARK: - Helpers
@@ -78,8 +93,22 @@ private let session: URLSession = {
     return URLSession(configuration: configuration)
 }()
 
-private func url(host: URL, folder: Int, reciterID: String, ayah: Int) -> URL {
-    host.appending(path: "\(folder)").appending(path: reciterID).appending(path: "\(ayah).mp3")
+private func surahAyahFileName(globalAyah: Int) -> String {
+    var ayah = globalAyah
+    for (index, count) in Expected.surahAyahCounts.enumerated() {
+        if ayah <= count { return String(format: "%03d%03d.mp3", index + 1, ayah) }
+        ayah -= count
+    }
+    fail("ayah \(globalAyah) is outside the Quran")
+}
+
+private func url(host: URL, folder: Int, reciter: CatalogReciter, ayah: Int) -> URL {
+    switch reciter.fileLayout ?? .globalAyah {
+    case .globalAyah:
+        host.appending(path: "\(folder)").appending(path: reciter.id).appending(path: "\(ayah).mp3")
+    case .surahAyah:
+        host.appending(path: surahAyahFileName(globalAyah: ayah))
+    }
 }
 
 private func startsLikeMP3(_ data: Data) -> Bool {
@@ -135,18 +164,18 @@ private func check(_ url: URL, ayah: Int) async -> AyahResult {
     return AyahResult(ayah: ayah, failure: (.network, lastError))
 }
 
-private func checkAll(host: URL, folder: Int, reciterID: String, ayahs: ClosedRange<Int>) async -> [AyahResult] {
+private func checkAll(host: URL, folder: Int, reciter: CatalogReciter, ayahs: ClosedRange<Int>) async -> [AyahResult] {
     await withTaskGroup(of: AyahResult.self) { group in
         var pending = ayahs.makeIterator()
         var results: [AyahResult] = []
         for _ in 0..<Network.concurrency {
             guard let ayah = pending.next() else { break }
-            group.addTask { await check(url(host: host, folder: folder, reciterID: reciterID, ayah: ayah), ayah: ayah) }
+            group.addTask { await check(url(host: host, folder: folder, reciter: reciter, ayah: ayah), ayah: ayah) }
         }
         for await result in group {
             results.append(result)
             if let ayah = pending.next() {
-                group.addTask { await check(url(host: host, folder: folder, reciterID: reciterID, ayah: ayah), ayah: ayah) }
+                group.addTask { await check(url(host: host, folder: folder, reciter: reciter, ayah: ayah), ayah: ayah) }
             }
         }
         return results.sorted { $0.ayah < $1.ayah }
@@ -220,7 +249,7 @@ if arguments.contains("--probe-bitrates") {
         var folders: [Int] = []
         for folder in Expected.probeFolders {
             let host = reciter.host ?? catalog.host
-            if await check(url(host: host, folder: folder, reciterID: reciter.id, ayah: 1), ayah: 1).failure == nil {
+            if await check(url(host: host, folder: folder, reciter: reciter, ayah: 1), ayah: 1).failure == nil {
                 folders.append(folder)
             }
         }
@@ -234,7 +263,7 @@ for reciter in reciters {
     let results = await checkAll(
         host: reciter.host ?? catalog.host,
         folder: reciter.qualityKbps,
-        reciterID: reciter.id,
+        reciter: reciter,
         ayahs: 1...Expected.ayahCount
     )
     allPassed = report(reciter, results: results) && allPassed

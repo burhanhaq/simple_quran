@@ -401,6 +401,18 @@ struct SearchAndAudioSourceTests {
             == "https://audio.example.org/quran/64/ar.husary/1.mp3")
         #expect(catalog.audioSource(for: husary).estimatedBytesPerAyah == 198_000)
     }
+
+    @Test func surahAyahLayoutNamesFilesBySurahAndAyah() throws {
+        let catalog = try ReciterCatalog.bundled()
+        let tablawi = try #require(catalog.reciter(id: "ar.mohamedtablawi"))
+        let source = catalog.audioSource(for: tablawi)
+        let folder = "https://everyayah.com/data/Mohammad_al_Tablaway_64kbps"
+        #expect(try source.remoteURL(for: 1).absoluteString == "\(folder)/001001.mp3")
+        #expect(try source.remoteURL(for: 7).absoluteString == "\(folder)/001007.mp3")
+        #expect(try source.remoteURL(for: 8).absoluteString == "\(folder)/002001.mp3")
+        #expect(try source.remoteURL(for: 6236).absoluteString == "\(folder)/114006.mp3")
+        #expect(throws: AppError.invalidRange) { _ = try source.remoteURL(for: 6237) }
+    }
 }
 
 struct AudioFileStoreTests {
