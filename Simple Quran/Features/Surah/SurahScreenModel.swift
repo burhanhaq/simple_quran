@@ -19,6 +19,14 @@ enum SurahSheetDetent {
     static func fitted(_ height: CGFloat) -> PresentationDetent { .height(height) }
 
     static func rounded(_ height: CGFloat) -> CGFloat { (height / fitStep).rounded(.up) * fitStep }
+
+    /// How much height the text leaves clear for the sheet. Mushaf pages never leave more than the
+    /// peek: a page scales to fit the space it's given, so a taller sheet would shrink its text.
+    /// - Parameter fittedHeight: the sheet's height while it rests fitted to its content, else nil.
+    static func textInset(fittedHeight: CGFloat?, layout: QuranReadingLayout) -> CGFloat {
+        guard let fittedHeight, layout != .page else { return peekHeight }
+        return fittedHeight
+    }
 }
 
 /// What the sheet shows, each fitted to its own measured height. The coach keeps one height
@@ -121,9 +129,13 @@ enum SurahAction: Equatable {
     case revise([VerseRange])
 
     /// Revise once every ayah is memorized, continue once any is started, otherwise start.
-    static func make(pieces: [VerseRange], index: ProgressIndex) -> SurahAction? {
+    /// `resume` is where the user left off, which may not line up with the pieces when they chose
+    /// their own range; the first of those not yet memorized comes first.
+    static func make(pieces: [VerseRange], resume: [VerseRange] = [], index: ProgressIndex) -> SurahAction? {
         guard !pieces.isEmpty else { return nil }
-        guard let next = pieces.first(where: { index.status(of: $0) != .memorized }) else { return .revise(pieces) }
+        let isUnfinished = { (range: VerseRange) in index.status(of: range) != .memorized }
+        guard let firstUnfinished = pieces.first(where: isUnfinished) else { return .revise(pieces) }
+        let next = resume.first(where: isUnfinished) ?? firstUnfinished
         let started = pieces.contains { index.status(of: $0) != .notStarted }
         return started ? .continue(next) : .start(next)
     }
@@ -245,6 +257,8 @@ final class SurahScreenModel {
     var title: String { readingName ?? destination.title(in: quran) }
     var groups: [SurahPieceGroup] { pieceCache.groups(for: span, size: environment.settings.pieceSize, catalog: quran) }
     var pieces: [VerseRange] { groups.flatMap(\.pieces) }
+    /// Where the user left off in view, in a plan or in a surah memorized on its own.
+    var resumeRanges: [VerseRange] { span.map { environment.settings.resumeRanges(within: $0) } ?? [] }
 
     // MARK: - Sheet heights
 
@@ -284,7 +298,10 @@ final class SurahScreenModel {
 
     /// Keeps the ayah being read or memorized clear of the shorter sheet heights. At half height
     /// the text stays full length behind the sheet, so the surah's opening shows above it.
-    var textInset: CGFloat { isFitted ? fittedHeight(sheetContent) : SurahSheetDetent.peekHeight }
+    var textInset: CGFloat {
+        SurahSheetDetent.textInset(fittedHeight: isFitted ? fittedHeight(sheetContent) : nil,
+                                   layout: environment.settings.displayedReadingLayout)
+    }
 
     /// Takes the content's natural height; a sheet resting at the old fit follows the new one.
     /// Only what's on screen counts; a view leaving during a switch still reports its old height.
@@ -480,8 +497,10 @@ final class SurahScreenModel {
         if let next = page.pieces.first(where: { index.status(of: $0) != .memorized }) { memorize(next) } else { revise(page.pieces) }
     }
 
+    /// A piece of what the user is memorizing keeps their place in it; anything else is one-off and
+    /// keeps its place in its surah. Either way a range they choose is where they carry on next time.
     func memorize(_ piece: VerseRange) {
-        beginFocus(SessionRoute(range: piece, kind: .learn, scope: span))
+        beginFocus(SessionRoute(range: piece, kind: .learn, planID: environment.settings.activePlan(covering: piece)?.id, scope: span))
     }
 
     func revise(_ pieces: [VerseRange]) {

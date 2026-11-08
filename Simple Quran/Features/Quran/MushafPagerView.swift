@@ -68,7 +68,9 @@ struct MushafPagerView: View {
         .scrollEdgeEffectHidden(true, for: .top)
         .environment(\.layoutDirection, .rightToLeft)
         .onAppear {
-            let opening = clamped(layout.page(containing: startAyah ?? followTarget ?? 1))
+            // The first time, open where asked; after a new page range, stay with the reader.
+            let ayah = page == nil ? startAyah ?? followTarget : followTarget ?? startAyah
+            let opening = clamped(layout.page(containing: ayah ?? 1))
             page = opening
             settledPage = opening
         }
@@ -80,14 +82,15 @@ struct MushafPagerView: View {
             guard following, let target = followTarget else { return }
             turn(to: layout.page(containing: target))
         }
-        .onChange(of: pageRange) { _, range in
-            if let page, !range.contains(page) { self.page = clamped(page) }
-        }
         .onScrollPhaseChange { _, phase in
             guard phase == .idle, let page, let settled = settledPage, page != settled else { return }
             settledPage = page
             onPageSettled(page, page > settled ? .next : .previous)
         }
+        // Starting or finishing a piece swaps the pages under the scroll view, which would keep its old
+        // offset (right to left, the last page) and then crawl back through the lazy pages. A fresh
+        // pager opens straight on the right page instead.
+        .id(pageRange)
     }
 
     /// Turns to the page with the ayah: one page over glides, anything further jumps.

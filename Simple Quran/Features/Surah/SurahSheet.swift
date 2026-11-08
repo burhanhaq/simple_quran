@@ -262,13 +262,20 @@ private struct ReadingOverview: View {
         return calendar.startOfDay(for: date).formatted(.relative(presentation: .named, unitsStyle: .wide))
     }
 
-    private var action: SurahAction? { SurahAction.make(pieces: model.pieces, index: index) }
+    private var action: SurahAction? { SurahAction.make(pieces: model.pieces, resume: model.resumeRanges, index: index) }
 
+    /// Listen takes only the room its title needs, so the memorize button has the rest for the ayahs it names.
     private var actions: some View {
-        HStack(spacing: 10) {
+        let action = action
+        return HStack(spacing: 10) {
             Button { model.togglePlayback() } label: {
-                Label(model.isPlaying ? "Pause" : "Listen", systemImage: model.isPlaying ? "pause.fill" : "play.fill")
-                    .frame(maxWidth: .infinity)
+                // Sized for the longer of its two titles, so pausing never moves the buttons.
+                ZStack {
+                    listenLabel(isPlaying: true).hidden()
+                    listenLabel(isPlaying: false).hidden()
+                    listenLabel(isPlaying: model.isPlaying)
+                }
+                .frame(maxWidth: action == nil ? .infinity : nil)
             }
             .buttonStyle(WarmButtonStyle(emphasis: .secondary)).accessibilityIdentifier("surah.listen")
             if let action {
@@ -278,6 +285,10 @@ private struct ReadingOverview: View {
                 .buttonStyle(WarmButtonStyle()).accessibilityIdentifier("surah.memorize")
             }
         }
+    }
+
+    private func listenLabel(isPlaying: Bool) -> some View {
+        Label(isPlaying ? "Pause" : "Listen", systemImage: isPlaying ? "pause.fill" : "play.fill")
     }
 
     private func title(for action: SurahAction) -> String {

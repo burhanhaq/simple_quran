@@ -57,6 +57,65 @@ struct LearningTargetTests {
         #expect(AppSettings(defaults: defaults).activePlan?.id == second.id)
     }
 
+    /// A range chosen from the surah screen is saved to what the user is memorizing and found there next time.
+    @Test @MainActor func onlyTheActivePlanCoversAndResumesARange() throws {
+        let suite = "PlanTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettings(defaults: defaults)
+        let surah = VerseRange.clamped(start: 8, end: 293)
+        let queued = LearningTarget(range: .clamped(start: 6231, end: 6236))
+        settings.setActivePlan(LearningTarget(range: surah))
+        settings.queueNext(queued)
+
+        let chosen = VerseRange.clamped(start: 8, end: 24)
+        let plan = try #require(settings.activePlan(covering: chosen))
+        #expect(settings.activePlan(covering: .clamped(start: 290, end: 300)) == nil)
+        #expect(settings.activePlan(covering: queued.range) == nil)
+        #expect(settings.resumeRanges(within: surah).isEmpty)
+
+        settings.remember(chosen, targetID: plan.id)
+        let reopened = AppSettings(defaults: defaults)
+        #expect(reopened.resumeRanges(within: surah) == [chosen])
+        #expect(reopened.oneOffPlaces.isEmpty)
+        #expect(reopened.resumeRanges(within: .clamped(start: 1, end: 7)).isEmpty)
+    }
+
+    /// Memorizing Maryam while the plan is Al-Kahf: the range picked for Maryam is still where it carries on.
+    @Test @MainActor func aSurahOutsideThePlanKeepsTheRangeChosenForIt() throws {
+        let suite = "PlanTests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = AppSettings(defaults: defaults)
+        let kahf = VerseRange.clamped(start: 2141, end: 2250)
+        let maryam = VerseRange.clamped(start: 2251, end: 2348)
+        settings.setActivePlan(LearningTarget(range: kahf))
+        #expect(settings.activePlan(covering: maryam) == nil)
+
+        let chosen = VerseRange.clamped(start: 2251, end: 2267)
+        settings.remember(chosen, targetID: nil)
+        let reopened = AppSettings(defaults: defaults)
+        #expect(reopened.resumeRanges(within: maryam) == [chosen])
+        #expect(reopened.resumeRanges(within: kahf).isEmpty)
+        #expect(reopened.activePlan?.resumeRange == nil)
+
+        // Choosing again in the same surah replaces its place.
+        let later = VerseRange.clamped(start: 2268, end: 2280)
+        reopened.remember(later, targetID: nil)
+        #expect(AppSettings(defaults: defaults).resumeRanges(within: maryam) == [later])
+    }
+
+    @Test func surahNumberComesFromTheAyahCounts() {
+        #expect(QuranCatalogMetrics.surahNumber(containing: 1) == 1)
+        #expect(QuranCatalogMetrics.surahNumber(containing: 7) == 1)
+        #expect(QuranCatalogMetrics.surahNumber(containing: 8) == 2)
+        #expect(QuranCatalogMetrics.surahNumber(containing: 2251) == 19)
+        #expect(QuranCatalogMetrics.surahNumber(containing: 2348) == 19)
+        #expect(QuranCatalogMetrics.surahNumber(containing: 6236) == 114)
+        #expect(QuranCatalogMetrics.surahNumber(containing: 0) == nil)
+        #expect(QuranCatalogMetrics.surahNumber(containing: 6237) == nil)
+    }
+
     @Test @MainActor func queueingLinesUpATargetWithoutSwitchingToIt() throws {
         let suite = "PlanTests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))

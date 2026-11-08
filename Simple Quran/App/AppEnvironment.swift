@@ -56,6 +56,7 @@ final class AppSettings {
         static let hasCompletedOnboarding = "settings.hasCompletedOnboarding"
         static let learningTargets = "learning.targets"
         static let activeTargetID = "learning.activeTarget"
+        static let oneOffPlaces = "learning.oneOffPlaces"
         static let pieceSize = "learning.pieceSize"
         static let memorizePlayback = "learning.playback"
         static let revisionCycle = "learning.revisionCycle"
@@ -124,12 +125,38 @@ final class AppSettings {
         dailyLog = log
     }
 
-    /// Saves where the user is in a plan. Never changes which plan is active.
+    /// Where the user left off in each surah they memorize outside a plan, by surah number,
+    /// so a range they chose there is where they carry on.
+    var oneOffPlaces: [Int: VerseRange] {
+        didSet {
+            if let data = try? JSONEncoder().encode(oneOffPlaces) { defaults.set(data, forKey: Key.oneOffPlaces) }
+        }
+    }
+
+    /// Saves where the user is: in the plan they're working through, or without one, in the
+    /// passage's surah. Never changes which plan is active.
     func remember(_ range: VerseRange, targetID: UUID?) {
+        guard let targetID else {
+            if let surah = QuranCatalogMetrics.surahNumber(containing: range.startGlobalAyah) { oneOffPlaces[surah] = range }
+            return
+        }
         guard let index = learningTargets.firstIndex(where: { $0.id == targetID }),
               learningTargets[index].range.contains(range.startGlobalAyah),
               learningTargets[index].range.contains(range.endGlobalAyah) else { return }
         learningTargets[index].resumeRange = range
+    }
+
+    /// What the user is memorizing, when it takes in all of `range`. Memorizing anything else is one-off.
+    func activePlan(covering range: VerseRange) -> LearningTarget? {
+        activePlan.flatMap { $0.range.contains(range) ? $0 : nil }
+    }
+
+    /// Where the user left off inside `range`: their place in what they're memorizing first,
+    /// then their places in one-off surahs in reading order.
+    func resumeRanges(within range: VerseRange) -> [VerseRange] {
+        let planPlace = activePlan?.resumeRange.map { [$0] } ?? []
+        let oneOff = oneOffPlaces.values.sorted { $0.startGlobalAyah < $1.startGlobalAyah }
+        return (planPlace + oneOff).filter { range.contains($0) }
     }
 
     var readingAyah: Int {
@@ -242,6 +269,8 @@ final class AppSettings {
         learningTargets = defaults.data(forKey: Key.learningTargets)
             .flatMap { try? JSONDecoder().decode([LearningTarget].self, from: $0) } ?? []
         activeTargetID = defaults.string(forKey: Key.activeTargetID).flatMap(UUID.init(uuidString:))
+        oneOffPlaces = defaults.data(forKey: Key.oneOffPlaces)
+            .flatMap { try? JSONDecoder().decode([Int: VerseRange].self, from: $0) } ?? [:]
         dailyLog = defaults.data(forKey: Key.dailyLog)
             .flatMap { try? JSONDecoder().decode(DailyLog.self, from: $0) } ?? .empty(on: .now)
         readingAyah = defaults.integer(forKey: Key.readingAyah)

@@ -10,6 +10,15 @@ struct SurahScreenTests {
         return item
     }
 
+    /// A short surah's sheet rests at a fitted height, which mustn't shrink a mushaf page's text.
+    @Test @MainActor func mushafPagesKeepTheirSizeWhateverTheSheetHeight() {
+        let fitted: CGFloat = 400
+        #expect(SurahSheetDetent.textInset(fittedHeight: fitted, layout: .page) == SurahSheetDetent.peekHeight)
+        #expect(SurahSheetDetent.textInset(fittedHeight: nil, layout: .page) == SurahSheetDetent.peekHeight)
+        #expect(SurahSheetDetent.textInset(fittedHeight: fitted, layout: .continuous) == fitted)
+        #expect(SurahSheetDetent.textInset(fittedHeight: nil, layout: .continuous) == SurahSheetDetent.peekHeight)
+    }
+
     @Test @MainActor func mainActionStartsContinuesThenRevises() {
         let pieces: [VerseRange] = [.clamped(start: 1, end: 3), .clamped(start: 4, end: 7)]
         #expect(SurahAction.make(pieces: pieces, index: ProgressIndex([])) == .start(pieces[0]))
@@ -24,6 +33,25 @@ struct SurahScreenTests {
         #expect(SurahAction.make(pieces: pieces, index: allDone) == .revise(pieces))
 
         #expect(SurahAction.make(pieces: [], index: allDone) == nil)
+    }
+
+    /// A range the user chose that doesn't line up with the pieces is where they carry on.
+    @Test @MainActor func mainActionCarriesOnFromTheChosenRange() {
+        let pieces: [VerseRange] = [.clamped(start: 1, end: 3), .clamped(start: 4, end: 7)]
+        let chosen = VerseRange.clamped(start: 1, end: 5)
+        #expect(SurahAction.make(pieces: pieces, resume: [chosen], index: ProgressIndex([])) == .start(chosen))
+
+        let learning = ProgressIndex([snapshot(2, .learning)])
+        #expect(SurahAction.make(pieces: pieces, resume: [chosen], index: learning) == .continue(chosen))
+
+        // Once it's memorized, the next place not memorized takes over, then the next unfinished piece.
+        let chosenDone = ProgressIndex((1...5).map { snapshot($0, .review) })
+        let other = VerseRange.clamped(start: 6, end: 7)
+        #expect(SurahAction.make(pieces: pieces, resume: [chosen, other], index: chosenDone) == .continue(other))
+        #expect(SurahAction.make(pieces: pieces, resume: [chosen], index: chosenDone) == .continue(pieces[1]))
+
+        let allDone = ProgressIndex((1...7).map { snapshot($0, .review) })
+        #expect(SurahAction.make(pieces: pieces, resume: [chosen], index: allDone) == .revise(pieces))
     }
 
     @Test @MainActor func recitingHidesTheTextAndTappingRevealsAndMarks() {

@@ -14,6 +14,10 @@ nonisolated struct VerseRange: Equatable, Hashable, Sendable, Codable {
         globalAyah >= startGlobalAyah && globalAyah <= endGlobalAyah
     }
 
+    func contains(_ range: VerseRange) -> Bool {
+        contains(range.startGlobalAyah) && contains(range.endGlobalAyah)
+    }
+
     init(startGlobalAyah: Int, endGlobalAyah: Int) throws {
         guard startGlobalAyah >= 1,
               endGlobalAyah <= QuranCatalogMetrics.ayahCount,
@@ -54,6 +58,17 @@ nonisolated enum QuranCatalogMetrics {
     static let pageCount = 604
     static let juzCount = 30
     static let sajdahCount = 15
+
+    /// The surah an ayah is in, from the ayah counts alone; nil outside the Quran.
+    static func surahNumber(containing globalAyah: Int) -> Int? {
+        guard (1...ayahCount).contains(globalAyah) else { return nil }
+        var surahEnd = 0
+        for (index, count) in surahAyahCounts.enumerated() {
+            surahEnd += count
+            if globalAyah <= surahEnd { return index + 1 }
+        }
+        return nil
+    }
 
     static let surahAyahCounts: [Int] = [
         7, 286, 200, 176, 120, 165, 206, 75, 129, 109, 123, 111, 43, 52, 99, 128,
